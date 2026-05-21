@@ -12,109 +12,158 @@ class MenuView:
         self.scale_x = self.w / 1024
         self.scale_y = self.h / 768
 
-        # Загрузка идентичного FNAF-шрифта OCR-A
         font_size_title = int(65 * self.scale_y)
-        font_size_btn = int(28 * self.scale_y)
+        font_size_btn = int(30 * self.scale_y)
         try:
             self.title_font = pygame.font.Font("OCR-A.ttf", font_size_title)
             self.button_font = pygame.font.Font("OCR-A.ttf", font_size_btn)
         except IOError:
-            print("Шрифт OCR-A.ttf не найден в корне! Включаю системный Arial.")
+            print("Шрифт OCR-A.ttf не найден! Использую Arial.")
             self.title_font = pygame.font.SysFont("Arial", font_size_title, bold=True)
             self.button_font = pygame.font.SysFont("Arial", font_size_btn)
 
-        # Хитбоксы для кнопок меню (левый нижний угол)
-        self.btn_new_game_rect = pygame.Rect(
-            int(80 * self.scale_x), int(480 * self.scale_y),
-            int(250 * self.scale_x), int(40 * self.scale_y)
-        )
-        self.btn_exit_rect = pygame.Rect(
-            int(80 * self.scale_x), int(550 * self.scale_y),
-            int(150 * self.scale_x), int(40 * self.scale_y)
-        )
+        btn_x = int(100 * self.scale_x)
+        btn_w = int(250 * self.scale_x)
+        btn_h = int(40 * self.scale_y)
+        
+        self.btn_new_game_rect = pygame.Rect(btn_x, int(360 * self.scale_y), btn_w, btn_h)
+        self.btn_exit_rect = pygame.Rect(btn_x, int(460 * self.scale_y), btn_w, btn_h)
 
-        # Словарь для хранения двух состояний Алгема
         self.bg_images = {}
         self._load_assets()
-        
-        # Текстуры телевизионных помех
         self.noise_frames = self._generate_static_noise()
 
     def _load_assets(self):
-        """Загрузка твоих кастомных картинок Алгема"""
         size = (self.w, self.h)
-        try:
-            img_normal = pygame.image.load("assets/menu/algem_normal.png").convert()
-            self.bg_images["NORMAL"] = pygame.transform.smoothscale(img_normal, size)
-        except pygame.error:
-            print("Ошибка: assets/menu/algem_normal.png не найден!")
-            self.bg_images["NORMAL"] = pygame.Surface(size)
-            self.bg_images["NORMAL"].fill((10, 10, 15))
+
+        def load_and_scale(path):
+            img = pygame.image.load(path).convert()
+            return pygame.transform.smoothscale(img, size)
 
         try:
-            img_glitch = pygame.image.load("assets/menu/algem_glitch.png").convert()
-            self.bg_images["GLITCH"] = pygame.transform.smoothscale(img_glitch, size)
+            normal = load_and_scale("assets/menu/algem_normal.png")
         except pygame.error:
-            print("Ошибка: assets/menu/algem_glitch.png не найден! Использую базовую подложку.")
-            self.bg_images["GLITCH"] = self.bg_images["NORMAL"]
+            print("Ошибка: algem_normal.png")
+            normal = pygame.Surface(size)
+            normal.fill((10, 10, 15))
+
+        glitch_paths = [
+            "assets/menu/algem_is_trying_to_escape.jpg",
+            "assets/menu/empty_room.jpeg",
+        ]
+        glitch_raw = []
+        for path in glitch_paths:
+            try:
+                glitch_raw.append(load_and_scale(path))
+            except pygame.error:
+                print(f"Ошибка: {path}")
+        if not glitch_raw:
+            glitch_raw.append(normal)
+
+        # Нормализация яркости всех изображений
+        all_images = [normal] + glitch_raw
+        target_brightness = 15
+        
+        for img in all_images:
+            w, h = img.get_size()
+            total = 0
+            for y in range(0, h, 4):
+                for x in range(0, w, 4):
+                    r, g, b, _ = img.get_at((x, y))
+                    total += int(0.299 * r + 0.587 * g + 0.114 * b)
+            count = (w // 4) * (h // 4)
+            avg = total / count if count > 0 else target_brightness
+            
+            if avg > 0:
+                factor = target_brightness / avg
+                for y in range(h):
+                    for x in range(w):
+                        r, g, b, a = img.get_at((x, y))
+                        new_r = min(255, int(r * factor))
+                        new_g = min(255, int(g * factor))
+                        new_b = min(255, int(b * factor))
+                        img.set_at((x, y), (new_r, new_g, new_b, a))
+
+        self.bg_images["NORMAL"] = normal
+        self.glitch_images = glitch_raw
 
     def _generate_static_noise(self):
-        """Процедурный ТВ-шум для атмосферы старого монитора"""
         frames = []
-        density = int(4500 * self.scale_x * self.scale_y)
+        density = int(8000 * self.scale_x * self.scale_y)
         for _ in range(3):
             noise_surface = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
             for _ in range(density):
                 x = random.randint(0, self.w - 1)
                 y = random.randint(0, self.h - 1)
-                gray = random.randint(100, 200)
-                alpha = random.randint(20, 55)
+                gray = random.randint(50, 180)
+                alpha = random.randint(30, 80)
                 noise_surface.set_at((x, y), (gray, gray, gray, alpha))
             frames.append(noise_surface)
+        
+        # Сканирующие линии (как на старом ТВ)
+        self.scanlines = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+        for y in range(0, self.h, 3):
+            self.scanlines.fill((0, 0, 0, 40), (0, y, self.w, 1))
+        
+        # Виньетка (тёмные углы)
+        self.vignette = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+        for i in range(self.h):
+            alpha = int(150 * (i / self.h))
+            self.vignette.fill((0, 0, 0, alpha), (0, i, self.w, 1))
+            self.vignette.fill((0, 0, 0, alpha), (0, self.h - i - 1, self.w, 1))
+        
         return frames
 
     def draw_menu(self, model):
         sx, sy = self.scale_x, self.scale_y
 
-        # 1. Отрисовка фона с эффектом 25-го кадра (стробоскоп)
         if model.algem_state == "NORMAL":
             self.screen.blit(self.bg_images["NORMAL"], (0, 0))
         else:
             if model.glitch_timer % 2 == 0:
                 shake_x = random.randint(int(-15 * sx), int(15 * sx))
                 shake_y = random.randint(int(-6 * sy), int(6 * sy))
-                self.screen.blit(self.bg_images["GLITCH"], (shake_x, shake_y))
+                idx = (model.glitch_timer // 2) % len(self.glitch_images)
+                self.screen.blit(self.glitch_images[idx], (shake_x, shake_y))
             else:
                 self.screen.blit(self.bg_images["NORMAL"], (0, 0))
 
-        # 2. Накладываем слой анимированного ТВ-шума поверх картинки
+        # ТВ-шум
         self.screen.blit(self.noise_frames[model.noise_frame], (0, 0))
         
-        # Горизонтальные полосы искажения
-        if model.algem_state == "GLITCH" or random.random() < 0.1:
-            for _ in range(random.randint(1, 2)):
-                h_y = random.randint(0, self.h - 1)
-                h_h = random.randint(int(4 * sy), int(15 * sy))
-                line_surf = pygame.Surface((self.w, h_h), pygame.SRCALPHA)
-                line_surf.fill((255, 255, 255, 35))
-                self.screen.blit(line_surf, (0, h_y))
+        # Сканирующие линии (постоянно)
+        self.screen.blit(self.scanlines, (0, 0))
+        
+        # Горизонтальные помехи (часто)
+        for _ in range(random.randint(2, 5)):
+            y = random.randint(0, self.h - 1)
+            h_bar = random.randint(1, 4)
+            bar = pygame.Surface((self.w, h_bar), pygame.SRCALPHA)
+            bar.fill((255, 255, 255, random.randint(20, 60)))
+            self.screen.blit(bar, (0, y))
+        
+        # Виньетка
+        self.screen.blit(self.vignette, (0, 0))
 
-        # 3. Название игры аутентичным шрифтом
+        title_x = int(100 * sx)
         title_top = self.title_font.render("FIVE NIGHTS", True, (255, 255, 255))
         title_bot = self.title_font.render("AT RTF", True, (255, 255, 255))
-        self.screen.blit(title_top, (int(80 * sx), int(120 * sy)))
-        self.screen.blit(title_bot, (int(80 * sx), int(200 * sy)))
+        self.screen.blit(title_top, (title_x, int(120 * sy)))
+        self.screen.blit(title_bot, (title_x, int(195 * sy)))
+
+        btn_x = int(100 * sx)
         
-        # 4. Кнопка "New Game"
         color_new = (255, 255, 255) if model.hovered_button != "new_game" else (140, 140, 140)
         text_new = ">> New Game" if model.hovered_button == "new_game" else "   New Game"
         surf_new = self.button_font.render(text_new, True, color_new)
-        self.screen.blit(surf_new, (self.btn_new_game_rect.x, self.btn_new_game_rect.y))
-        
-        # 5. Кнопка "Exit"
+        self.screen.blit(surf_new, (btn_x, int(360 * sy)))
+
+        surf_cont = self.button_font.render("   Continue", True, (80, 80, 80))
+        self.screen.blit(surf_cont, (btn_x, int(410 * sy)))
+
         color_exit = (255, 255, 255) if model.hovered_button != "exit" else (140, 140, 140)
         text_exit = ">> Exit" if model.hovered_button == "exit" else "   Exit"
         surf_exit = self.button_font.render(text_exit, True, color_exit)
-        self.screen.blit(surf_exit, (self.btn_exit_rect.x, self.btn_exit_rect.y))
-        
+        self.screen.blit(surf_exit, (btn_x, int(460 * sy)))
+
         pygame.display.flip()

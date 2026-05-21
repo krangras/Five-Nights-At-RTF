@@ -1,46 +1,39 @@
 import pygame
-
 from model import MenuModel
 from presenter import MenuPresenter
 from view import MenuView
-
+from gameplay_model import GameModel
+from gameplay_view import GameView
+from gameplay_presenter import GamePresenter
 
 def main():
     pygame.init()
-    pygame.mixer.init()
-    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-    pygame.display.set_caption("Five Nights at RTF")
+    screen = pygame.display.set_mode((1280, 720))
     clock = pygame.time.Clock()
 
-    # Инициализируем компоненты MVP
-    model = MenuModel()
-    view = MenuView(screen)
-    presenter = MenuPresenter(model, view)
+    menu_m, menu_v = MenuModel(), MenuView(screen)
+    menu_p = MenuPresenter(menu_m, menu_v)
+    
+    game_m, game_v = GameModel(), GameView(screen)
+    game_p = GamePresenter(game_m, game_v)
 
-    current_state = "MENU"
-
-    # Основной цикл приложения
+    state = "MENU"
     while True:
-        if current_state == "MENU":
-            current_state = presenter.handle_events()
-            model.update()
-            view.draw_menu(model)
-        elif current_state == "START_GAME":
-            # Сюда мы позже добавим вызов логики самой игры (Офиса)
-            screen.fill((20, 20, 20))
-            font = pygame.font.SysFont("Arial", 40)
-            text = font.render(
-                "Загрузка Ночи 1... (Тут будет Офис)", True, (255, 255, 255)
-            )
-            screen.blit(text, (300, 350))
+        if state == "MENU":
+            state = menu_p.handle_events()
+            menu_m.update()
+            menu_v.draw_menu(menu_m)
+        elif state == "START_GAME":
+            state = "GAME"
+        elif state == "GAME":
+            for e in pygame.event.get():
+                if e.type == pygame.QUIT: return
+                game_p.handle_event(e)
+            
+            game_m.update()
+            game_v.draw(game_m)
             pygame.display.flip()
-
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    return
-
+        
         clock.tick(60)
 
-
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()

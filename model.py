@@ -2,7 +2,7 @@ import random
 
 class MenuModel:
     def __init__(self):
-        self.hovered_button = None  # Активная кнопка: "new_game", "exit" или None
+        self.hovered_button = None
         
         # Состояния анимации Кошмарного Алгема
         self.algem_state = "NORMAL"  # Может быть "NORMAL" или "GLITCH"
@@ -17,7 +17,6 @@ class MenuModel:
             # Шанс 0.3% каждый кадр, что Алгем на мгновение исказится
             if random.random() < 0.003:
                 self.algem_state = "GLITCH"
-                # Длительность от 10 до 20 кадров для выразительного эффекта 25-го кадра (~0.2-0.3 сек)
                 self.glitch_timer = random.randint(10, 20)  
         else:
             self.glitch_timer -= 1
