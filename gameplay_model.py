@@ -7,6 +7,12 @@ class GameModel:
         self.door_right_closed = False
         self.target_look = 0.0
         self.current_look = 0.0
+        self.server_state = "OFF"
+        self.server_blink = None
+        self.tablet_open = False
+        self.tablet_animating = False
+        self.tablet_anim_frame = 0
+        self.camera_idx = 0
 
     def update(self):
         self.current_look += (self.target_look - self.current_look) * 0.12

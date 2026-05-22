@@ -17,7 +17,7 @@ class MenuModel:
             # Шанс 0.3% каждый кадр, что Алгем на мгновение исказится
             if random.random() < 0.003:
                 self.algem_state = "GLITCH"
-                self.glitch_timer = random.randint(10, 20)  
+                self.glitch_timer = random.randint(20, 40)  
         else:
             self.glitch_timer -= 1
             if self.glitch_timer <= 0:

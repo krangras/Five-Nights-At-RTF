@@ -49,6 +49,7 @@ class MenuView:
 
         glitch_paths = [
             "assets/menu/algem_is_trying_to_escape.jpg",
+            "assets/menu/algem_is_watching_you.jpg",
             "assets/menu/empty_room.jpeg",
         ]
         glitch_raw = []

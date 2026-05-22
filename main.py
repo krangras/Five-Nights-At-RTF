@@ -31,6 +31,7 @@ def main():
                 game_p.handle_event(e)
             
             game_m.update()
+            game_p.update()
             game_v.draw(game_m)
             pygame.display.flip()
         
