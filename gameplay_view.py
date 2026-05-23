@@ -1,5 +1,6 @@
 import pygame
 import random
+import os
 
 def _normalize_brightness(images, target=15):
     for img in images:
@@ -48,11 +49,88 @@ class GameView:
 
         self.max_offset = max(0, target_size[0] - screen_w)
         self.screen_w = screen_w
-        self.font = pygame.font.SysFont("OCR-A", 30)
+        self.screen_h = screen_h
+        self.font = pygame.font.Font("assets/fonts/OCR-A.ttf", 30)
         self.switch_timer = random.randint(60, 180)
         self.current_idx = 0
         self.scale = scale
         self.server_hotspot = pygame.Rect(1151, 163, 131, 244)
+
+        # Кнопка TAB в офисе (изображение на столе)
+        raw_tab = pygame.image.load("assets/cctv/tabbutton.png").convert_alpha()
+        self.tabbutton_surf = pygame.transform.smoothscale(raw_tab, (int(600 * scale), int(60 * scale)))
+        self.tab_button_rect = pygame.Rect(662, 758, 600, 60)  # оригинальные координаты (1923×818)
+        self.tab_button_hovered = False
+
+        # Область экрана планшета — отступаем от краёв, чтобы не задеть рамку
+        self.screen_rect = pygame.Rect(2, 2, screen_w - 32, screen_h - 5)
+
+        # Иконки камер из assets/cctv/ — загружаются, маппинг по номеру камеры
+        self._cam_icons = {}
+        icon_map = {1: "cam1a.png", 2: "cam2.png", 3: "cam3.png", 4: "cam4a.png"}
+        for idx, fname in icon_map.items():
+            img = pygame.image.load(f"assets/cctv/{fname}").convert_alpha()
+            self._cam_icons[idx] = pygame.transform.smoothscale(img, (48, 40))
+
+        # Мини-карта (справа в планшете, uniform scale)
+        raw_map = pygame.image.load("assets/cameras/camera_map.png").convert_alpha()
+        mm_map_w, mm_map_h = raw_map.get_size()  # 595×550
+        self._mm_scale = 500 / mm_map_w  # uniform scale ≈ 0.84
+        mm_w, mm_h = 500, int(mm_map_h * self._mm_scale)
+        self._minimap_bg = pygame.transform.smoothscale(raw_map, (mm_w, mm_h))
+        self._minimap_bg.set_alpha(150)
+        self._minimap_pos = (self.screen_rect.right - mm_w - 5, self.screen_rect.bottom - mm_h - 5)
+        self._minimap_size = (mm_w, mm_h)
+
+        # Координаты иконок в пространстве мини-карты (500×462, scale≈0.84)
+        # пересчитано: scaled = original * self._mm_scale
+        self._minimap_icon_positions = {
+            1: (218, 325),  # MAIN HALL  — cam1a.png  (на 16 выше исходной)
+            2: (36,  130),  # COWORKING  — cam2.png   (на 80 ниже исходной)
+            3: (90,  214),  # WEST HALL  — cam3.png
+            4: (270, 263),  # TOILETS    — cam4a.png
+        }
+
+        # Камеры — каждая грузится, масштабируется под высоту screen_rect, затемняется и тонируется
+        from gameplay_model import CAMERAS, CAMERA_COUNT
+        self.camera_surfaces = {}
+        self.camera_max_offsets = {}
+        cam_h = self.screen_rect.h
+        for idx, _display_id, name, fname in CAMERAS:
+            raw = pygame.image.load(f"assets/cameras/{fname}").convert()
+            scale = cam_h / raw.get_height()
+            cw = int(raw.get_width() * scale)
+            surf = pygame.transform.smoothscale(raw, (cw, cam_h))
+            dark = pygame.Surface((cw, cam_h))
+            dark.fill((170, 170, 170))
+            surf.blit(dark, (0, 0), special_flags=pygame.BLEND_MULT)
+            purple = pygame.Surface((cw, cam_h), pygame.SRCALPHA)
+            purple.fill((40, 15, 60, 55))
+            surf.blit(purple, (0, 0))
+            self.camera_surfaces[idx] = surf
+            self.camera_max_offsets[idx] = max(0, cw - self.screen_rect.w)
+
+        # CRT curvature mask + deep vignette
+        self.crt_mask = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
+        cx, cy = screen_w / 2, screen_h / 2
+        max_dist = ((cx) ** 2 + (cy) ** 2) ** 0.5
+        for y in range(screen_h):
+            for x in range(screen_w):
+                dx, dy = x - cx, y - cy
+                r = ((dx * dx + dy * dy) ** 0.5) / max_dist
+                a = int(min(255, r * r * 230))
+                self.crt_mask.set_at((x, y), (0, 0, 0, a))
+
+        # Шум/помехи камер (noice*.jpg, noice*.png)
+        self._noise_frames = []
+        for fname in sorted(os.listdir("assets/cctv")):
+            if fname.lower().startswith("noice") and (fname.lower().endswith(".png") or fname.lower().endswith(".jpg")):
+                img = pygame.image.load(f"assets/cctv/{fname}").convert()
+                s = pygame.transform.smoothscale(img, (screen_w, screen_h))
+                s.set_alpha(45)
+                self._noise_frames.append(s)
+        self._noise_idx = 0
+        self._noise_timer = 0
 
         # Планшет — 10 отдельных картинок без фона
         self.cam_frames = []
@@ -64,6 +142,84 @@ class GameView:
         img_x = (mouse_pos[0] + offset) / self.scale
         img_y = mouse_pos[1] / self.scale
         return self.server_hotspot.collidepoint(img_x, img_y)
+
+    def is_tabbutton_clicked(self, mouse_pos):
+        if mouse_pos is None:
+            return False
+        tx = self.screen_rect.centerx - self.tabbutton_surf.get_width() // 2
+        ty = self.screen_rect.bottom - self.tabbutton_surf.get_height() - 5
+        rect = pygame.Rect(tx, ty, *self.tabbutton_surf.get_size())
+        return rect.collidepoint(mouse_pos)
+
+    def _draw_cctv_effects(self, camera_idx):
+        # Шум/помехи
+        self._noise_timer -= 1
+        if self._noise_timer <= 0:
+            self._noise_idx = (self._noise_idx + 1) % len(self._noise_frames)
+            self._noise_timer = random.randint(1, 3)
+        self.screen.blit(self._noise_frames[self._noise_idx], (0, 0))
+
+        # CRT curvature mask
+        self.screen.blit(self.crt_mask, (0, 0))
+
+        from gameplay_model import CAMERAS
+        cam_info = next(((d, n) for i, d, n, _ in CAMERAS if i == camera_idx), ("??", "???"))
+        self._draw_camera_ui(*cam_info)
+
+    def _draw_camera_ui(self, display_id, cam_name):
+        # RECORD light (blinking)
+        blink = (pygame.time.get_ticks() // 600) % 2 == 0
+        if blink:
+            pygame.draw.circle(self.screen, (255, 0, 0), (self.screen_w - 78, 28), 5)
+            glow = pygame.Surface((24, 24), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (255, 0, 0, 50), (12, 12), 12)
+            self.screen.blit(glow, (self.screen_w - 90, 16), special_flags=pygame.BLEND_ADD)
+
+        # REC text
+        rec_surf = self.font.render("REC", True, (200, 30, 30))
+        self.screen.blit(rec_surf, (self.screen_w - 70, 36))
+
+        # Camera label
+        label = f"CAM {display_id}  {cam_name}"
+        label_surf = self.font.render(label, True, (180, 180, 190))
+        self.screen.blit(label_surf, (15, 12))
+
+        # Corruption on UI text (static interference)
+        if random.random() < 0.15:
+            for _ in range(random.randint(1, 4)):
+                cx = random.randint(self.screen_w - 90, self.screen_w - 30)
+                cy = random.randint(15, 50)
+                c = random.choice([(255, 255, 255), (0, 0, 0), (100, 100, 100)])
+                self.screen.set_at((cx, cy), c)
+
+    def _draw_minimap(self, model):
+        mx, my = self._minimap_pos
+        self.screen.blit(self._minimap_bg, (mx, my))
+
+        for cidx, (cx, cy) in self._minimap_icon_positions.items():
+            icon = self._cam_icons[cidx]
+            ix = mx + cx - icon.get_width() // 2
+            iy = my + cy - icon.get_height() // 2
+
+            if cidx == model.camera_idx:
+                hl = pygame.Surface((icon.get_width() + 6, icon.get_height() + 6), pygame.SRCALPHA)
+                hl.fill((40, 220, 40, 100))
+                self.screen.blit(hl, (ix - 3, iy - 3))
+                pygame.draw.rect(self.screen, (40, 220, 40), (ix - 3, iy - 3, icon.get_width() + 6, icon.get_height() + 6), 1)
+
+            self.screen.blit(icon, (ix, iy))
+
+    def get_minimap_hotspot(self, screen_pos):
+        mx, my = self._minimap_pos
+        rx, ry = screen_pos
+        for cidx, (cx, cy) in self._minimap_icon_positions.items():
+            icon = self._cam_icons[cidx]
+            iw, ih = icon.get_size()
+            ix = mx + cx - iw // 2
+            iy = my + cy - ih // 2
+            if ix <= rx <= ix + iw and iy <= ry <= iy + ih:
+                return (cidx, f"CAM {cidx:02d}")
+        return None
 
     def draw(self, model):
         offset = int((model.current_look + 1) / 2 * self.max_offset)
@@ -84,13 +240,35 @@ class GameView:
 
         if model.server_state != "OFF":
             if model.door_left_closed:
-                pygame.draw.rect(self.screen, (0, 0, 0), (0, 0, 300, 720))
+                pygame.draw.rect(self.screen, (0, 0, 0), (0, 0, 300, self.screen_h))
             if model.door_right_closed:
-                pygame.draw.rect(self.screen, (0, 0, 0), (980, 0, 300, 720))
+                pygame.draw.rect(self.screen, (0, 0, 0), (self.screen_w - 300, 0, 300, self.screen_h))
 
         if model.tablet_open or model.tablet_animating:
-            idx = model.tablet_anim_frame if model.tablet_animating else model.camera_idx
-            self.screen.blit(self.cam_frames[idx], (0, 0))
+            if model.tablet_animating:
+                self.screen.blit(self.cam_frames[model.tablet_anim_frame], (0, 0))
+            else:
+                # Планшет полностью открыт — рамка + контент камеры
+                self.screen.blit(self.cam_frames[9], (0, 0))
+                old_clip = self.screen.get_clip()
+                self.screen.set_clip(self.screen_rect)
+
+                # Прямой эфир камеры с панорамированием
+                cam_surf = self.camera_surfaces.get(model.camera_idx)
+                cam_max_off = self.camera_max_offsets.get(model.camera_idx, 0)
+                if cam_surf is not None:
+                    off = int((model.cam_look + 1) / 2 * cam_max_off)
+                    self.screen.blit(cam_surf, (self.screen_rect.x - off, self.screen_rect.y))
+                self._draw_cctv_effects(model.camera_idx)
+                # Мини-карта внутри планшета
+                self._draw_minimap(model)
+
+                self.screen.set_clip(old_clip)
+
+        # Кнопка TAB — фиксированная позиция (одинаково в офисе и на планшете)
+        tx = self.screen_rect.centerx - self.tabbutton_surf.get_width() // 2
+        ty = self.screen_rect.bottom - self.tabbutton_surf.get_height() - 5
+        self.screen.blit(self.tabbutton_surf, (tx, ty))
 
         if model.server_state != "OFF":
             status = f"Power: {int(model.power)}% | Time: {model.hour} AM"

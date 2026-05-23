@@ -15,8 +15,8 @@ class MenuView:
         font_size_title = int(65 * self.scale_y)
         font_size_btn = int(30 * self.scale_y)
         try:
-            self.title_font = pygame.font.Font("OCR-A.ttf", font_size_title)
-            self.button_font = pygame.font.Font("OCR-A.ttf", font_size_btn)
+            self.title_font = pygame.font.Font("assets/fonts/OCR-A.ttf", font_size_title)
+            self.button_font = pygame.font.Font("assets/fonts/OCR-A.ttf", font_size_btn)
         except IOError:
             print("Шрифт OCR-A.ttf не найден! Использую Arial.")
             self.title_font = pygame.font.SysFont("Arial", font_size_title, bold=True)

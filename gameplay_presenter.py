@@ -1,4 +1,5 @@
 import pygame
+from gameplay_model import CAMERA_COUNT
 
 class GamePresenter:
     def __init__(self, model, view):
@@ -23,6 +24,18 @@ class GamePresenter:
         except pygame.error:
             print("sounds/blip3.mp3 не найден")
             self.snd_tablet = None
+        try:
+            self.snd_cam_switch = pygame.mixer.Sound("sounds/camera_switch.wav")
+        except pygame.error:
+            print("sounds/camera_switch.wav не найден")
+            self.snd_cam_switch = None
+        try:
+            self.snd_cam_init = pygame.mixer.Sound("sounds/camera_init.wav")
+        except pygame.error:
+            print("sounds/camera_init.wav не найден")
+            self.snd_cam_init = None
+        self._camera_inited = False
+        self._tab_prev_hovered = False
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN:
@@ -39,6 +52,10 @@ class GamePresenter:
                     self._anim_dir = 1
                     self.model.tablet_anim_frame = 0
                     self._anim_timer = 2
+                    if not self._camera_inited:
+                        self._camera_inited = True
+                        if self.snd_cam_init:
+                            self.snd_cam_init.play()
                     if self.snd_tablet:
                         self.snd_tablet.play()
                 elif not self.model.tablet_animating:
@@ -50,11 +67,37 @@ class GamePresenter:
                         self.snd_tablet.play()
             if self.model.tablet_open:
                 if event.key == pygame.K_RIGHT:
-                    self.model.camera_idx = (self.model.camera_idx + 1) % 10
+                    self.model.camera_idx = (self.model.camera_idx % CAMERA_COUNT) + 1
+                    if self.snd_cam_switch:
+                        self.snd_cam_switch.play()
                 if event.key == pygame.K_LEFT:
-                    self.model.camera_idx = (self.model.camera_idx - 1) % 10
+                    self.model.camera_idx = ((self.model.camera_idx - 2) % CAMERA_COUNT) + 1
+                    if self.snd_cam_switch:
+                        self.snd_cam_switch.play()
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            # Клик по мини-карте
+            hit = self.view.get_minimap_hotspot(event.pos)
+            if hit is not None:
+                cam_idx, _ = hit
+                if not self.model.tablet_open:
+                    self.model.tablet_open = True
+                    self.model.tablet_animating = True
+                    self._anim_dir = 1
+                    self.model.tablet_anim_frame = 0
+                    self._anim_timer = 2
+                    if self.snd_tablet:
+                        self.snd_tablet.play()
+                self.model.camera_idx = cam_idx
+                if self.snd_cam_switch:
+                    self.snd_cam_switch.play()
+                return
+
+            # Когда планшет открыт — клики не проходят к серверу
+            if self.model.tablet_open and not self.model.tablet_animating:
+                if self.view.screen_rect.collidepoint(event.pos):
+                    return
+
             if self.model.server_state in ("OFF", "ON"):
                 offset = int((self.model.current_look + 1) / 2 * self.view.max_offset)
                 if self.view.is_server_clicked(event.pos, offset):
@@ -78,6 +121,32 @@ class GamePresenter:
             w = self.view.screen_w
             self.model.target_look = (event.pos[0] / w) * 2 - 1
             self.model.target_look = max(-1.0, min(1.0, self.model.target_look))
+            # Ховер кнопки TAB — переключение планшета
+            if not self.model.tablet_animating:
+                offset = int((self.model.current_look + 1) / 2 * self.view.max_offset)
+                self.view.tab_button_hovered = self.view.is_tabbutton_clicked(event.pos)
+                if self.view.tab_button_hovered and not self._tab_prev_hovered:
+                    if not self.model.tablet_open:
+                        self.model.tablet_open = True
+                        self.model.tablet_animating = True
+                        self._anim_dir = 1
+                        self.model.tablet_anim_frame = 0
+                        self._anim_timer = 2
+                        if not self._camera_inited:
+                            self._camera_inited = True
+                            if self.snd_cam_init:
+                                self.snd_cam_init.play()
+                    else:
+                        self.model.tablet_animating = True
+                        self._anim_dir = -1
+                        self.model.tablet_anim_frame = 9
+                        self._anim_timer = 2
+                    if self.snd_tablet:
+                        self.snd_tablet.play()
+                self._tab_prev_hovered = self.view.tab_button_hovered
+            else:
+                self.view.tab_button_hovered = False
+                self._tab_prev_hovered = False
 
     def update(self):
         if self.model.server_state == "TURNING_ON":
@@ -107,7 +176,6 @@ class GamePresenter:
                     self.model.tablet_animating = False
                     if self._anim_dir == 1:
                         self.model.tablet_anim_frame = 9
-                        self.model.camera_idx = 9
                     else:
                         self.model.tablet_open = False
                 else:
