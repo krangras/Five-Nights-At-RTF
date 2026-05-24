@@ -50,6 +50,8 @@ class GameView:
         self.max_offset = max(0, target_size[0] - screen_w)
         self.screen_w = screen_w
         self.screen_h = screen_h
+        self._brightness_overlay = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
+        self._brightness_overlay.fill((255, 255, 255, 13))
         self.font = pygame.font.Font("assets/fonts/OCR-A.ttf", 30)
         self.switch_timer = random.randint(60, 180)
         self.current_idx = 0
@@ -67,10 +69,10 @@ class GameView:
 
         # Иконки камер из assets/cctv/ — загружаются, маппинг по номеру камеры
         self._cam_icons = {}
-        icon_map = {1: "cam1a.png", 2: "cam2.png", 3: "cam3.png", 4: "cam4a.png"}
+        icon_map = {1: "cam1.png", 2: "cam2.png", 3: "cam3.png", 4: "cam4.png", 5: "cam5.png", 6: "cam6.png", 7: "cam7.png"}
         for idx, fname in icon_map.items():
             img = pygame.image.load(f"assets/cctv/{fname}").convert_alpha()
-            self._cam_icons[idx] = pygame.transform.smoothscale(img, (48, 40))
+            self._cam_icons[idx] = pygame.transform.smoothscale(img, (30, 25))
 
         # Мини-карта (справа в планшете, uniform scale)
         raw_map = pygame.image.load("assets/cameras/camera_map.png").convert_alpha()
@@ -82,13 +84,19 @@ class GameView:
         self._minimap_pos = (self.screen_rect.right - mm_w - 5, self.screen_rect.bottom - mm_h - 5)
         self._minimap_size = (mm_w, mm_h)
 
-        # Координаты иконок в пространстве мини-карты (500×462, scale≈0.84)
-        # пересчитано: scaled = original * self._mm_scale
+        self._cam_blink_start = 0
+        self._prev_camera_idx = 1
+
+        # Координаты центров иконок в пространстве мини-карты (500×462)
+        # Кроме коворкинга — у него координата левого верхнего угла
         self._minimap_icon_positions = {
-            1: (218, 325),  # MAIN HALL  — cam1a.png  (на 16 выше исходной)
-            2: (36,  130),  # COWORKING  — cam2.png   (на 80 ниже исходной)
-            3: (90,  214),  # WEST HALL  — cam3.png
-            4: (270, 263),  # TOILETS    — cam4a.png
+            1: (207, 334),  # MAIN HALL — самый низ
+            2: (447, 303),  # ALGEM'S ROOM
+            3: (270, 279),  # TOILETS
+            4: (88,  213),  # WEST HALL
+            5: (331, 120),  # CANTEEN — чуть правее и ниже в углу
+            6: (32,  116),  # COWORKING
+            7: (148,  65),  # SERVICE ROOM — самый верх
         }
 
         # Камеры — каждая грузится, масштабируется под высоту screen_rect, затемняется и тонируется
@@ -109,6 +117,31 @@ class GameView:
             surf.blit(purple, (0, 0))
             self.camera_surfaces[idx] = surf
             self.camera_max_offsets[idx] = max(0, cw - self.screen_rect.w)
+
+        # Альтернативный фон для камеры Алгема, когда он в комнате
+        self._algem_room_surf = None
+        self._algem_light_beep = None
+
+        def _load_cam(path):
+            try:
+                raw = pygame.image.load(path).convert()
+                s = cam_h / raw.get_height()
+                cw = int(raw.get_width() * s)
+                surf = pygame.transform.smoothscale(raw, (cw, cam_h))
+                dark = pygame.Surface((cw, cam_h))
+                dark.fill((170, 170, 170))
+                surf.blit(dark, (0, 0), special_flags=pygame.BLEND_MULT)
+                purple = pygame.Surface((cw, cam_h), pygame.SRCALPHA)
+                purple.fill((40, 15, 60, 55))
+                surf.blit(purple, (0, 0))
+                return surf
+            except pygame.error:
+                return None
+
+        self._algem_room_surf = _load_cam("assets/cameras/algems_is_reading_in_his_room.png")
+        self._algem_light_beep = _load_cam("assets/cameras/algems' room_light_beep.png")
+        self._algem_light_on = False
+        self._algem_light_timer = 0
 
         # CRT curvature mask + deep vignette
         self.crt_mask = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
@@ -132,6 +165,14 @@ class GameView:
         self._noise_idx = 0
         self._noise_timer = 0
 
+        # Те же помехи на полную непрозрачность для глитча при уходе Алгема
+        self._glitch_frames = []
+        for fname in sorted(os.listdir("assets/cctv")):
+            if fname.lower().startswith("noice") and (fname.lower().endswith(".png") or fname.lower().endswith(".jpg")):
+                img = pygame.image.load(f"assets/cctv/{fname}").convert()
+                s = pygame.transform.smoothscale(img, (screen_w, screen_h))
+                self._glitch_frames.append(s)
+
         # Планшет — 10 отдельных картинок без фона
         self.cam_frames = []
         for i in range(1, 11):
@@ -151,13 +192,18 @@ class GameView:
         rect = pygame.Rect(tx, ty, *self.tabbutton_surf.get_size())
         return rect.collidepoint(mouse_pos)
 
-    def _draw_cctv_effects(self, camera_idx):
+    def _draw_cctv_effects(self, camera_idx, model):
         # Шум/помехи
         self._noise_timer -= 1
         if self._noise_timer <= 0:
             self._noise_idx = (self._noise_idx + 1) % len(self._noise_frames)
             self._noise_timer = random.randint(1, 3)
         self.screen.blit(self._noise_frames[self._noise_idx], (0, 0))
+
+        # Всплеск помех при уходе Алгема — полная непрозрачность, быстрая смена
+        if model.algem_trigger > 0 and self._glitch_frames:
+            idx = (pygame.time.get_ticks() // 50) % len(self._glitch_frames)
+            self.screen.blit(self._glitch_frames[idx], (0, 0))
 
         # CRT curvature mask
         self.screen.blit(self.crt_mask, (0, 0))
@@ -196,28 +242,40 @@ class GameView:
         mx, my = self._minimap_pos
         self.screen.blit(self._minimap_bg, (mx, my))
 
+        if model.camera_idx != self._prev_camera_idx:
+            self._cam_blink_start = pygame.time.get_ticks()
+            self._prev_camera_idx = model.camera_idx
+
+        blink_green = ((pygame.time.get_ticks() - self._cam_blink_start) // 1000) % 2 == 0
+
         for cidx, (cx, cy) in self._minimap_icon_positions.items():
             icon = self._cam_icons[cidx]
             ix = mx + cx - icon.get_width() // 2
             iy = my + cy - icon.get_height() // 2
 
-            if cidx == model.camera_idx:
-                hl = pygame.Surface((icon.get_width() + 6, icon.get_height() + 6), pygame.SRCALPHA)
-                hl.fill((40, 220, 40, 100))
-                self.screen.blit(hl, (ix - 3, iy - 3))
-                pygame.draw.rect(self.screen, (40, 220, 40), (ix - 3, iy - 3, icon.get_width() + 6, icon.get_height() + 6), 1)
-
             self.screen.blit(icon, (ix, iy))
+
+            if cidx == model.camera_idx:
+                color = (40, 220, 40) if blink_green else (100, 100, 100)
+            else:
+                color = (80, 80, 80)
+            tint = pygame.Surface(icon.get_size(), pygame.SRCALPHA)
+            tint.fill((*color, 140))
+            self.screen.blit(tint, (ix, iy))
+
+            pygame.draw.rect(self.screen, (255, 255, 255),
+                             (ix - 3, iy - 3, icon.get_width() + 6, icon.get_height() + 6), 1)
 
     def get_minimap_hotspot(self, screen_pos):
         mx, my = self._minimap_pos
         rx, ry = screen_pos
+        pad = 6
         for cidx, (cx, cy) in self._minimap_icon_positions.items():
             icon = self._cam_icons[cidx]
             iw, ih = icon.get_size()
             ix = mx + cx - iw // 2
             iy = my + cy - ih // 2
-            if ix <= rx <= ix + iw and iy <= ry <= iy + ih:
+            if ix - pad <= rx <= ix + iw + pad and iy - pad <= ry <= iy + ih + pad:
                 return (cidx, f"CAM {cidx:02d}")
         return None
 
@@ -254,12 +312,29 @@ class GameView:
                 self.screen.set_clip(self.screen_rect)
 
                 # Прямой эфир камеры с панорамированием
-                cam_surf = self.camera_surfaces.get(model.camera_idx)
+                if model.camera_idx == 2:
+                    if model.algem_location == 2 and self._algem_room_surf:
+                        cam_surf = self._algem_room_surf
+                    else:
+                        self._algem_light_timer -= 1
+                        if self._algem_light_timer <= 0:
+                            self._algem_light_on = not self._algem_light_on
+                            self._algem_light_timer = random.randint(3, 12)
+                        if self._algem_light_beep and self._algem_light_on:
+                            cam_surf = self._algem_light_beep
+                        else:
+                            cam_surf = self.camera_surfaces.get(2)
+                            dark = pygame.Surface(cam_surf.get_size(), pygame.SRCALPHA)
+                            dark.fill((0, 0, 0, 80))
+                            cam_surf = cam_surf.copy()
+                            cam_surf.blit(dark, (0, 0))
+                else:
+                    cam_surf = self.camera_surfaces.get(model.camera_idx)
                 cam_max_off = self.camera_max_offsets.get(model.camera_idx, 0)
                 if cam_surf is not None:
                     off = int((model.cam_look + 1) / 2 * cam_max_off)
                     self.screen.blit(cam_surf, (self.screen_rect.x - off, self.screen_rect.y))
-                self._draw_cctv_effects(model.camera_idx)
+                self._draw_cctv_effects(model.camera_idx, model)
                 # Мини-карта внутри планшета
                 self._draw_minimap(model)
 
@@ -273,3 +348,5 @@ class GameView:
         if model.server_state != "OFF":
             status = f"Power: {int(model.power)}% | Time: {model.hour} AM"
             self.screen.blit(self.font.render(status, True, (255, 255, 255)), (20, 20))
+
+        self.screen.blit(self._brightness_overlay, (0, 0))

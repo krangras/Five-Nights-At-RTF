@@ -37,6 +37,21 @@ class GamePresenter:
         self._camera_inited = False
         self._tab_prev_hovered = False
 
+        try:
+            self.snd_ambience = pygame.mixer.Sound("sounds/ambience.wav")
+            self.snd_ambience.set_volume(0.35)
+            self.snd_ambience.play(-1)
+        except pygame.error:
+            print("sounds/ambience.wav не найден")
+            self.snd_ambience = None
+
+        try:
+            self.snd_algem_leave = pygame.mixer.Sound("sounds/alegem_is_leaving.wav")
+        except pygame.error:
+            print("sounds/alegem_is_leaving.wav не найден")
+            self.snd_algem_leave = None
+        self._prev_algem_trigger = 0
+
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_q:
@@ -65,6 +80,7 @@ class GamePresenter:
                     self._anim_timer = 2
                     if self.snd_tablet:
                         self.snd_tablet.play()
+
             if self.model.tablet_open:
                 if event.key == pygame.K_RIGHT:
                     self.model.camera_idx = (self.model.camera_idx % CAMERA_COUNT) + 1
@@ -136,13 +152,15 @@ class GamePresenter:
                             self._camera_inited = True
                             if self.snd_cam_init:
                                 self.snd_cam_init.play()
+                        if self.snd_tablet:
+                            self.snd_tablet.play()
                     else:
                         self.model.tablet_animating = True
                         self._anim_dir = -1
                         self.model.tablet_anim_frame = 9
                         self._anim_timer = 2
-                    if self.snd_tablet:
-                        self.snd_tablet.play()
+                        if self.snd_tablet:
+                            self.snd_tablet.play()
                 self._tab_prev_hovered = self.view.tab_button_hovered
             else:
                 self.view.tab_button_hovered = False
@@ -180,3 +198,12 @@ class GamePresenter:
                         self.model.tablet_open = False
                 else:
                     self._anim_timer = 2
+
+        # Звук помех при уходе Алгема
+        if self.model.algem_trigger > 0 and self._prev_algem_trigger == 0:
+            if self.snd_algem_leave:
+                self.snd_algem_leave.play(-1)
+        elif self.model.algem_trigger == 0 and self._prev_algem_trigger > 0:
+            if self.snd_algem_leave:
+                self.snd_algem_leave.stop()
+        self._prev_algem_trigger = self.model.algem_trigger

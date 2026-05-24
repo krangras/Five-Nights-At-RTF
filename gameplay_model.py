@@ -1,11 +1,15 @@
 import math
+import random
 
 # Camera definitions: (idx, display_name, filename)
 CAMERAS = [
-    (1, "01A", "MAIN HALL",  "main_hall.png"),
-    (2, "05",  "COWORKING",  "coworking.png"),
-    (3, "03",  "WEST HALL",  "westhall.png"),
-    (4, "04A", "TOILETS",    "toilets.png"),
+    (1, "01", "MAIN HALL",   "main_hall.png"),
+    (2, "02", "ALGEM'S ROOM", "algems' room.png"),
+    (3, "03", "TOILETS",     "toilets.png"),
+    (4, "04", "WEST HALL",   "westhall.png"),
+    (5, "05", "CANTEEN",    "canteen.png"),
+    (6, "06", "COWORKING",  "coworking.png"),
+    (7, "07", "SERVICE ROOM", "service_room.png"),
 ]
 CAMERA_COUNT = len(CAMERAS)
 
@@ -30,6 +34,9 @@ class GameModel:
         self.cam_hold_timer = 0
         self.cam_move_progress = 0.0
         self.cam_dir = 1
+        self.algem_location = 2  # стартует в своей комнате (камера 2)
+        self.algem_timer = random.randint(300, 900)  # кадров до ухода из комнаты
+        self.algem_trigger = 0  # счётчик эффекта помех при уходе
 
     def update(self):
         self.current_look += (self.target_look - self.current_look) * 0.12
@@ -59,3 +66,12 @@ class GameModel:
         if self.timer >= 600:
             self.hour += 1
             self.timer = 0
+
+        if self.algem_location == 2:
+            self.algem_timer -= 1
+            if self.algem_timer <= 0:
+                self.algem_location = 0  # ушёл из комнаты
+                self.algem_trigger = 60  # 1 сек помех
+
+        if self.algem_trigger > 0:
+            self.algem_trigger -= 1
