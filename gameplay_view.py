@@ -118,9 +118,8 @@ class GameView:
             self.camera_surfaces[idx] = surf
             self.camera_max_offsets[idx] = max(0, cw - self.screen_rect.w)
 
-        # Альтернативный фон для камеры Алгема, когда он в комнате
+        # Альтернативные фоны для камер
         self._algem_room_surf = None
-        self._algem_light_beep = None
 
         def _load_cam(path):
             try:
@@ -139,9 +138,8 @@ class GameView:
                 return None
 
         self._algem_room_surf = _load_cam("assets/cameras/algems_is_reading_in_his_room.png")
-        self._algem_light_beep = _load_cam("assets/cameras/algems' room_light_beep.png")
-        self._algem_light_on = False
-        self._algem_light_timer = 0
+        self._algem_main_hall_surf = _load_cam("assets/cameras/main_hall_with_algem.png")
+        self._algem_mainhall_watching = _load_cam("assets/cameras/algem_mainhall_is_watching_you.png")
 
         # CRT curvature mask + deep vignette
         self.crt_mask = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
@@ -153,6 +151,15 @@ class GameView:
                 r = ((dx * dx + dy * dy) ** 0.5) / max_dist
                 a = int(min(255, r * r * 230))
                 self.crt_mask.set_at((x, y), (0, 0, 0, a))
+
+        # Индикаторы энергии
+        self._power_icons = {}
+        for name in ["veryhigh", "high", "premid", "mid", "low"]:
+            try:
+                img = pygame.image.load(f"assets/cctv/{name}.png").convert_alpha()
+                self._power_icons[name] = pygame.transform.smoothscale(img, (32, 32))
+            except pygame.error:
+                self._power_icons[name] = None
 
         # Шум/помехи камер (noice*.jpg, noice*.png)
         self._noise_frames = []
@@ -200,8 +207,9 @@ class GameView:
             self._noise_timer = random.randint(1, 3)
         self.screen.blit(self._noise_frames[self._noise_idx], (0, 0))
 
-        # Всплеск помех при уходе Алгема — полная непрозрачность, быстрая смена
-        if model.algem_trigger > 0 and self._glitch_frames:
+        # Всплеск помех только на камере, с которой ушёл или на которую пришёл Алгем
+        on_target_cam = camera_idx in (model.algem_prev_location, model.algem_location)
+        if model.algem_trigger > 0 and on_target_cam and self._glitch_frames:
             idx = (pygame.time.get_ticks() // 50) % len(self._glitch_frames)
             self.screen.blit(self._glitch_frames[idx], (0, 0))
 
@@ -312,22 +320,23 @@ class GameView:
                 self.screen.set_clip(self.screen_rect)
 
                 # Прямой эфир камеры с панорамированием
+                loc = model.algem_location
                 if model.camera_idx == 2:
-                    if model.algem_location == 2 and self._algem_room_surf:
+                    if loc == 2 and self._algem_room_surf:
                         cam_surf = self._algem_room_surf
                     else:
-                        self._algem_light_timer -= 1
-                        if self._algem_light_timer <= 0:
-                            self._algem_light_on = not self._algem_light_on
-                            self._algem_light_timer = random.randint(3, 12)
-                        if self._algem_light_beep and self._algem_light_on:
-                            cam_surf = self._algem_light_beep
-                        else:
-                            cam_surf = self.camera_surfaces.get(2)
-                            dark = pygame.Surface(cam_surf.get_size(), pygame.SRCALPHA)
-                            dark.fill((0, 0, 0, 80))
-                            cam_surf = cam_surf.copy()
-                            cam_surf.blit(dark, (0, 0))
+                        cam_surf = self.camera_surfaces.get(2)
+                        dark = pygame.Surface(cam_surf.get_size(), pygame.SRCALPHA)
+                        dark.fill((0, 0, 0, 80))
+                        cam_surf = cam_surf.copy()
+                        cam_surf.blit(dark, (0, 0))
+                elif model.camera_idx == 1 and loc == 1:
+                    if model.algem_main_hall_sprite == 0 and self._algem_main_hall_surf:
+                        cam_surf = self._algem_main_hall_surf
+                    elif model.algem_main_hall_sprite == 1 and self._algem_mainhall_watching:
+                        cam_surf = self._algem_mainhall_watching
+                    else:
+                        cam_surf = self.camera_surfaces.get(1)
                 else:
                     cam_surf = self.camera_surfaces.get(model.camera_idx)
                 cam_max_off = self.camera_max_offsets.get(model.camera_idx, 0)
@@ -346,7 +355,17 @@ class GameView:
         self.screen.blit(self.tabbutton_surf, (tx, ty))
 
         if model.server_state != "OFF":
-            status = f"Power: {int(model.power)}% | Time: {model.hour} AM"
-            self.screen.blit(self.font.render(status, True, (255, 255, 255)), (20, 20))
+            # Выбор иконки энергии по уровню
+            p = model.power
+            if p >= 80:     icon_name = "veryhigh"
+            elif p >= 60:   icon_name = "high"
+            elif p >= 40:   icon_name = "premid"
+            elif p >= 20:   icon_name = "mid"
+            else:           icon_name = "low"
+            icon = self._power_icons.get(icon_name)
+            if icon:
+                self.screen.blit(icon, (20, 20))
+            status = f"Power: {int(p)}% | Time: {model.hour} AM"
+            self.screen.blit(self.font.render(status, True, (255, 255, 255)), (60, 22))
 
         self.screen.blit(self._brightness_overlay, (0, 0))

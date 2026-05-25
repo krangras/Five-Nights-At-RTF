@@ -81,6 +81,26 @@ class GamePresenter:
                     if self.snd_tablet:
                         self.snd_tablet.play()
 
+            # Цифровые клавиши 1-7 — переключение камер (без автооткрытия планшета)
+            key_to_cam = {
+                pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3,
+                pygame.K_4: 4, pygame.K_5: 5, pygame.K_6: 6,
+                pygame.K_7: 7,
+            }
+            if event.key in key_to_cam and self.model.tablet_open:
+                self.model.camera_idx = key_to_cam[event.key]
+                if self.snd_cam_switch:
+                    self.snd_cam_switch.play()
+
+            # 0 — возврат на камеру 1 (MAIN HALL), сброс панорамирования в центр
+            if event.key == pygame.K_0 and self.model.tablet_open:
+                self.model.camera_idx = 1
+                self.model.cam_look = 0.0
+                self.model.cam_state = "HOLDING"
+                self.model.cam_hold_timer = 0
+                if self.snd_cam_switch:
+                    self.snd_cam_switch.play()
+
             if self.model.tablet_open:
                 if event.key == pygame.K_RIGHT:
                     self.model.camera_idx = (self.model.camera_idx % CAMERA_COUNT) + 1
@@ -199,7 +219,7 @@ class GamePresenter:
                 else:
                     self._anim_timer = 2
 
-        # Звук помех при уходе Алгема
+        # Звук помех при перемещении Алгема
         if self.model.algem_trigger > 0 and self._prev_algem_trigger == 0:
             if self.snd_algem_leave:
                 self.snd_algem_leave.play(-1)
