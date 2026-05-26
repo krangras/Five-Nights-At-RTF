@@ -54,10 +54,6 @@ class GamePresenter:
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_q:
-                self.model.door_left_closed = not self.model.door_left_closed
-            if event.key == pygame.K_e:
-                self.model.door_right_closed = not self.model.door_right_closed
             if event.key == pygame.K_ESCAPE:
                 pygame.mouse.set_visible(not pygame.mouse.get_visible())
             if event.key == pygame.K_TAB:
@@ -187,6 +183,9 @@ class GamePresenter:
                 self._tab_prev_hovered = False
 
     def update(self):
+        if self.model.game_over or self.model.night_complete:
+            return
+
         if self.model.server_state == "TURNING_ON":
             self._on_phase_frames -= 1
             if self._on_phase_frames <= 0:

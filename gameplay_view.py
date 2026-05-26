@@ -137,9 +137,22 @@ class GameView:
             except pygame.error:
                 return None
 
-        self._algem_room_surf = _load_cam("assets/cameras/algems_is_reading_in_his_room.png")
+        # Алгем-спрайты для каждой камеры
+        self._algem_surfaces: dict[int, pygame.Surface] = {}
         self._algem_main_hall_surf = _load_cam("assets/cameras/main_hall_with_algem.png")
         self._algem_mainhall_watching = _load_cam("assets/cameras/algem_mainhall_is_watching_you.png")
+        algem_files = {
+            2: "algems' room_with_algem.png",
+            3: "toilets_algem.png",
+            4: "westhall_algem.png",
+            5: "canteen_algem.png",
+            6: "coworking_algem.png",
+            7: "service_room_algem.png",
+        }
+        for cam_idx, fname in algem_files.items():
+            s = _load_cam(f"assets/cameras/{fname}")
+            if s:
+                self._algem_surfaces[cam_idx] = s
 
         # CRT curvature mask + deep vignette
         self.crt_mask = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
@@ -305,10 +318,7 @@ class GameView:
             self.screen.blit(self.bg_frames[self.current_idx], (-offset, 0))
 
         if model.server_state != "OFF":
-            if model.door_left_closed:
-                pygame.draw.rect(self.screen, (0, 0, 0), (0, 0, 300, self.screen_h))
-            if model.door_right_closed:
-                pygame.draw.rect(self.screen, (0, 0, 0), (self.screen_w - 300, 0, 300, self.screen_h))
+            pass  # двери нет
 
         if model.tablet_open or model.tablet_animating:
             if model.tablet_animating:
@@ -321,24 +331,31 @@ class GameView:
 
                 # Прямой эфир камеры с панорамированием
                 loc = model.algem_location
-                if model.camera_idx == 2:
-                    if loc == 2 and self._algem_room_surf:
-                        cam_surf = self._algem_room_surf
-                    else:
-                        cam_surf = self.camera_surfaces.get(2)
-                        dark = pygame.Surface(cam_surf.get_size(), pygame.SRCALPHA)
-                        dark.fill((0, 0, 0, 80))
-                        cam_surf = cam_surf.copy()
-                        cam_surf.blit(dark, (0, 0))
-                elif model.camera_idx == 1 and loc == 1:
+                cam_idx = model.camera_idx
+
+                if cam_idx == 1 and loc == 1:
                     if model.algem_main_hall_sprite == 0 and self._algem_main_hall_surf:
                         cam_surf = self._algem_main_hall_surf
                     elif model.algem_main_hall_sprite == 1 and self._algem_mainhall_watching:
                         cam_surf = self._algem_mainhall_watching
                     else:
                         cam_surf = self.camera_surfaces.get(1)
+                elif loc == cam_idx:
+                    cam_surf = self._algem_surfaces.get(cam_idx)
+                    if cam_surf is None:
+                        cam_surf = self.camera_surfaces.get(cam_idx)
+                        if cam_surf is not None:
+                            dark = pygame.Surface(cam_surf.get_size(), pygame.SRCALPHA)
+                            dark.fill((0, 0, 0, 80))
+                            cam_surf = cam_surf.copy()
+                            cam_surf.blit(dark, (0, 0))
                 else:
-                    cam_surf = self.camera_surfaces.get(model.camera_idx)
+                    cam_surf = self.camera_surfaces.get(cam_idx)
+                    if cam_idx == 2 and cam_surf is not None:
+                        dark = pygame.Surface(cam_surf.get_size(), pygame.SRCALPHA)
+                        dark.fill((0, 0, 0, 80))
+                        cam_surf = cam_surf.copy()
+                        cam_surf.blit(dark, (0, 0))
                 cam_max_off = self.camera_max_offsets.get(model.camera_idx, 0)
                 if cam_surf is not None:
                     off = int((model.cam_look + 1) / 2 * cam_max_off)
@@ -365,7 +382,21 @@ class GameView:
             icon = self._power_icons.get(icon_name)
             if icon:
                 self.screen.blit(icon, (20, 20))
-            status = f"Power: {int(p)}% | Time: {model.hour} AM"
+            status = f"Night {model.night} | Power: {int(p)}% | Time: {model.hour} AM"
             self.screen.blit(self.font.render(status, True, (255, 255, 255)), (60, 22))
+
+        # ── Game over / Night complete ──────────────────────────
+        if model.game_over:
+            overlay = pygame.Surface((self.screen_w, self.screen_h))
+            overlay.fill((0, 0, 0))
+            self.screen.blit(overlay, (0, 0))
+            txt = self.font.render("GAME OVER", True, (200, 30, 30))
+            self.screen.blit(txt, (self.screen_w // 2 - txt.get_width() // 2, self.screen_h // 2 - 30))
+        elif model.night_complete:
+            overlay = pygame.Surface((self.screen_w, self.screen_h))
+            overlay.fill((0, 0, 0))
+            self.screen.blit(overlay, (0, 0))
+            txt = self.font.render("6 AM", True, (30, 200, 30))
+            self.screen.blit(txt, (self.screen_w // 2 - txt.get_width() // 2, self.screen_h // 2 - 30))
 
         self.screen.blit(self._brightness_overlay, (0, 0))
