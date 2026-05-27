@@ -76,11 +76,11 @@ def astar_path(start, goal, graph, edge_weight_fn, heuristic=None):
     return None
 
 NIGHT_CONFIG = {
-    1: {"move_lo": 480, "move_hi": 720, "algo_chance": 0.0, "algo": "none"},
-    2: {"move_lo": 360, "move_hi": 600, "algo_chance": 0.2, "algo": "bfs"},
-    3: {"move_lo": 300, "move_hi": 480, "algo_chance": 0.4, "algo": "bfs"},
-    4: {"move_lo": 180, "move_hi": 360, "algo_chance": 0.6, "algo": "bfs"},
-    5: {"move_lo": 120, "move_hi": 240, "algo_chance": 0.8, "algo": "astar"},
+    1: {"move_lo": 480, "move_hi": 720, "algo_chance": 0.15, "algo": "bfs"},
+    2: {"move_lo": 360, "move_hi": 600, "algo_chance": 0.35, "algo": "bfs"},
+    3: {"move_lo": 300, "move_hi": 480, "algo_chance": 0.55, "algo": "bfs"},
+    4: {"move_lo": 180, "move_hi": 360, "algo_chance": 0.75, "algo": "bfs"},
+    5: {"move_lo": 120, "move_hi": 240, "algo_chance": 0.9, "algo": "astar"},
 }
 
 class GameModel:
@@ -116,8 +116,21 @@ class GameModel:
         self.algem_trigger = 0
         self.algem_main_hall_sprite = 0
 
+        self.phone_call_ready = True
+        self.phone_call_active = False
+        self.phone_muted = False
+        self.phone_call_timer = 300
+
         self.game_over = False
         self.night_complete = False
+
+        self.bait_active = False
+        self.bait_step = 0
+        self.bait_cam_step = 0
+        self.bait_target_node: int | None = None
+        self.bait_attract_timer = 0
+        self.bait_cooldown: dict[int, int] = {}
+        self.algem_in_office = False
 
     def _initial_move_delay(self) -> int:
         base = max(300, 900 - self.night * 120)
@@ -142,6 +155,19 @@ class GameModel:
         neighbors = GRAPH.get(self.algem_location, [])
         if not neighbors:
             return self.algem_location
+
+        # Приманка: Algem идёт к bait_target_node
+        if self.bait_attract_timer > 0 and self.bait_target_node is not None:
+            if self.algem_location == self.bait_target_node:
+                return self.algem_location
+            path = bfs_path(self.algem_location, self.bait_target_node, GRAPH)
+            if path and len(path) > 1 and path[1] in neighbors:
+                return path[1]
+
+        # Если рядом с офисом (1 шаг) — всегда преследует
+        dist = BFS_DIST_TO_OFFICE.get(self.algem_location, 999)
+        if dist <= 1 and 0 in neighbors:
+            return 0
 
         roll = random.random()
 
@@ -195,8 +221,27 @@ class GameModel:
                 self.night_complete = True
                 return
 
+        if self.night == 1 and self.phone_call_ready and not self.phone_call_active and not self.phone_muted:
+            self.phone_call_timer -= 1
+            if self.phone_call_timer <= 0:
+                self.phone_call_active = True
+                self.phone_call_ready = False
+
         if self.tablet_open and not self.tablet_animating:
             self.camera_watch_ticks[self.camera_idx] = self.camera_watch_ticks.get(self.camera_idx, 0) + 1
+
+        if self.bait_attract_timer > 0:
+            self.bait_attract_timer -= 1
+            if self.bait_attract_timer <= 0:
+                self.bait_target_node = None
+
+        for cam in list(self.bait_cooldown.keys()):
+            self.bait_cooldown[cam] -= 1
+            if self.bait_cooldown[cam] <= 0:
+                del self.bait_cooldown[cam]
+
+        if self.algem_in_office:
+            return
 
         if self.algem_trigger > 0:
             self.algem_trigger -= 1
@@ -205,7 +250,10 @@ class GameModel:
         if self.algem_move_timer <= 0:
             next_node = self._choose_next_node()
             if next_node == 0:
-                self.game_over = True
+                if self.tablet_open and not self.tablet_animating:
+                    self.algem_in_office = True
+                else:
+                    self.game_over = True
                 return
             if next_node != self.algem_location:
                 self.algem_prev_location = self.algem_location

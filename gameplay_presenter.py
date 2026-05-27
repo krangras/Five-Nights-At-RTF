@@ -1,4 +1,5 @@
 import pygame
+import random
 from gameplay_model import CAMERA_COUNT
 
 class GamePresenter:
@@ -52,6 +53,24 @@ class GamePresenter:
             self.snd_algem_leave = None
         self._prev_algem_trigger = 0
 
+        try:
+            self.snd_phone_call = pygame.mixer.Sound("sounds/night1/callnight1.mp3")
+        except pygame.error:
+            print("sounds/night1/callnight1.mp3 не найден")
+            self.snd_phone_call = None
+        self._phone_channel = None
+
+        # Звуки приманки (gadget1-4)
+        self._gadget_sounds = []
+        for i in range(1, 5):
+            try:
+                self._gadget_sounds.append(pygame.mixer.Sound(f"sounds/gadget{i}.mp3"))
+            except pygame.error:
+                pass
+
+        self._bait_timer = 0
+        self._bait_cam_timer = 0
+
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
@@ -76,6 +95,10 @@ class GamePresenter:
                     self._anim_timer = 2
                     if self.snd_tablet:
                         self.snd_tablet.play()
+
+            # DEBUG: F1 — принудительный game_over (для теста скримера)
+            if event.key == pygame.K_F1:
+                self.model.game_over = True
 
             # Цифровые клавиши 1-7 — переключение камер (без автооткрытия планшета)
             key_to_cam = {
@@ -124,6 +147,32 @@ class GamePresenter:
                 if self.snd_cam_switch:
                     self.snd_cam_switch.play()
                 return
+
+            # Клик по Mute Call
+            phone_on = self.model.phone_call_active or self._phone_channel
+            if phone_on and not self.model.phone_muted:
+                if self.view.is_mutecall_clicked(event.pos):
+                    self.model.phone_muted = True
+                    self.model.phone_call_active = False
+                    if self.snd_phone_call:
+                        self.snd_phone_call.stop()
+                    self._phone_channel = None
+                    return
+
+            # Клик по BAIT / MAP
+            if self.model.tablet_open and not self.model.tablet_animating:
+                if self.view.is_bait_clicked(event.pos):
+                    if not self.model.bait_active and self.model.camera_idx not in self.model.bait_cooldown and self._gadget_sounds:
+                        random.choice(self._gadget_sounds).play()
+                        self.model.bait_active = True
+                        self.model.bait_step = 0
+                        self.model.bait_target_node = self.model.camera_idx
+                        self.model.bait_attract_timer = 480
+                        self.model.bait_cooldown[self.model.camera_idx] = 480
+                        self._bait_timer = 0
+                    return
+                if self.view.is_map_clicked(event.pos):
+                    return
 
             # Когда планшет открыт — клики не проходят к серверу
             if self.model.tablet_open and not self.model.tablet_animating:
@@ -184,6 +233,16 @@ class GamePresenter:
 
     def update(self):
         if self.model.game_over or self.model.night_complete:
+            self.model.bait_active = False
+            self.model.bait_target_node = None
+            self.model.bait_attract_timer = 0
+            self.model.bait_cooldown.clear()
+            self.model.algem_in_office = False
+            if self.model.phone_call_active or self._phone_channel:
+                self.model.phone_call_active = False
+                if self.snd_phone_call:
+                    self.snd_phone_call.stop()
+                self._phone_channel = None
             return
 
         if self.model.server_state == "TURNING_ON":
@@ -215,8 +274,38 @@ class GamePresenter:
                         self.model.tablet_anim_frame = 9
                     else:
                         self.model.tablet_open = False
+                        if self.model.algem_in_office:
+                            self.model.game_over = True
                 else:
                     self._anim_timer = 2
+
+        # Анимация приманки (6 шагов по ~80 кадров = ~8 сек)
+        if self.model.bait_active:
+            self._bait_timer += 1
+            if self._bait_timer >= 80:
+                self._bait_timer = 0
+                self.model.bait_step += 1
+                if self.model.bait_step >= 6:
+                    self.model.bait_active = False
+                    self.model.bait_step = 0
+                    self.model.bait_cam_step = 0
+
+            self._bait_cam_timer += 1
+            if self._bait_cam_timer >= 40:
+                self._bait_cam_timer = 0
+                if self.model.bait_cam_step < 4:
+                    self.model.bait_cam_step += 1
+
+        # Телефонный звонок
+        if self.model.phone_call_active and self._phone_channel is None:
+            if self.snd_phone_call:
+                self._phone_channel = self.snd_phone_call.play()
+            else:
+                self.model.phone_call_active = False
+                self._phone_channel = None
+        if self._phone_channel and not self._phone_channel.get_busy():
+            self._phone_channel = None
+            self.model.phone_call_active = False
 
         # Звук помех при перемещении Алгема
         if self.model.algem_trigger > 0 and self._prev_algem_trigger == 0:

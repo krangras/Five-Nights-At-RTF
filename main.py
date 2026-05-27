@@ -5,6 +5,7 @@ from view import MenuView
 from gameplay_model import GameModel
 from gameplay_view import GameView
 from gameplay_presenter import GamePresenter
+from screamer import ScreamerPlayer
 
 def main():
     pygame.init()
@@ -28,9 +29,11 @@ def main():
             state = menu_p.handle_events()
             menu_m.update()
             menu_v.draw_menu(menu_m)
+            clock.tick(60)
         elif state == "START_GAME":
             game_m, game_v, game_p = start_game(1)
             state = "GAME"
+            clock.tick(60)
         elif state == "GAME":
             for e in pygame.event.get():
                 if e.type == pygame.QUIT:
@@ -39,18 +42,42 @@ def main():
 
             game_m.update()
             game_p.update()
+
             game_v.draw(game_m)
             pygame.display.flip()
 
             if game_m.game_over:
-                state = "MENU"
+                pygame.mixer.stop()
+                screamer = ScreamerPlayer("assets/office/screamer.mp4")
+                screamer.extract_audio()
+                screamer.play_audio()
+                state = "SCREAMER"
+                continue
             elif game_m.night_complete:
                 if game_m.night >= 5:
                     state = "MENU"
                 else:
                     game_m, game_v, game_p = start_game(game_m.night + 1)
+            clock.tick(60)
+        elif state == "SCREAMER":
+            for e in pygame.event.get():
+                if e.type == pygame.QUIT:
+                    screamer.close()
+                    return
+                if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                    screamer.close()
+                    state = "MENU"
 
-        clock.tick(60)
+            if state == "SCREAMER":
+                frame = screamer.get_frame()
+                if frame is None:
+                    screamer.close()
+                    state = "MENU"
+                else:
+                    screen.blit(frame, (0, 0))
+                    pygame.display.flip()
+
+            clock.tick(screamer.fps)
 
 if __name__ == "__main__":
     main()

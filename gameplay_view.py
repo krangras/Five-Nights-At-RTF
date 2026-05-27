@@ -199,6 +199,29 @@ class GameView:
             img = pygame.image.load(f"assets/office/tablet/tablet-{i}.png").convert_alpha()
             self.cam_frames.append(pygame.transform.smoothscale(img, (screen_w, screen_h)))
 
+        # Кнопка Mute Call (на столе офиса)
+        raw_mute = pygame.image.load("assets/office/mutecall.png").convert_alpha()
+        mute_scale = 140 / raw_mute.get_width()
+        self.mutecall_surf = pygame.transform.smoothscale(raw_mute, (140, int(raw_mute.get_height() * mute_scale)))
+        self._mutecall_rect = pygame.Rect(0, 0, *self.mutecall_surf.get_size())
+
+        # Кнопки BAIT и MAP — одинаковый размер
+        self._btn_size = (64, 34)
+        raw_bait = pygame.image.load("assets/cameras/playaudio.png").convert_alpha()
+        raw_map = pygame.image.load("assets/cameras/maptoggle.png").convert_alpha()
+        self._bait_btn_img = pygame.transform.smoothscale(raw_bait, self._btn_size)
+        self._map_btn_img = pygame.transform.smoothscale(raw_map, self._btn_size)
+        self._btn_bg = pygame.Surface(self._btn_size, pygame.SRCALPHA)
+        self._btn_bg.fill((15, 15, 25, 200))
+        self._bait_btn_rect = pygame.Rect(0, 0, *self._btn_size)
+        self._map_btn_rect = pygame.Rect(0, 0, *self._btn_size)
+
+        # Аудио-иконки для мини-карты (audio1-4.png)
+        self._audio_icons = []
+        for i in range(1, 5):
+            img = pygame.image.load(f"assets/cameras/audio{i}.png").convert_alpha()
+            self._audio_icons.append(pygame.transform.smoothscale(img, (60, 50)))
+
     def is_server_clicked(self, mouse_pos, offset):
         img_x = (mouse_pos[0] + offset) / self.scale
         img_y = mouse_pos[1] / self.scale
@@ -211,6 +234,21 @@ class GameView:
         ty = self.screen_rect.bottom - self.tabbutton_surf.get_height() - 5
         rect = pygame.Rect(tx, ty, *self.tabbutton_surf.get_size())
         return rect.collidepoint(mouse_pos)
+
+    def is_mutecall_clicked(self, mouse_pos):
+        if mouse_pos is None:
+            return False
+        return self._mutecall_rect.collidepoint(mouse_pos)
+
+    def is_bait_clicked(self, mouse_pos):
+        if mouse_pos is None:
+            return False
+        return self._bait_btn_rect.collidepoint(mouse_pos)
+
+    def is_map_clicked(self, mouse_pos):
+        if mouse_pos is None:
+            return False
+        return self._map_btn_rect.collidepoint(mouse_pos)
 
     def _draw_cctv_effects(self, camera_idx, model):
         # Шум/помехи
@@ -283,6 +321,12 @@ class GameView:
             tint = pygame.Surface(icon.get_size(), pygame.SRCALPHA)
             tint.fill((*color, 140))
             self.screen.blit(tint, (ix, iy))
+
+            if model.bait_active and cidx == model.bait_target_node and model.bait_cam_step < 3:
+                audio_idx = min(model.bait_cam_step, 3)
+                ax = ix + icon.get_width() // 2 - 30
+                ay = iy + icon.get_height() // 2 - 25
+                self.screen.blit(self._audio_icons[audio_idx], (ax, ay))
 
             pygame.draw.rect(self.screen, (255, 255, 255),
                              (ix - 3, iy - 3, icon.get_width() + 6, icon.get_height() + 6), 1)
@@ -364,12 +408,47 @@ class GameView:
                 # Мини-карта внутри планшета
                 self._draw_minimap(model)
 
+                # Кнопки BAIT (сверху) и MAP (снизу) — слева от мини-карты
+                mmx, mmy = self._minimap_pos
+                bw, bh = self._btn_size
+                gap = 20
+                bx = mmx - bw + 4
+                by = mmy + int(self._minimap_size[1] * 0.6)
+
+                if not model.bait_active:
+                    self.screen.blit(self._btn_bg, (bx, by))
+                    self.screen.blit(self._bait_btn_img, (bx, by))
+                    pygame.draw.rect(self.screen, (255, 255, 255), (bx, by, bw, bh), 1)
+                else:
+                    dot_y = by + bh // 2
+                    dot_r = 3
+                    dot_gap = 12
+                    total_w = 5 * dot_gap
+                    start_x = bx + bw // 2 - total_w // 2
+                    for i in range(6):
+                        if i <= model.bait_step:
+                            pygame.draw.circle(self.screen, (255, 255, 255), (start_x + i * dot_gap, dot_y), dot_r)
+                self._bait_btn_rect.topleft = (bx, by)
+                my = by + bh + gap
+                self.screen.blit(self._btn_bg, (bx, my))
+                self.screen.blit(self._map_btn_img, (bx, my))
+                pygame.draw.rect(self.screen, (255, 255, 255), (bx, my, bw, bh), 1)
+                self._map_btn_rect.topleft = (bx, my)
+
                 self.screen.set_clip(old_clip)
 
-        # Кнопка TAB — фиксированная позиция (одинаково в офисе и на планшете)
+        # Кнопка TAB — на столе
         tx = self.screen_rect.centerx - self.tabbutton_surf.get_width() // 2
         ty = self.screen_rect.bottom - self.tabbutton_surf.get_height() - 5
         self.screen.blit(self.tabbutton_surf, (tx, ty))
+
+        # Кнопка Mute Call — на столе, справа от TAB (только когда звонит)
+        phone_on = model.phone_call_active
+        if phone_on and not model.phone_muted:
+            mx = tx + self.tabbutton_surf.get_width() + 8
+            my = self.screen_rect.bottom - self.mutecall_surf.get_height() - 5
+            self._mutecall_rect.topleft = (mx, my)
+            self.screen.blit(self.mutecall_surf, (mx, my))
 
         if model.server_state != "OFF":
             # Выбор иконки энергии по уровню
@@ -386,13 +465,7 @@ class GameView:
             self.screen.blit(self.font.render(status, True, (255, 255, 255)), (60, 22))
 
         # ── Game over / Night complete ──────────────────────────
-        if model.game_over:
-            overlay = pygame.Surface((self.screen_w, self.screen_h))
-            overlay.fill((0, 0, 0))
-            self.screen.blit(overlay, (0, 0))
-            txt = self.font.render("GAME OVER", True, (200, 30, 30))
-            self.screen.blit(txt, (self.screen_w // 2 - txt.get_width() // 2, self.screen_h // 2 - 30))
-        elif model.night_complete:
+        if model.night_complete:
             overlay = pygame.Surface((self.screen_w, self.screen_h))
             overlay.fill((0, 0, 0))
             self.screen.blit(overlay, (0, 0))
