@@ -11,6 +11,10 @@ class MenuPresenter:
         except pygame.error:
             print("sounds/blip3.mp3 не найден")
             self.blip_sound = None
+        self._start_music()
+
+    @staticmethod
+    def _start_music():
         try:
             pygame.mixer.music.load("sounds/Faulty Ventilation.mp3")
             pygame.mixer.music.play(-1)
@@ -18,6 +22,9 @@ class MenuPresenter:
             print("sounds/Faulty Ventilation.mp3 не найден")
 
     def handle_events(self):
+        if not pygame.mixer.music.get_busy():
+            self._start_music()
+
         mouse_pos = pygame.mouse.get_pos()
         
         # Проверяем, наведена ли мышь на кнопки (обновляем модель)

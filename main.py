@@ -21,7 +21,7 @@ def main():
         p = GamePresenter(m, v)
         return m, v, p
 
-    game_m, game_v, game_p = start_game(1)
+    game_m = game_v = game_p = None
 
     state = "MENU"
     while True:
