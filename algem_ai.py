@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import heapq
 import random
+import time
 from collections import deque
 from enum import Enum, auto
 from typing import Callable
@@ -190,16 +191,16 @@ class AlgemAI:
 
     # Конфиг скоростей для каждой ночи: (мин. интервал, макс. интервал) в тиках
     _NIGHT_SPEED: dict[int, tuple[int, int]] = {
-        1: (360, 540),
-        2: (270, 420),
-        3: (180, 300),
-        4: (120, 210),
-        5: (60, 120),
+        1: (600, 900),
+        2: (420, 600),
+        3: (300, 420),
+        4: (180, 300),
+        5: (90, 180),
     }
 
     # Зоны патруля по ночам (какие узлы доступны для случайного блуждания)
     _PATROL_ZONES: dict[int, set[int]] = {
-        1: {1, 2, 3},
+        1: {1, 2, 3, 4, 5, 6, 7},
         2: {1, 2, 3, 4},
         3: {1, 2, 3, 4, 5, 7},
         4: {1, 2, 3, 4, 5, 6, 7},
@@ -359,49 +360,54 @@ class AlgemAI:
 
         # Сбрасываем таймер и выполняем шаг FSM
         self._move_timer = self._compute_interval(hour)
-        return self._step()
+        return self._step(hour)
 
     # ──────────────────────────────────────────────────────────────────────
     # Внутренняя логика FSM
     # ──────────────────────────────────────────────────────────────────────
 
-    def _step(self) -> bool:
+    def _step(self, hour: int) -> bool:
         """
         Основной диспетчер FSM — делегирует выполнение нужному состоянию.
 
         Returns:
             True если достигнут офис.
         """
-        dispatch: dict[AIState, Callable[[], bool]] = {
-            AIState.IDLE:   self._step_idle,
+        dispatch: dict[AIState, Callable[[int], bool]] = {
+            AIState.IDLE:   lambda: self._step_idle(hour),
             AIState.PATROL: self._step_patrol,
             AIState.ATTACK: self._step_attack,
         }
         handler = dispatch.get(self.state, self._step_patrol)
         return handler()
 
-    def _step_idle(self) -> bool:
+    def _step_idle(self, hour: int) -> bool:
         """
         Состояние IDLE: ожидание.
-
-        Агрессия накапливается в `tick()`.
-        Выходит только если сервер манит (hack_attraction > 0.05).
         """
         self._idle_ticks_left -= 1
         if self._idle_ticks_left > 0:
             return False
 
-        if self.hack_attraction < 0.05 and random.random() < 0.98:
-            # Сервер выключен — почти не выходит из IDLE
-            self._idle_ticks_left = random.randint(120, 240)
+        # FNAF-style: на ранних часах Алгем более пассивен
+        hour_factor = (hour / 6.0) * 0.5
+        idle_chance = 0.95 - (self._night * 0.05) - hour_factor
+        
+        if self.hack_attraction < 0.05 and random.random() < idle_chance:
+            self._idle_ticks_left = random.randint(300, 600)
             return False
 
-        if self.aggression > 0.8 and random.random() < 0.55 * self._night / 5:
-            self.state = AIState.ATTACK
+        # Переход в ATTACK теперь сложнее: нужно больше агрессии и зависимость от часа
+        attack_threshold = 0.7 - (self._night * 0.05)
+        if self.aggression > attack_threshold and random.random() < (0.3 + hour * 0.1):
+            if self._night > 1:
+                self.state = AIState.ATTACK
+            else:
+                self.state = AIState.PATROL
+                self.aggression = max(0.0, self.aggression - 0.1)
         else:
             self.state            = AIState.PATROL
-            self.aggression       = max(0.0, self.aggression - 0.15)
-
+            self.aggression       = max(0.0, self.aggression - 0.1)
         return False
 
     def _step_patrol(self) -> bool:
@@ -426,12 +432,13 @@ class AlgemAI:
 
         self._move_to(next_node)
 
-        # Вероятностный переход в ATTACK
-        night_factor   = self._night / 5.0
-        hack_mult      = self.hack_attraction  # 0 если сервер выключен
-        attack_chance  = (0.06 + night_factor * 0.18 + self.aggression * 0.15) * hack_mult
-        if random.random() < attack_chance:
-            self.state = AIState.ATTACK
+        # Вероятностный переход в ATTACK (только со 2-й ночи)
+        if self._night > 1:
+            night_factor   = self._night / 5.0
+            hack_mult      = self.hack_attraction
+            attack_chance  = (0.06 + night_factor * 0.18 + self.aggression * 0.15) * hack_mult
+            if random.random() < attack_chance:
+                self.state = AIState.ATTACK
 
         # Редкое задумывание → IDLE (делает поведение менее предсказуемым)
         elif random.random() < 0.025:

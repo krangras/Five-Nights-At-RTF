@@ -87,7 +87,7 @@ class GameView:
         self.tab_button_hovered = False
 
         # Область экрана планшета — отступаем от краёв, чтобы не задеть рамку
-        self.screen_rect = pygame.Rect(2, 2, screen_w - 32, screen_h - 5)
+        self.screen_rect = pygame.Rect(0, 0, screen_w, screen_h)
 
         # Иконки камер из assets/cctv/ — загружаются, маппинг по номеру камеры
         self._cam_icons = {}

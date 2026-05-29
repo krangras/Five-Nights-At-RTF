@@ -6,24 +6,30 @@ class MenuPresenter:
         self.model = model
         self.view = view
         self._prev_hover = None
-        try:
-            self.blip_sound = pygame.mixer.Sound("sounds/blip3.mp3")
-        except pygame.error:
-            print("sounds/blip3.mp3 не найден")
-            self.blip_sound = None
-        self._start_music()
+        self._blip_sound = None
 
-    @staticmethod
-    def _start_music():
+    def _ensure_music(self):
+        if pygame.mixer.music.get_busy():
+            return
         try:
             pygame.mixer.music.load("sounds/Faulty Ventilation.mp3")
             pygame.mixer.music.play(-1)
         except pygame.error:
             print("sounds/Faulty Ventilation.mp3 не найден")
 
+    @property
+    def blip_sound(self):
+        if self._blip_sound is None:
+            try:
+                self._blip_sound = pygame.mixer.Sound("sounds/blip3.mp3")
+            except pygame.error:
+                pass
+        return self._blip_sound
+
     def handle_events(self):
+        self._ensure_music()
         if not pygame.mixer.music.get_busy():
-            self._start_music()
+            self._ensure_music()
 
         mouse_pos = pygame.mouse.get_pos()
         
@@ -37,8 +43,9 @@ class MenuPresenter:
 
         # Звук при наведении на кнопку
         if self.model.hovered_button != self._prev_hover and self.model.hovered_button is not None:
-            if self.blip_sound:
-                self.blip_sound.play()
+            blip = self.blip_sound
+            if blip:
+                blip.play()
         self._prev_hover = self.model.hovered_button
 
         # Обработка кликов

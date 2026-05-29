@@ -1,3 +1,4 @@
+import os
 import pygame
 from model import MenuModel
 from presenter import MenuPresenter
@@ -6,6 +7,27 @@ from gameplay_model import GameModel
 from gameplay_view import GameView
 from gameplay_presenter import GamePresenter
 from screamer import ScreamerPlayer
+
+LOADING_FONT_CACHE = None
+
+def _get_loading_font(size=30):
+    global LOADING_FONT_CACHE
+    if LOADING_FONT_CACHE is None:
+        path = "assets/fonts/OCR-A.ttf"
+        if os.path.exists(path):
+            LOADING_FONT_CACHE = pygame.font.Font(path, size)
+        else:
+            LOADING_FONT_CACHE = pygame.font.Font(None, size)
+    return LOADING_FONT_CACHE
+
+def draw_loading(screen, elapsed_ms):
+    screen.fill((0, 0, 0))
+    font = _get_loading_font()
+    dots = "." * ((elapsed_ms // 300) % 4)
+    txt = font.render(f"LOADING{dots}", True, (100, 100, 100))
+    sw, sh = screen.get_size()
+    screen.blit(txt, (sw // 2 - txt.get_width() // 2, sh // 2 - txt.get_height() // 2))
+    pygame.display.flip()
 
 def main():
     pygame.init()
@@ -22,6 +44,7 @@ def main():
         return m, v, p
 
     game_m = game_v = game_p = None
+    load_start = 0
 
     state = "MENU"
     while True:
@@ -31,9 +54,13 @@ def main():
             menu_v.draw_menu(menu_m)
             clock.tick(60)
         elif state == "START_GAME":
+            load_start = pygame.time.get_ticks()
+            state = "LOADING"
+        elif state == "LOADING":
+            draw_loading(screen, pygame.time.get_ticks() - load_start)
+            clock.tick(60)
             game_m, game_v, game_p = start_game(1)
             state = "GAME"
-            clock.tick(60)
         elif state == "GAME":
             for e in pygame.event.get():
                 if e.type == pygame.QUIT:
