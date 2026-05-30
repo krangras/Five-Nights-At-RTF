@@ -27,8 +27,8 @@ from algem_ai import AlgemAI, AIState, bfs_path   # noqa: F401
 # ─────────────────────────────────────────────────────────────────────────────
 
 CAMERAS: list[tuple[int, str, str, str]] = [
-    (1, "01", "MAIN HALL",    "main_hall.png"),
-    (2, "02", "ALGEM'S ROOM", "algems' room.png"),
+    (1, "01", "ALGEM'S ROOM", "algems' room.png"),
+    (2, "02", "MAIN HALL",    "main_hall.png"),
     (3, "03", "TOILETS",      "toilets.png"),
     (4, "04", "WEST HALL",    "westhall.png"),
     (5, "05", "CANTEEN",      "canteen.png"),
@@ -41,10 +41,10 @@ CAMERA_COUNT: int = len(CAMERAS)
 # Узел 0 — офис (цель), узлы 1–7 — камеры.
 BASE_GRAPH: dict[int, list[int]] = {
     0: [],
-    1: [2, 3, 4],   # Главный коридор
-    2: [1],          # Комната Алгема
-    3: [1, 4],       # Туалеты
-    4: [1, 3, 5, 7], # Западный коридор → через серверную
+    1: [2],          # Комната Алгема
+    2: [1, 3, 4],    # Главный коридор
+    3: [2, 4],       # Туалеты
+    4: [2, 3, 5, 7], # Западный коридор → через серверную
     5: [4, 6],       # Столовая
     6: [5, 7],       # Коворкинг
     7: [6, 4, 0],    # Серверная — последняя камера перед офисом
@@ -54,7 +54,7 @@ BASE_GRAPH: dict[int, list[int]] = {
 # При поломке вентиля соответствующее ребро добавляется в граф.
 VENT_CONNECTIONS: dict[str, tuple[int, int]] = {
     "VENT_A": (6, 3),  # Коворкинг → Туалеты (обходной путь)
-    "VENT_B": (5, 1),  # Столовая → Главный коридор (обходной путь)
+    "VENT_B": (5, 2),  # Столовая → Главный коридор (обходной путь)
 }
 
 
@@ -121,6 +121,13 @@ class GameModel:
         self.tablet_animating:  bool = False
         self.tablet_anim_frame: int  = 0
 
+        # ── Ноутбук ─────────────────────────────────────────────────────
+        self.laptop_open:   bool = False          # открыт ли экран ноутбука
+        self.laptop_zoom:   float = 0.0           # 0.0 = офис, 1.0 = полный зум
+        self.laptop_cursor: tuple[int, int] = (640, 360)  # позиция курсора
+        self.laptop_start_menu: bool = False      # открыто ли меню Start
+        self.laptop_app:    str | None = None     # запущенное приложение
+
         # ── Камера (текущая и панорамирование) ───────────────────────────
         self.camera_idx:        int   = 1
         self.cam_look:          float = -1.0
@@ -137,7 +144,7 @@ class GameModel:
         self._ai: AlgemAI = AlgemAI(
             graph      = copy.deepcopy(BASE_GRAPH),
             night      = night,
-            start_node = 2,
+            start_node = 1,
         )
         self.algem_in_office: bool = False   # вошёл, но не убил (планшет открыт)
 

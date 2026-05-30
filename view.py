@@ -23,11 +23,14 @@ class MenuView:
             self.button_font = pygame.font.SysFont("Arial", font_size_btn)
 
         btn_x = int(100 * self.scale_x)
-        btn_w = int(250 * self.scale_x)
-        btn_h = int(40 * self.scale_y)
-        
-        self.btn_new_game_rect = pygame.Rect(btn_x, int(360 * self.scale_y), btn_w, btn_h)
-        self.btn_exit_rect = pygame.Rect(btn_x, int(460 * self.scale_y), btn_w, btn_h)
+
+        surf_ng = self.button_font.render(">> New Game", True, (255, 255, 255))
+        surf_ex = self.button_font.render(">> Exit", True, (255, 255, 255))
+
+        self.btn_new_game_rect = pygame.Rect(btn_x, int(360 * self.scale_y),
+                                             surf_ng.get_width(), surf_ng.get_height())
+        self.btn_exit_rect = pygame.Rect(btn_x, int(460 * self.scale_y),
+                                         surf_ex.get_width(), surf_ex.get_height())
 
         self.bg_images = {}
         self._load_assets()
@@ -51,6 +54,7 @@ class MenuView:
             "assets/menu/algem_is_trying_to_escape.jpg",
             "assets/menu/algem_is_watching_you.jpg",
             "assets/menu/empty_room.jpeg",
+            "assets/menu/algem_normal.png",
         ]
         glitch_raw = []
         for path in glitch_paths:
@@ -121,13 +125,9 @@ class MenuView:
         if model.algem_state == "NORMAL":
             self.screen.blit(self.bg_images["NORMAL"], (0, 0))
         else:
-            if model.glitch_timer % 2 == 0:
-                shake_x = random.randint(int(-15 * sx), int(15 * sx))
-                shake_y = random.randint(int(-6 * sy), int(6 * sy))
-                idx = (model.glitch_timer // 2) % len(self.glitch_images)
-                self.screen.blit(self.glitch_images[idx], (shake_x, shake_y))
-            else:
-                self.screen.blit(self.bg_images["NORMAL"], (0, 0))
+            shake_x = random.randint(int(-12 * sx), int(12 * sx))
+            shake_y = random.randint(int(-5 * sy), int(5 * sy))
+            self.screen.blit(self.glitch_images[model.glitch_frame_idx], (shake_x, shake_y))
 
         # ТВ-шум
         self.screen.blit(self.noise_frames[model.noise_frame], (0, 0))

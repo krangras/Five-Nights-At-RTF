@@ -201,9 +201,9 @@ class TestWeightedRandomWalk:
 # ══════════════════════════════════════════════════════════════════
 
 class TestFSM:
-    def test_initial_state_is_patrol(self):
+    def test_initial_state_is_idle(self):
         ai = AlgemAI(copy.deepcopy(GRAPH), night=3, start_node=2)
-        assert ai.state == AIState.PATROL
+        assert ai.state == AIState.IDLE
 
     def test_idle_accumulates_aggression(self):
         ai = AlgemAI(copy.deepcopy(GRAPH), night=3, start_node=2)

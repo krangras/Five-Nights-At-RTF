@@ -71,6 +71,14 @@ class GamePresenter:
         }
         self._snd_off_length: int = 60
         self._gadget_paths: list[str] = [f"sounds/gadget{i}.mp3" for i in range(1, 5)]
+        self._algem_talk_paths: list[str] = [
+            f"sounds/algemistalking/ambience{i}.mp3"
+            for i in (1, 2, 4, 5, 6, 7, 8, 9, 10)
+        ]
+        self._algem_talk_queue: list[pygame.mixer.Sound] = []
+        self._algem_talk_channel: pygame.mixer.Channel = pygame.mixer.Channel(5)
+        self._algem_leave_channel: pygame.mixer.Channel = pygame.mixer.Channel(4)
+        self._algem_talk_timer: int = random.randint(1800, 3600)
 
         self._ambience_playing: bool = False
         self._prev_algem_trigger: int = 0
@@ -126,6 +134,18 @@ class GamePresenter:
             object.__setattr__(self, '__gadget_cache', cache)
         return object.__getattribute__(self, '__gadget_cache')
 
+    @property
+    def _algem_talk_sounds(self) -> list[pygame.mixer.Sound]:
+        if not hasattr(self, '__algem_talk_cache'):
+            cache: list[pygame.mixer.Sound] = []
+            for path in self._algem_talk_paths:
+                try:
+                    cache.append(pygame.mixer.Sound(path))
+                except pygame.error:
+                    print(f"[GamePresenter] Sound not found: {path}")
+            object.__setattr__(self, '__algem_talk_cache', cache)
+        return object.__getattribute__(self, '__algem_talk_cache')
+
     # ──────────────────────────────────────────────────────────────────────
     # Обработка ввода
     # ──────────────────────────────────────────────────────────────────────
@@ -151,7 +171,10 @@ class GamePresenter:
         key = event.key
 
         if key == pygame.K_ESCAPE:
-            pygame.mouse.set_visible(not pygame.mouse.get_visible())
+            if self.model.laptop_open:
+                self._close_laptop()
+            else:
+                pygame.mouse.set_visible(not pygame.mouse.get_visible())
 
         # Переключение планшета по TAB
         elif key == pygame.K_TAB:
@@ -192,6 +215,11 @@ class GamePresenter:
 
     def _handle_click(self, pos: tuple[int, int]) -> None:
         """Обработчик кликов мышью (левая кнопка)."""
+
+        # 0. Ноутбук открыт — обработка кликов внутри
+        if self.model.laptop_zoom >= 0.95:
+            self._handle_laptop_click(pos)
+            return
 
         # 1. Клик по иконке камеры на мини-карте
         hit = self.view.get_minimap_hotspot(pos)
@@ -255,10 +283,64 @@ class GamePresenter:
                 else:
                     self._toggle_server()
 
+        # 5. Клик по ноутбуку (в офисе) — открыть
+        if not self.model.laptop_open:
+            offset = int(
+                (self.model.current_look + 1) / 2 * self.view.max_offset
+            )
+            if self.view.is_laptop_clicked(pos, offset):
+                self.model.laptop_open = True
+
+    def _handle_laptop_click(self, pos: tuple[int, int]) -> None:
+        """Обработка кликов внутри открытого ноутбука."""
+        # Клик по кнопке закрытия окна
+        if self.model.laptop_app and self.view.is_laptop_close_clicked(pos):
+            self.model.laptop_app = None
+            return
+
+        # Клик по Start
+        if self.view.is_laptop_start_clicked(pos):
+            self.model.laptop_start_menu = not self.model.laptop_start_menu
+            return
+
+        # Клик по пункту меню Start
+        if self.model.laptop_start_menu:
+            item = self.view.is_laptop_menu_item_clicked(pos)
+            if item == "claude":
+                self.model.laptop_app = "claude_mythos"
+                self.model.laptop_start_menu = False
+            elif item == "mycomputer":
+                pass  # TODO: My Computer
+            elif item == "shutdown":
+                self._close_laptop()
+            elif item is not None:
+                self.model.laptop_start_menu = False
+            return
+
+        # Клик по иконке на рабочем столе
+        icon = self.view.is_laptop_icon_clicked(pos)
+        if icon == "claude":
+            self.model.laptop_app = "claude_mythos"
+        elif icon == "mycomputer":
+            pass  # TODO: My Computer
+
+        # Закрыть меню если кликнул мимо
+        self.model.laptop_start_menu = False
+
+    def _close_laptop(self) -> None:
+        """Закрыть ноутбук и вернуться в офис."""
+        self.model.laptop_open = False
+        self.model.laptop_zoom = 0.0
+        self.model.laptop_app = None
+        self.model.laptop_start_menu = False
+
     def _handle_mouse_motion(self, pos: tuple[int, int]) -> None:
         """Обновить целевой взгляд офиса и обработать ховер кнопки TAB."""
         w = self.view.screen_w
         self.model.target_look = max(-1.0, min(1.0, (pos[0] / w) * 2 - 1))
+
+        if self.model.laptop_open and self.model.laptop_zoom >= 0.95:
+            self.model.laptop_cursor = pos
 
         if self.model.tablet_animating:
             self.view.tab_button_hovered = False
@@ -307,6 +389,7 @@ class GamePresenter:
         self._update_algem_sounds()
         self._update_danger_sound()
         self._update_reboot_sound()
+        self._update_laptop()
 
     # ──────────────────────────────────────────────────────────────────────
     # Внутренние методы обновления подсистем
@@ -417,23 +500,44 @@ class GamePresenter:
 
     def _update_algem_sounds(self) -> None:
         """
-        Звуковая реакция на перемещение Алгема.
-
-        Звук помех играет пока активен trigger_timer (60 тиков).
-        Используем edge-trigger: звук начинается при trigger > 0,
-        а останавливается когда trigger обнулился.
+        Звуки Алгема:
+        - Помеха (alegem_is_leaving.wav) — луп пока длится глитч (trigger > 0)
+          и игрок смотрит на камеру Алгема.
+        - Случайные цитаты из algemistalking — рандомно, не в начале ночи.
         """
         trigger_now = self.model.algem_trigger
+        cam_visible = (
+            self.model.tablet_open
+            and not self.model.tablet_animating
+            and self.model.camera_idx in (
+                self.model.algem_location, self.model.algem_prev_location
+            )
+        )
 
         if trigger_now > 0 and self._prev_algem_trigger == 0:
-            if self.snd_algem_leave:
-                self.snd_algem_leave.play(-1)
-
+            if self.snd_algem_leave and cam_visible:
+                self._algem_leave_channel.play(self.snd_algem_leave, loops=-1)
+        elif trigger_now > 0 and cam_visible and self.snd_algem_leave and not self._algem_leave_channel.get_busy():
+            self._algem_leave_channel.play(self.snd_algem_leave, loops=-1)
+        elif trigger_now > 0 and not cam_visible:
+            self._algem_leave_channel.stop()
         elif trigger_now == 0 and self._prev_algem_trigger > 0:
-            if self.snd_algem_leave:
-                self.snd_algem_leave.stop()
-
+            self._algem_leave_channel.stop()
         self._prev_algem_trigger = trigger_now
+
+        self._algem_talk_timer -= 1
+        if self._algem_talk_timer > 0:
+            return
+
+        if not self._algem_talk_sounds or self._algem_talk_channel.get_busy():
+            return
+
+        if not self._algem_talk_queue:
+            self._algem_talk_queue = list(self._algem_talk_sounds)
+            random.shuffle(self._algem_talk_queue)
+
+        self._algem_talk_channel.play(self._algem_talk_queue.pop())
+        self._algem_talk_timer = random.randint(3600, 5400)
 
     def _update_danger_sound(self) -> None:
         """Звук danger2b.wav когда Алгем на последней камере (node 7)."""
@@ -514,11 +618,24 @@ class GamePresenter:
             if self.snd_on:
                 self.snd_on.play()
 
+    def _update_laptop(self) -> None:
+        """Плавный зум к ноутбуку."""
+        if self.model.laptop_open and self.model.laptop_zoom < 1.0:
+            self.model.laptop_zoom = min(1.0, self.model.laptop_zoom + 0.04)
+        elif not self.model.laptop_open and self.model.laptop_zoom > 0.0:
+            self.model.laptop_zoom = max(0.0, self.model.laptop_zoom - 0.08)
+
     def _update_hack(self) -> None:
-        """Авто-прогресс взлома сервера. Чем выше прогресс, тем сильнее приманка для Алгема."""
-        if not self.model.hack_active or self.model.server_rebooting:
-            return
-        self.model.hack_progress = min(1.0, self.model.hack_progress + HACK_RATE)
+        """Прогресс взлома через ноутбук (Claude Mythos)."""
+        # Взлом работает только если запущен Claude Mythos и сервер включён
+        should_hack = (
+            self.model.laptop_app == "claude_mythos"
+            and self.model.server_state == "ON"
+            and not self.model.server_rebooting
+        )
+        self.model.hack_active = should_hack
+        if should_hack:
+            self.model.hack_progress = min(1.0, self.model.hack_progress + HACK_RATE)
 
     def _update_reboot_sound(self) -> None:
         if self.model.server_rebooting and not self._wait_playing:
@@ -576,6 +693,9 @@ class GamePresenter:
         if self.snd_wait:
             self.snd_wait.stop()
         self._wait_playing = False
+        self._algem_talk_channel.stop()
+        self._algem_leave_channel.stop()
+        self._algem_talk_timer = random.randint(1800, 3600)
 
         self.model.hack_progress = 0.0
         self.model.hack_active = False
@@ -598,6 +718,8 @@ class GamePresenter:
             if self.snd_phone_call:
                 self.snd_phone_call.stop()
             self._phone_channel = None
+
+        self._close_laptop()
 
     # ──────────────────────────────────────────────────────────────────────
     # Утилиты

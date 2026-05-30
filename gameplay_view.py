@@ -79,6 +79,7 @@ class GameView:
         self.current_idx = 0
         self.scale = scale
         self.server_hotspot = pygame.Rect(1151, 163, 131, 244)
+        self.laptop_hotspot = pygame.Rect(380, 400, 280, 220)
 
         # Кнопка TAB в офисе (изображение на столе)
         raw_tab = pygame.image.load("assets/cctv/tabbutton.png").convert_alpha()
@@ -112,8 +113,8 @@ class GameView:
         # Координаты центров иконок в пространстве мини-карты (500×462)
         # Кроме коворкинга — у него координата левого верхнего угла
         self._minimap_icon_positions = {
-            1: (207, 334),  # MAIN HALL — самый низ
-            2: (447, 303),  # ALGEM'S ROOM
+            1: (447, 303),  # ALGEM'S ROOM
+            2: (207, 334),  # MAIN HALL — самый низ
             3: (270, 279),  # TOILETS
             4: (88,  213),  # WEST HALL
             5: (331, 120),  # CANTEEN — чуть правее и ниже в углу
@@ -164,7 +165,7 @@ class GameView:
         self._algem_main_hall_surf = _load_cam("assets/cameras/main_hall_with_algem.png")
         self._algem_mainhall_watching = _load_cam("assets/cameras/algem_mainhall_is_watching_you.png")
         algem_files = {
-            2: "algems' room_with_algem.png",
+            1: "algems' room_with_algem.png",
             3: "toilets_algem.png",
             4: "westhall_algem.png",
             5: "canteen_algem.png",
@@ -244,6 +245,11 @@ class GameView:
         img_y = mouse_pos[1] / self.scale
         return self.server_hotspot.collidepoint(img_x, img_y)
 
+    def is_laptop_clicked(self, mouse_pos, offset):
+        img_x = (mouse_pos[0] + offset) / self.scale
+        img_y = mouse_pos[1] / self.scale
+        return self.laptop_hotspot.collidepoint(img_x, img_y)
+
     def is_tabbutton_clicked(self, mouse_pos):
         if mouse_pos is None:
             return False
@@ -270,6 +276,28 @@ class GameView:
     def get_vent_reset_clicked(self, mouse_pos):
         return None
 
+    def is_laptop_icon_clicked(self, mouse_pos):
+        if not hasattr(self, '_laptop_icons'):
+            return None
+        for rect, key in self._laptop_icons:
+            if rect.collidepoint(mouse_pos):
+                return key
+        return None
+
+    def is_laptop_start_clicked(self, mouse_pos):
+        return hasattr(self, '_laptop_start_rect') and self._laptop_start_rect.collidepoint(mouse_pos)
+
+    def is_laptop_menu_item_clicked(self, mouse_pos):
+        if not hasattr(self, '_laptop_menu_items'):
+            return None
+        for rect, key in self._laptop_menu_items:
+            if rect.collidepoint(mouse_pos):
+                return key
+        return None
+
+    def is_laptop_close_clicked(self, mouse_pos):
+        return hasattr(self, '_laptop_close_btn') and self._laptop_close_btn.collidepoint(mouse_pos)
+
     def _draw_hack_bar(self, model) -> None:
         bar_w, bar_h = 300, 20
         x = (self.screen_w - bar_w) // 2
@@ -287,6 +315,308 @@ class GameView:
 
         pct = self.font.render(f"{int(model.hack_progress * 100)}%", True, (200, 200, 200))
         self.screen.blit(pct, (x + bar_w + 10, y + bar_h // 2 - pct.get_height() // 2))
+
+    # ── Ноутбук ──────────────────────────────────────────────────────
+
+    def _draw_xp_icon(self, ix: int, iy: int, key: str, hovered: bool) -> None:
+        """Нарисовать одну иконку рабочего стола в стиле XP."""
+        icon_s = 48
+        pad = 2
+
+        # Фон иконки
+        if hovered:
+            sel = pygame.Surface((icon_s + pad * 2, icon_s + pad * 2), pygame.SRCALPHA)
+            sel.fill((80, 120, 200, 80))
+            self.screen.blit(sel, (ix - pad, iy - pad))
+
+        if key == "mycomputer":
+            # Монитор
+            pygame.draw.rect(self.screen, (180, 180, 180), (ix + 4, iy + 2, 40, 30), border_radius=3)
+            pygame.draw.rect(self.screen, (50, 50, 50), (ix + 4, iy + 2, 40, 30), 2, border_radius=3)
+            # Экран
+            pygame.draw.rect(self.screen, (40, 80, 160), (ix + 8, iy + 6, 32, 20))
+            pygame.draw.rect(self.screen, (30, 30, 30), (ix + 8, iy + 6, 32, 20), 1)
+            # Подставка
+            pygame.draw.rect(self.screen, (140, 140, 140), (ix + 18, iy + 32, 12, 4))
+            pygame.draw.rect(self.screen, (120, 120, 120), (ix + 12, iy + 36, 24, 3), border_radius=2)
+
+        elif key == "claude":
+            # Скрин-иконка — череп / хакер
+            cx, cy = ix + icon_s // 2, iy + 16
+            pygame.draw.circle(self.screen, (60, 20, 80), (cx, cy), 16)
+            pygame.draw.circle(self.screen, (100, 40, 140), (cx, cy), 16, 2)
+            # Глаза
+            pygame.draw.circle(self.screen, (200, 50, 50), (cx - 6, cy - 3), 4)
+            pygame.draw.circle(self.screen, (200, 50, 50), (cx + 6, cy - 3), 4)
+            pygame.draw.circle(self.screen, (255, 200, 200), (cx - 5, cy - 4), 1)
+            pygame.draw.circle(self.screen, (255, 200, 200), (cx + 7, cy - 4), 1)
+            # Нижняя часть
+            pygame.draw.rect(self.screen, (60, 20, 80), (cx - 10, cy + 12, 20, 6), border_radius=2)
+
+        elif key == "recycle":
+            # Корзина
+            bx, by = ix + 12, iy + 10
+            pygame.draw.rect(self.screen, (180, 180, 180), (bx, by + 6, 24, 26), border_radius=2)
+            pygame.draw.rect(self.screen, (140, 140, 140), (bx, by + 6, 24, 26), 2, border_radius=2)
+            # Ручка
+            pygame.draw.rect(self.screen, (160, 160, 160), (bx + 6, by, 12, 8), border_radius=2)
+            pygame.draw.rect(self.screen, (120, 120, 120), (bx + 6, by, 12, 8), 1, border_radius=2)
+            # Полоски
+            for lx in (bx + 6, bx + 12, bx + 18):
+                pygame.draw.line(self.screen, (120, 120, 120), (lx, by + 10), (lx, by + 30))
+
+        # Подпись под иконкой
+        label_lines = {"mycomputer": "My Computer", "claude": ["Claude", "Mythos"], "recycle": "Recycle Bin"}
+        text_color = (255, 255, 255)
+        lines = label_lines.get(key, [key])
+        if isinstance(lines, str):
+            lines = [lines]
+        for j, line in enumerate(lines):
+            rendered = self.font.render(line, True, (0, 0, 0))
+            self.screen.blit(rendered, (ix + 1 + icon_s // 2 - rendered.get_width() // 2 + 1, iy + icon_s + 2 + j * 16 + 1))
+            rendered = self.font.render(line, True, text_color)
+            self.screen.blit(rendered, (ix + icon_s // 2 - rendered.get_width() // 2, iy + icon_s + 2 + j * 16))
+
+    def _draw_laptop_screen(self, model) -> None:
+        sw, sh = self.screen_w, self.screen_h
+        mx, my = model.laptop_cursor
+
+        # ── Фон — XP Bliss ───────────────────────────────────────────
+        sky_end = int(sh * 0.62)
+        for y in range(sky_end):
+            t = y / sky_end
+            r = int(60 + t * 40)
+            g = int(140 + t * 40)
+            b = int(220 - t * 20)
+            pygame.draw.line(self.screen, (r, g, b), (0, y), (sw, y))
+        for y in range(sky_end, sh):
+            t = (y - sky_end) / (sh - sky_end)
+            r = int(40 + t * 30)
+            g = int(150 + t * 40)
+            b = int(60 + t * 30)
+            pygame.draw.line(self.screen, (r, g, b), (0, y), (sw, y))
+
+        # ── Taskbar ──────────────────────────────────────────────────
+        tb_h = 40
+        tb_top = sh - tb_h
+
+        for y in range(tb_top, sh):
+            t = (y - tb_top) / tb_h
+            r = int(20 + t * 20)
+            g = int(60 + t * 40)
+            b = int(180 + t * 40)
+            pygame.draw.line(self.screen, (r, g, b), (0, y), (sw, y))
+
+        pygame.draw.line(self.screen, (100, 160, 255), (0, tb_top), (sw, tb_top))
+
+        # Кнопка Start — зелёный градиент как в XP
+        start_rect = pygame.Rect(2, tb_top + 2, 86, tb_h - 4)
+        for y in range(start_rect.y, start_rect.bottom):
+            t = (y - start_rect.y) / start_rect.h
+            r = int(40 + t * 30)
+            g = int(160 - t * 20)
+            b = int(40 + t * 20)
+            pygame.draw.line(self.screen, (r, g, b), (start_rect.x, y), (start_rect.right, y))
+        pygame.draw.rect(self.screen, (20, 100, 20), start_rect, 1, border_radius=4)
+
+        # Текст Start
+        start_label = self.font.render("start", True, (255, 255, 255))
+        self.screen.blit(start_label, (start_rect.x + 16, start_rect.y + 10))
+        self._laptop_start_rect = start_rect
+
+        # Сепаратор после Start
+        pygame.draw.line(self.screen, (60, 100, 180), (start_rect.right + 4, tb_top + 6),
+                         (start_rect.right + 4, sh - 6))
+
+        # Системный трей
+        tray_rect = pygame.Rect(sw - 120, tb_top, 120, tb_h)
+        pygame.draw.rect(self.screen, (30, 80, 160), tray_rect)
+        pygame.draw.line(self.screen, (80, 130, 210), (tray_rect.x, tb_top), (tray_rect.x, sh))
+
+        # Часы
+        clock_label = self.font.render("12:00", True, (255, 255, 255))
+        self.screen.blit(clock_label, (sw - clock_label.get_width() - 10, sh - tb_h + 10))
+
+        # ── Иконки на рабочем столе ──────────────────────────────────
+        icon_defs = [
+            ("My Computer", 30, 30, "mycomputer"),
+            ("Claude Mythos", 30, 130, "claude"),
+            ("Recycle Bin", 30, 240, "recycle"),
+        ]
+        self._laptop_icons = []
+        icon_s = 48
+        for label, ix, iy, key in icon_defs:
+            icon_rect = pygame.Rect(ix - 2, iy - 2, icon_s + 4, icon_s + 40)
+            hovered = icon_rect.collidepoint(mx, my)
+            self._draw_xp_icon(ix, iy, key, hovered)
+            self._laptop_icons.append((icon_rect, key))
+
+        # ── Меню Start ───────────────────────────────────────────────
+        if model.laptop_start_menu:
+            menu_w, menu_h = 220, 260
+            menu_x = 2
+            menu_y = tb_top - menu_h
+
+            # Фон меню — с градиентом
+            menu_surf = pygame.Surface((menu_w, menu_h), pygame.SRCALPHA)
+            for y in range(menu_h):
+                t = y / menu_h
+                r = int(30 + t * 20)
+                g = int(60 + t * 30)
+                b = int(180 + t * 40)
+                pygame.draw.line(menu_surf, (r, g, b, 240), (0, y), (menu_w, y))
+            self.screen.blit(menu_surf, (menu_x, menu_y))
+            pygame.draw.rect(self.screen, (80, 140, 255), (menu_x, menu_y, menu_w, menu_h), 2)
+
+            # Шапка — полоса с именем пользователя
+            head_h = 50
+            head_rect = pygame.Rect(menu_x, menu_y, menu_w, head_h)
+            pygame.draw.rect(self.screen, (50, 100, 200), head_rect)
+            pygame.draw.line(self.screen, (100, 160, 255), (menu_x, menu_y + head_h), (menu_x + menu_w, menu_y + head_h))
+
+            # Аватарка
+            pygame.draw.circle(self.screen, (200, 200, 200), (menu_x + 24, menu_y + 25), 16)
+            pygame.draw.circle(self.screen, (100, 100, 100), (menu_x + 24, menu_y + 25), 16, 1)
+            pygame.draw.circle(self.screen, (60, 60, 60), (menu_x + 24, menu_y + 22), 5)
+            pygame.draw.ellipse(self.screen, (60, 60, 60), (menu_x + 14, menu_y + 28, 20, 14))
+            user_label = self.font.render("Admin", True, (255, 255, 255))
+            self.screen.blit(user_label, (menu_x + 48, menu_y + 18))
+
+            # Сепаратор
+            sep_y = menu_y + head_h
+            pygame.draw.line(self.screen, (100, 160, 255), (menu_x + 4, sep_y + 4),
+                             (menu_x + menu_w - 4, sep_y + 4))
+
+            menu_items = [
+                ("Claude Mythos", "claude"),
+                ("My Computer", "mycomputer"),
+                ("", None),
+                ("Shutdown", "shutdown"),
+            ]
+            self._laptop_menu_items = []
+            for i, (item_label, item_key) in enumerate(menu_items):
+                iy = sep_y + 8 + i * 34
+                item_rect = pygame.Rect(menu_x + 2, iy, menu_w - 4, 30)
+                item_hovered = item_rect.collidepoint(mx, my) and item_key is not None
+
+                if item_hovered:
+                    pygame.draw.rect(self.screen, (40, 80, 200), item_rect, border_radius=3)
+                elif item_key is None:
+                    pygame.draw.line(self.screen, (60, 100, 180),
+                                     (menu_x + 8, iy + 16), (menu_x + menu_w - 8, iy + 16))
+                    self._laptop_menu_items.append((item_rect, item_key))
+                    continue
+
+                if item_label:
+                    txt = self.font.render(item_label, True, (255, 255, 255))
+                    self.screen.blit(txt, (menu_x + 12, iy + 6))
+                self._laptop_menu_items.append((item_rect, item_key))
+
+        # ── Claude Mythos — окно ─────────────────────────────────────
+        if model.laptop_app == "claude_mythos":
+            win_w, win_h = 560, 360
+            win_x = sw // 2 - win_w // 2
+            win_y = sh // 2 - win_h // 2 - 20
+            win_rect = pygame.Rect(win_x, win_y, win_w, win_h)
+
+            # Тень
+            shadow = pygame.Surface((win_w + 4, win_h + 4), pygame.SRCALPHA)
+            for i in range(4, 0, -1):
+                shadow.fill((0, 0, 0, 15 * i))
+                self.screen.blit(shadow, (win_x + i, win_y + i))
+
+            # Фон окна
+            pygame.draw.rect(self.screen, (236, 233, 216), win_rect)
+
+            # Title bar — XP-градиент
+            title_h = 26
+            title_rect = pygame.Rect(win_x, win_y, win_w, title_h)
+            for y in range(title_h):
+                t = y / title_h
+                r = int(0 + t * 30)
+                g = int(80 + t * 40)
+                b = int(180 + t * 40)
+                pygame.draw.line(self.screen, (r, g, b),
+                                 (win_x, win_y + y), (win_x + win_w, win_y + y))
+            pygame.draw.rect(self.screen, (0, 0, 100), title_rect, 1)
+
+            title_txt = self.font.render("Claude Mythos v2.1", True, (255, 255, 255))
+            self.screen.blit(title_txt, (win_x + 8, win_y + 4))
+
+            # Кнопки управления — XP стиль
+            btn_y = win_y + 3
+            btn_w, btn_h = 21, 19
+
+            # Свернуть
+            min_btn = pygame.Rect(win_x + win_w - 68, btn_y, btn_w, btn_h)
+            pygame.draw.rect(self.screen, (40, 100, 180), min_btn, border_radius=2)
+            pygame.draw.rect(self.screen, (20, 60, 140), min_btn, 1, border_radius=2)
+            pygame.draw.line(self.screen, (255, 255, 255),
+                             (min_btn.x + 4, min_btn.y + 14), (min_btn.x + 16, min_btn.y + 14), 2)
+
+            # Развернуть
+            max_btn = pygame.Rect(win_x + win_w - 45, btn_y, btn_w, btn_h)
+            pygame.draw.rect(self.screen, (40, 100, 180), max_btn, border_radius=2)
+            pygame.draw.rect(self.screen, (20, 60, 140), max_btn, 1, border_radius=2)
+            pygame.draw.rect(self.screen, (255, 255, 255),
+                             (max_btn.x + 4, max_btn.y + 4, 13, 11), 2)
+
+            # Закрыть
+            close_btn = pygame.Rect(win_x + win_w - 22, btn_y, btn_w, btn_h)
+            pygame.draw.rect(self.screen, (180, 60, 40), close_btn, border_radius=2)
+            pygame.draw.rect(self.screen, (120, 30, 20), close_btn, 1, border_radius=2)
+            close_x = self.font.render("X", True, (255, 255, 255))
+            self.screen.blit(close_x, (close_btn.x + 5, close_btn.y + 2))
+            self._laptop_close_btn = close_btn
+
+            # Линия под title bar
+            pygame.draw.line(self.screen, (10, 60, 140),
+                             (win_x, win_y + title_h), (win_x + win_w, win_y + title_h))
+
+            # Содержимое окна
+            content_y = win_y + title_h + 12
+            status = "ACTIVE" if model.server_state == "ON" and model.hack_active else "WAITING"
+            status_color = (40, 200, 40) if status == "ACTIVE" else (200, 160, 40)
+
+            lines = [
+                ("Claude Mythos — Neural Hack Engine", (30, 30, 30)),
+                (f"Server: {model.server_state}", (30, 30, 30)),
+                (f"Status: {status}", status_color),
+            ]
+            for i, (line, color) in enumerate(lines):
+                txt = self.font.render(line, True, color)
+                self.screen.blit(txt, (win_x + 15, content_y + i * 26))
+
+            # Прогресс-бар — XP стиль
+            bar_x, bar_y, bar_w, bar_h = win_x + 15, content_y + 100, win_w - 30, 22
+            pygame.draw.rect(self.screen, (220, 220, 220), (bar_x, bar_y, bar_w, bar_h))
+            pygame.draw.rect(self.screen, (160, 160, 160), (bar_x, bar_y, bar_w, bar_h), 1)
+
+            fill = int(bar_w * model.hack_progress)
+            if fill > 0:
+                color = (40, 200, 40) if model.hack_active else (40, 140, 40)
+                pygame.draw.rect(self.screen, color, (bar_x + 1, bar_y + 1, fill - 2, bar_h - 2))
+
+            pct_txt = self.font.render(f"HACK PROGRESS: {int(model.hack_progress * 100)}%", True, (30, 30, 30))
+            self.screen.blit(pct_txt, (bar_x, bar_y + bar_h + 8))
+
+            if model.server_state != "ON":
+                warn = self.font.render("ENABLE SERVER TO BEGIN HACK", True, (200, 60, 60))
+                self.screen.blit(warn, (win_x + 15, content_y + 160))
+
+        # ── XP-курсор ────────────────────────────────────────────────
+        cx, cy = mx, my
+        cursor_pts = [
+            (cx, cy), (cx, cy + 18), (cx + 5, cy + 14),
+            (cx + 9, cy + 21), (cx + 12, cy + 19), (cx + 8, cy + 12),
+            (cx + 15, cy + 10),
+        ]
+        # Тень
+        shadow_pts = [(x + 1, y + 1) for x, y in cursor_pts]
+        pygame.draw.polygon(self.screen, (40, 40, 40), shadow_pts)
+        # Основной курсор
+        pygame.draw.polygon(self.screen, (255, 255, 255), cursor_pts)
+        pygame.draw.polygon(self.screen, (0, 0, 0), cursor_pts, 1)
 
     def _draw_cctv_effects(self, camera_idx, model):
         # Шум/помехи
@@ -385,6 +715,60 @@ class GameView:
     def draw(self, model):
         offset = int((model.current_look + 1) / 2 * self.max_offset)
 
+        # ── Зум на ноутбук ──────────────────────────────────────────
+        if model.laptop_zoom >= 0.95:
+            self._draw_laptop_screen(model)
+            return
+
+        if model.laptop_zoom > 0:
+            # Рисуем офис с затемнением
+            if model.server_state == "OFF":
+                self.screen.blit(self.bg_off, (-offset, 0))
+            elif model.server_state == "TURNING_ON":
+                img = self.bg_blinks.get(model.server_blink, self.bg_off)
+                self.screen.blit(img, (-offset, 0))
+            elif model.server_state == "TURNING_OFF":
+                self.screen.blit(self.bg_off, (-offset, 0))
+            elif model.server_state == "ON":
+                self.screen.blit(self.bg_frames[self.current_idx], (-offset, 0))
+
+            # Затемнение пропорционально зуму
+            dark_alpha = int(model.laptop_zoom * 180)
+            dark = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+            dark.fill((0, 0, 0, dark_alpha))
+            self.screen.blit(dark, (0, 0))
+
+            # Зуммированная область ноутбука
+            lx = int(self.laptop_hotspot.x * self.scale) - offset
+            ly = int(self.laptop_hotspot.y * self.scale)
+            lw = int(self.laptop_hotspot.w * self.scale)
+            lh = int(self.laptop_hotspot.h * self.scale)
+
+            zoom = 1.0 + model.laptop_zoom * 2.0
+            zw = int(lw * zoom)
+            zh = int(lh * zoom)
+            zx = self.screen_w // 2 - zw // 2
+            zy = self.screen_h // 2 - zh // 2
+
+            # Клипаем область ноутбука из офиса
+            src_rect = pygame.Rect(
+                max(0, lx), max(0, ly),
+                min(lw, self.bg_off.get_width() - max(0, lx)),
+                min(lh, self.bg_off.get_height() - max(0, ly))
+            )
+            if src_rect.w > 0 and src_rect.h > 0:
+                if model.server_state == "ON":
+                    src = self.bg_frames[self.current_idx].subsurface(src_rect)
+                else:
+                    src = self.bg_off.subsurface(src_rect)
+                zoomed = pygame.transform.smoothscale(src, (zw, zh))
+                self.screen.blit(zoomed, (zx, zy))
+                # Белая рамка вокруг зума
+                pygame.draw.rect(self.screen, (100, 100, 100), (zx, zy, zw, zh), 2)
+
+            pygame.display.flip()
+            return
+
         if model.server_state == "OFF":
             self.screen.blit(self.bg_off, (-offset, 0))
         elif model.server_state == "TURNING_ON":
@@ -418,13 +802,13 @@ class GameView:
                 loc = model.algem_location
                 cam_idx = model.camera_idx
 
-                if cam_idx == 1 and loc == 1:
+                if cam_idx == 2 and loc == 2:
                     if model.algem_main_hall_sprite == 0 and self._algem_main_hall_surf:
                         cam_surf = self._algem_main_hall_surf
                     elif model.algem_main_hall_sprite == 1 and self._algem_mainhall_watching:
                         cam_surf = self._algem_mainhall_watching
                     else:
-                        cam_surf = self.camera_surfaces.get(1)
+                        cam_surf = self.camera_surfaces.get(2)
                 elif loc == cam_idx:
                     cam_surf = self._algem_surfaces.get(cam_idx)
                     if cam_surf is None:
@@ -436,11 +820,6 @@ class GameView:
                             cam_surf.blit(dark, (0, 0))
                 else:
                     cam_surf = self.camera_surfaces.get(cam_idx)
-                    if cam_idx == 2 and cam_surf is not None:
-                        dark = pygame.Surface(cam_surf.get_size(), pygame.SRCALPHA)
-                        dark.fill((0, 0, 0, 80))
-                        cam_surf = cam_surf.copy()
-                        cam_surf.blit(dark, (0, 0))
                 cam_max_off = self.camera_max_offsets.get(model.camera_idx, 0)
                 if cam_surf is not None:
                     off = int((model.cam_look + 1) / 2 * cam_max_off)

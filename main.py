@@ -1,4 +1,6 @@
 import os
+import math
+import random
 import pygame
 from model import MenuModel
 from presenter import MenuPresenter
@@ -8,17 +10,19 @@ from gameplay_view import GameView
 from gameplay_presenter import GamePresenter
 from screamer import ScreamerPlayer
 
-LOADING_FONT_CACHE = None
+LOADING_FONT_CACHE: dict[int, pygame.font.Font] = {}
+LECTURE_SOUNDS: list[str] = [
+    f"sounds/lectures/lecture{i}.mp3" for i in range(1, 7)
+]
 
 def _get_loading_font(size=30):
-    global LOADING_FONT_CACHE
-    if LOADING_FONT_CACHE is None:
+    if size not in LOADING_FONT_CACHE:
         path = "assets/fonts/OCR-A.ttf"
         if os.path.exists(path):
-            LOADING_FONT_CACHE = pygame.font.Font(path, size)
+            LOADING_FONT_CACHE[size] = pygame.font.Font(path, size)
         else:
-            LOADING_FONT_CACHE = pygame.font.Font(None, size)
-    return LOADING_FONT_CACHE
+            LOADING_FONT_CACHE[size] = pygame.font.Font(None, size)
+    return LOADING_FONT_CACHE[size]
 
 def draw_loading(screen, elapsed_ms):
     screen.fill((0, 0, 0))
@@ -45,6 +49,8 @@ def main():
 
     game_m = game_v = game_p = None
     load_start = 0
+    lecture_sound = None
+    game_over_tick = 0
 
     state = "MENU"
     while True:
@@ -93,18 +99,65 @@ def main():
                     return
                 if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                     screamer.close()
-                    state = "MENU"
+                    state = "GAME_OVER"
+                    pygame.mixer.stop()
+                    try:
+                        path = random.choice(LECTURE_SOUNDS)
+                        lecture_sound = pygame.mixer.Sound(path)
+                        lecture_sound.play()
+                    except pygame.error:
+                        lecture_sound = None
 
             if state == "SCREAMER":
                 frame = screamer.get_frame()
                 if frame is None:
                     screamer.close()
-                    state = "MENU"
+                    state = "GAME_OVER"
+                    pygame.mixer.stop()
+                    try:
+                        path = random.choice(LECTURE_SOUNDS)
+                        lecture_sound = pygame.mixer.Sound(path)
+                        lecture_sound.play()
+                    except pygame.error:
+                        lecture_sound = None
                 else:
                     screen.blit(frame, (0, 0))
                     pygame.display.flip()
 
             clock.tick(screamer.fps)
+        elif state == "GAME_OVER":
+            for e in pygame.event.get():
+                if e.type == pygame.QUIT:
+                    pygame.mixer.stop()
+                    return
+                if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                    pygame.mixer.stop()
+                    lecture_sound = None
+                    state = "MENU"
+
+            sw, sh = screen.get_size()
+            screen.fill((0, 0, 0))
+
+            total_ticks = game_m.hour * 3600 + game_m.timer
+            total_seconds = total_ticks // 60
+            display_minutes = total_seconds // 60
+            display_seconds = total_seconds % 60
+
+            font_big = _get_loading_font(60)
+            font_small = _get_loading_font(24)
+
+            game_over_tick += 1
+            pulse = (math.sin(game_over_tick * 0.05) + 1) / 2  # 0.0 – 1.0
+            r = int(100 + pulse * 60)  # 100–160
+            go_surf = font_big.render("GAME OVER", True, (r, 0, 0))
+            screen.blit(go_surf, (sw // 2 - go_surf.get_width() // 2, sh // 2 - 50))
+
+            time_str = f"{display_minutes}:{display_seconds:02d}"
+            time_text = font_small.render(time_str, True, (100, 100, 100))
+            screen.blit(time_text, (sw // 2 - time_text.get_width() // 2, sh // 2 + 30))
+
+            pygame.display.flip()
+            clock.tick(60)
 
 if __name__ == "__main__":
     main()

@@ -211,13 +211,13 @@ class AlgemAI:
         self,
         graph:      dict[int, list[int]],
         night:      int,
-        start_node: int = 2,
+        start_node: int = 1,
     ) -> None:
         """
         Args:
             graph      : начальный граф комнат (может обновляться при вентах).
             night      : номер ночи 1–5; влияет на скорость и агрессивность.
-            start_node : начальная позиция (по умолчанию — комната Алгема, узел 2).
+            start_node : начальная позиция (по умолчанию — комната Алгема, узел 1).
         """
         self._graph:  dict[int, list[int]] = graph
         self._night:  int                  = night
@@ -231,7 +231,7 @@ class AlgemAI:
         self._move_timer:      int = self._initial_delay()
 
         # ── FSM ──────────────────────────────────────────────────────────
-        self.state:            AIState = AIState.PATROL  # сразу начинает движение
+        self.state:            AIState = AIState.IDLE   # начинает в покое
         self._idle_ticks_left: int     = 0
 
         # ── Агрессия [0.0 … 1.0] — растёт в IDLE, сбрасывается при смене ──
@@ -397,9 +397,10 @@ class AlgemAI:
             self._idle_ticks_left = random.randint(300, 600)
             return False
 
-        # Переход в ATTACK теперь сложнее: нужно больше агрессии и зависимость от часа
+        # Переход в ATTACK: на ночах 1–3 без сервера — только PATROL
         attack_threshold = 0.7 - (self._night * 0.05)
-        if self.aggression > attack_threshold and random.random() < (0.3 + hour * 0.1):
+        can_attack = self.hack_attraction >= 0.05 or self._night > 3
+        if can_attack and self.aggression > attack_threshold and random.random() < (0.3 + hour * 0.1):
             if self._night > 1:
                 self.state = AIState.ATTACK
             else:
@@ -432,8 +433,9 @@ class AlgemAI:
 
         self._move_to(next_node)
 
-        # Вероятностный переход в ATTACK (только со 2-й ночи)
-        if self._night > 1:
+        # Вероятностный переход в ATTACK (только со 2-й ночи и с сервером)
+        can_attack = self.hack_attraction >= 0.05 or self._night > 3
+        if can_attack and self._night > 1:
             night_factor   = self._night / 5.0
             hack_mult      = self.hack_attraction
             attack_chance  = (0.06 + night_factor * 0.18 + self.aggression * 0.15) * hack_mult
@@ -595,8 +597,12 @@ class AlgemAI:
 
     def _initial_delay(self) -> int:
         """Начальная задержка перед первым ходом (зависит от номера ночи)."""
-        base = max(60, 300 - self._night * 40)
-        return random.randint(base, base + 120)
+        if self._night <= 3:
+            base = random.randint(1800, 3000)  # 30–50 секунд на ранних ночах
+        else:
+            base = max(60, 300 - self._night * 40)
+            base = random.randint(base, base + 120)
+        return base
 
     def _compute_interval(self, hour: int) -> int:
         """

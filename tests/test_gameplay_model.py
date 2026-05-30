@@ -205,7 +205,7 @@ class TestGraph:
 
     def test_algem_starts_in_room_2(self):
         m = GameModel(night=1)
-        assert m.algem_location == 2
+        assert m.algem_location == 1
 
     def test_vent_edge_added_when_broken(self):
         m = GameModel(night=1)
