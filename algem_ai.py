@@ -335,6 +335,10 @@ class AlgemAI:
         if self.trigger_timer > 0:
             self.trigger_timer -= 1
 
+        # Первая ночь — ознакомительная, Алгем не двигается
+        if self._night <= 1:
+            return False
+
         # Обратный отсчёт аудио-приманки
         if self._lure_ticks_left > 0:
             self._lure_ticks_left -= 1

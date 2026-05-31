@@ -20,9 +20,11 @@ from __future__ import annotations
 import random
 from typing import Any
 
+import numpy as np
 import pygame
 
-from gameplay_model import CAMERA_COUNT, GameModel
+from algem_ai import bfs_path
+from gameplay_model import BASE_GRAPH, CAMERA_COUNT, GameModel
 
 HACK_RATE: float = 1.0 / 21600  # прогресс взлома за тик (~6 игровых часов)
 
@@ -52,6 +54,8 @@ class GamePresenter:
         # ── Флаги UI ─────────────────────────────────────────────────────
         self._camera_inited: bool = False  # первое открытие планшета
         self._tab_prev_hovered: bool = False  # для edge-trigger ховера
+        self._laptop_saved_app = None
+        self._laptop_saved_menu = False
 
         # ── Ленивая загрузка звуков ──────────────────────────────────────
         self._sound_paths: dict[str, str] = {
@@ -69,16 +73,35 @@ class GamePresenter:
             "snd_wait": "sounds/wait.wav",
             "snd_danger2b": "sounds/danger2b.wav",
         }
+        self._ad_path: str = "sounds/laptop/ad.mp3"
         self._snd_off_length: int = 60
         self._gadget_paths: list[str] = [f"sounds/gadget{i}.mp3" for i in range(1, 5)]
         self._algem_talk_paths: list[str] = [
             f"sounds/algemistalking/ambience{i}.mp3"
             for i in (1, 2, 4, 5, 6, 7, 8, 9, 10)
         ]
-        self._algem_talk_queue: list[pygame.mixer.Sound] = []
         self._algem_talk_channel: pygame.mixer.Channel = pygame.mixer.Channel(5)
         self._algem_leave_channel: pygame.mixer.Channel = pygame.mixer.Channel(4)
+        self._cam_init_channel: pygame.mixer.Channel = pygame.mixer.Channel(6)
+        self._cam_switch_channel: pygame.mixer.Channel = pygame.mixer.Channel(7)
+        self._ad_playing: bool = False
+        self._ad_channel: pygame.mixer.Channel = pygame.mixer.Channel(8)
         self._algem_talk_timer: int = random.randint(1800, 3600)
+
+        # ── Звуки Алгема: расстояние от офиса ────────────────────────────
+        self._office_distance: dict[int, int] = {}
+        for node in range(1, 8):
+            path = bfs_path(node, 0, BASE_GRAPH)
+            self._office_distance[node] = len(path) - 1 if path else 4
+        # (расстояние → (kernel_size, volume))
+        self._dist_params: dict[int, tuple[int, float]] = {
+            0: (0, 1.0),
+            1: (5, 0.70),
+            2: (15, 0.42),
+            3: (25, 0.25),
+            4: (40, 0.12),
+        }
+        self._algem_talk_variants: dict[int, list[pygame.mixer.Sound]] | None = None
 
         self._ambience_playing: bool = False
         self._prev_algem_trigger: int = 0
@@ -146,6 +169,34 @@ class GamePresenter:
             object.__setattr__(self, '__algem_talk_cache', cache)
         return object.__getattribute__(self, '__algem_talk_cache')
 
+    @staticmethod
+    def _make_muffled(sound: pygame.mixer.Sound, kernel_size: int) -> pygame.mixer.Sound:
+        """Создать «глушёную» версию звука через low-pass фильтр (скользящее среднее)."""
+        if kernel_size <= 1:
+            return sound
+        raw = sound.get_raw()
+        arr = np.frombuffer(raw, dtype=np.int16).copy()
+        kernel = np.ones(kernel_size, dtype=np.float64) / kernel_size
+        filtered = np.convolve(arr.astype(np.float64), kernel, mode='same')
+        np.clip(filtered, -32768, 32767, out=filtered)
+        return pygame.mixer.Sound(buffer=filtered.astype(np.int16).tobytes())
+
+    def _build_talk_variants(self) -> None:
+        """Создать наборы звуков с разной степенью глушения для каждой дистанции."""
+        originals = self._algem_talk_sounds
+        self._algem_talk_variants = {}
+        self._algem_talk_variants[0] = list(originals)
+        for dist, (kernel, _vol) in self._dist_params.items():
+            self._algem_talk_variants[dist] = [
+                self._make_muffled(s, kernel) for s in originals
+            ]
+
+    @property
+    def _talk_variants(self) -> dict[int, list[pygame.mixer.Sound]]:
+        if self._algem_talk_variants is None:
+            self._build_talk_variants()
+        return self._algem_talk_variants
+
     # ──────────────────────────────────────────────────────────────────────
     # Обработка ввода
     # ──────────────────────────────────────────────────────────────────────
@@ -171,13 +222,13 @@ class GamePresenter:
         key = event.key
 
         if key == pygame.K_ESCAPE:
-            if self.model.laptop_open:
+            if self.model.laptop_open and not self.model.server_rebooting:
                 self._close_laptop()
             else:
                 pygame.mouse.set_visible(not pygame.mouse.get_visible())
 
-        # Переключение планшета по TAB
-        elif key == pygame.K_TAB:
+        # Переключение планшета по TAB — блокировано при ноутбуке
+        elif key == pygame.K_TAB and not self.model.laptop_open:
             self._toggle_tablet()
 
         # DEBUG: F1 → принудительный game_over для теста скримера
@@ -194,18 +245,18 @@ class GamePresenter:
             pygame.K_6: 6,
             pygame.K_7: 7,
         }
-        if key in key_to_cam and self.model.tablet_open:
+        if key in key_to_cam and self.model.tablet_open and not self.model.laptop_open:
             self._switch_camera(key_to_cam[key])
 
         # 0 — сброс на камеру 1
-        if key == pygame.K_0 and self.model.tablet_open:
+        if key == pygame.K_0 and self.model.tablet_open and not self.model.laptop_open:
             self._switch_camera(1)
             self.model.cam_look = 0.0
             self.model.cam_state = "HOLDING"
             self.model.cam_hold_timer = 0
 
         # Стрелки — переключение камер по кругу
-        if self.model.tablet_open:
+        if self.model.tablet_open and not self.model.laptop_open:
             if key == pygame.K_RIGHT:
                 self._switch_camera((self.model.camera_idx % CAMERA_COUNT) + 1)
             elif key == pygame.K_LEFT:
@@ -267,35 +318,45 @@ class GamePresenter:
             if self.view.screen_rect.collidepoint(pos):
                 return
 
-        # 4. Клик по серверу (в офисе)
-        if self.model.server_state in ("OFF", "ON"):
-            offset = int(
-                (self.model.current_look + 1) / 2 * self.view.max_offset
-            )
-            if self.view.is_server_clicked(pos, offset):
-                if self.model.server_overload:
-                    self._check_node7_attack()
-                    if self.model.game_over:
-                        return
-                    self.model.server_rebooting = True
-                    self.model.server_reboot_timer = 300  # 5 секунд
-                    self.model.server_overload_warn = 0
-                else:
-                    self._toggle_server()
-
-        # 5. Клик по ноутбуку (в офисе) — открыть
+        # 4. Клик по ноутбуку (в офисе) — открыть
         if not self.model.laptop_open:
             offset = int(
                 (self.model.current_look + 1) / 2 * self.view.max_offset
             )
             if self.view.is_laptop_clicked(pos, offset):
                 self.model.laptop_open = True
+                self.model.laptop_app = self._laptop_saved_app
+                self.model.laptop_start_menu = self._laptop_saved_menu
 
     def _handle_laptop_click(self, pos: tuple[int, int]) -> None:
         """Обработка кликов внутри открытого ноутбука."""
+        # Клик по крестику рекламы — закрыть
+        if self.model.ad_active:
+            if self.view._ad_close_rect and self.view._ad_close_rect.collidepoint(pos):
+                self._close_ad()
+            return
+
         # Клик по кнопке закрытия окна
-        if self.model.laptop_app and self.view.is_laptop_close_clicked(pos):
+        if self.model.laptop_app and self.view.is_laptop_close_clicked(pos) and not self.model.server_rebooting:
             self.model.laptop_app = None
+            return
+
+        # Кнопка Start/Stop Server
+        if self.model.laptop_app == "claude_mythos" and self.view.is_laptop_server_btn_clicked(pos):
+            if self.model.server_state in ("OFF", "ON") and not self.model.server_overload:
+                self._toggle_server()
+            return
+
+        # Кнопка Reboot
+        if self.model.laptop_app == "claude_mythos" and self.view.is_laptop_reboot_btn_clicked(pos):
+            if self.model.server_overload or self.model.server_rebooting:
+                self._check_node7_attack()
+                if self.model.game_over:
+                    return
+                self.model.server_rebooting = True
+                self.model.server_reboot_timer = 300
+                self.model.server_overload_warn = 0
+                self.model.hack_logs.append(f"[{self.model.hour}:00] > Rebooting server...")
             return
 
         # Клик по Start
@@ -311,7 +372,7 @@ class GamePresenter:
                 self.model.laptop_start_menu = False
             elif item == "mycomputer":
                 pass  # TODO: My Computer
-            elif item == "shutdown":
+            elif item == "shutdown" and not self.model.server_rebooting:
                 self._close_laptop()
             elif item is not None:
                 self.model.laptop_start_menu = False
@@ -329,6 +390,8 @@ class GamePresenter:
 
     def _close_laptop(self) -> None:
         """Закрыть ноутбук и вернуться в офис."""
+        self._laptop_saved_app = self.model.laptop_app
+        self._laptop_saved_menu = self.model.laptop_start_menu
         self.model.laptop_open = False
         self.model.laptop_zoom = 0.0
         self.model.laptop_app = None
@@ -342,7 +405,7 @@ class GamePresenter:
         if self.model.laptop_open and self.model.laptop_zoom >= 0.95:
             self.model.laptop_cursor = pos
 
-        if self.model.tablet_animating:
+        if self.model.tablet_animating or self.model.laptop_open:
             self.view.tab_button_hovered = False
             self._tab_prev_hovered = False
             return
@@ -389,6 +452,7 @@ class GamePresenter:
         self._update_algem_sounds()
         self._update_danger_sound()
         self._update_reboot_sound()
+        self._update_ad()
         self._update_laptop()
 
     # ──────────────────────────────────────────────────────────────────────
@@ -505,6 +569,9 @@ class GamePresenter:
           и игрок смотрит на камеру Алгема.
         - Случайные цитаты из algemistalking — рандомно, не в начале ночи.
         """
+        if self.model.night <= 1:
+            return
+
         trigger_now = self.model.algem_trigger
         cam_visible = (
             self.model.tablet_open
@@ -526,17 +593,34 @@ class GamePresenter:
         self._prev_algem_trigger = trigger_now
 
         self._algem_talk_timer -= 1
+
+        if self._algem_talk_channel.get_busy():
+            if self.model.tablet_open and not self.model.tablet_animating:
+                cam_to_algem = bfs_path(
+                    self.model.camera_idx, self.model.algem_location, BASE_GRAPH
+                )
+                dist = len(cam_to_algem) - 1 if cam_to_algem else 4
+            else:
+                dist = self._office_distance.get(self.model.algem_location, 4)
+            self._algem_talk_channel.set_volume(self._dist_params.get(dist, (0, 0.18))[1])
+            return
+
         if self._algem_talk_timer > 0:
             return
 
-        if not self._algem_talk_sounds or self._algem_talk_channel.get_busy():
+        if not self._algem_talk_sounds:
             return
 
-        if not self._algem_talk_queue:
-            self._algem_talk_queue = list(self._algem_talk_sounds)
-            random.shuffle(self._algem_talk_queue)
-
-        self._algem_talk_channel.play(self._algem_talk_queue.pop())
+        if self.model.tablet_open and not self.model.tablet_animating:
+            cam_to_algem = bfs_path(
+                self.model.camera_idx, self.model.algem_location, BASE_GRAPH
+            )
+            dist = len(cam_to_algem) - 1 if cam_to_algem else 4
+        else:
+            dist = self._office_distance.get(self.model.algem_location, 4)
+        variants = self._talk_variants.get(dist, self._talk_variants[4])
+        self._algem_talk_channel.set_volume(self._dist_params.get(dist, (0, 0.18))[1])
+        self._algem_talk_channel.play(random.choice(variants))
         self._algem_talk_timer = random.randint(3600, 5400)
 
     def _update_danger_sound(self) -> None:
@@ -573,10 +657,12 @@ class GamePresenter:
         self.model.tablet_anim_frame = 0
         self._anim_timer = 2
 
-        if not self._camera_inited:
+        if self._cam_init_channel.get_busy():
+            self._cam_init_channel.set_volume(1.0)
+        elif not self._camera_inited:
             self._camera_inited = True
             if self.snd_cam_init:
-                self.snd_cam_init.play()
+                self._cam_init_channel.play(self.snd_cam_init)
 
         if self.snd_tablet:
             self.snd_tablet.play()
@@ -587,6 +673,7 @@ class GamePresenter:
         self._anim_dir = -1
         self.model.tablet_anim_frame = 9
         self._anim_timer = 2
+        self._cam_init_channel.set_volume(0.0)
 
         if self.snd_tablet:
             self.snd_tablet.play()
@@ -595,7 +682,7 @@ class GamePresenter:
         """Переключить активную камеру с звуком."""
         self.model.camera_idx = idx
         if self.snd_cam_switch:
-            self.snd_cam_switch.play()
+            self._cam_switch_channel.play(self.snd_cam_switch)
 
     def _toggle_server(self) -> None:
         """Включить или выключить сервер."""
@@ -619,11 +706,11 @@ class GamePresenter:
                 self.snd_on.play()
 
     def _update_laptop(self) -> None:
-        """Плавный зум к ноутбуку."""
-        if self.model.laptop_open and self.model.laptop_zoom < 1.0:
-            self.model.laptop_zoom = min(1.0, self.model.laptop_zoom + 0.04)
-        elif not self.model.laptop_open and self.model.laptop_zoom > 0.0:
-            self.model.laptop_zoom = max(0.0, self.model.laptop_zoom - 0.08)
+        """Мгновенное переключение ноутбука."""
+        if self.model.laptop_open:
+            self.model.laptop_zoom = 1.0
+        else:
+            self.model.laptop_zoom = 0.0
 
     def _update_hack(self) -> None:
         """Прогресс взлома через ноутбук (Claude Mythos)."""
@@ -675,6 +762,31 @@ class GamePresenter:
         else:
             self._on_node7_grace = 0
 
+    def _update_ad(self) -> None:
+        """Управление рекламой: запуск звука и притяжение Алгема."""
+        if self.model.ad_active:
+            if not self._ad_playing:
+                pygame.mixer.music.load(self._ad_path)
+                pygame.mixer.music.set_volume(1.0)
+                pygame.mixer.music.play(-1)
+                self._ad_playing = True
+            if self.model.night > 1:
+                self.model._hack_attraction = min(1.0, self.model._hack_attraction + 0.002)
+        else:
+            if self._ad_playing:
+                pygame.mixer.music.stop()
+                self._ad_playing = False
+
+    def _close_ad(self) -> None:
+        """Закрыть рекламу и остановить звук."""
+        if self.model.ad_active:
+            self.model.ad_active = False
+            self.model.ad_image_key = None
+            self.model.ad_timer = 0
+            if self._ad_playing:
+                pygame.mixer.music.stop()
+                self._ad_playing = False
+
     def _start_ambience(self) -> None:
         if self.snd_ambience:
             self.snd_ambience.play(-1)
@@ -695,6 +807,11 @@ class GamePresenter:
         self._wait_playing = False
         self._algem_talk_channel.stop()
         self._algem_leave_channel.stop()
+        self._cam_init_channel.stop()
+        self._camera_inited = False
+        if self._ad_playing:
+            pygame.mixer.music.stop()
+            self._ad_playing = False
         self._algem_talk_timer = random.randint(1800, 3600)
 
         self.model.hack_progress = 0.0

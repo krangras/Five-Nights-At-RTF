@@ -116,6 +116,11 @@ class GameModel:
         self.server_rebooting: bool = False      # идёт ли перезагрузка
         self.server_reboot_timer: int = 0        # тиков до конца перезагрузки
 
+        # ── Логи ноутбука (терминал Claude Mythos) ────────────────────────
+        self.hack_logs: list[str] = []
+        self._hack_log_timer: int = 0
+        self._hack_log_idx: int = 0
+
         # ── Планшет (анимация открытия/закрытия) ─────────────────────────
         self.tablet_open:       bool = False
         self.tablet_animating:  bool = False
@@ -127,6 +132,13 @@ class GameModel:
         self.laptop_cursor: tuple[int, int] = (640, 360)  # позиция курсора
         self.laptop_start_menu: bool = False      # открыто ли меню Start
         self.laptop_app:    str | None = None     # запущенное приложение
+
+        # ── Реклама на ноутбуке ─────────────────────────────────────────
+        self.ad_active:      bool = False         # показывается ли реклама
+        self.ad_image_key:   str | None = None    # ключ изображения рекламы
+        self.ad_sound_channel = None              # канал для звука рекламы
+        self.ad_timer:       int = 0              # тиков с момента показа
+        self.ad_spawn_timer: int = random.randint(1800, 7200)  # тиков до следующей рекламы
 
         # ── Камера (текущая и панорамирование) ───────────────────────────
         self.camera_idx:        int   = 1
@@ -280,6 +292,8 @@ class GameModel:
         self._update_bait()
         self._update_vents()
         self._update_server_load()
+        self._update_hack_logs()
+        self._update_ad()
         self._update_ai()
 
     # ──────────────────────────────────────────────────────────────────────
@@ -317,7 +331,10 @@ class GameModel:
             self.hour  += 1
             self.timer  = 0
             if self.hour >= 6:
-                self.night_complete = True
+                if self.hack_progress < 1.0:
+                    self.game_over = True
+                else:
+                    self.night_complete = True
 
     def _update_phone(self) -> None:
         """Телефонный звонок первой ночи."""
@@ -455,6 +472,81 @@ class GameModel:
         if self._server_overload_timer <= 0:
             self.server_overload = True
             self.server_overload_warn = 480
+
+    # ── Логи взлома ───────────────────────────────────────────────────────
+
+    _HACK_LOG_SEQUENCES: dict[int, list[tuple[float, str]]] = {
+        1: [
+            (0.00, "> CLAUDE MYTHOS v2.1 — Neural Hack Engine"),
+            (0.00, "> Initializing neural network..."),
+            (0.01, "> Loading transformer model (175B params)..."),
+            (0.03, "> Model loaded. GPU memory: 11.2 GB"),
+            (0.05, "> Scanning target network topology..."),
+            (0.07, "> Found: teacher-pc.local (192.168.1.42)"),
+            (0.10, "> Probing open ports... 22, 80, 445, 3389"),
+            (0.13, "> SMBv3 detected — attempting relay attack..."),
+            (0.16, "> NTLM hash captured: admin\\$3cr3t"),
+            (0.19, "> Cracking hash with rules engine..."),
+            (0.22, "> Hash cracked in 3.2s — password: Pr0f2024!"),
+            (0.25, "> Establishing RDP session to teacher-pc.local..."),
+            (0.28, "> Connection established. OS: Windows 10 Education"),
+            (0.30, "> Running enumeration script..."),
+            (0.33, "> Users found: Admin, Teacher, Student"),
+            (0.36, "> Searching for target documents..."),
+            (0.39, "> Scanning: C:\\Users\\Teacher\\Documents\\"),
+            (0.42, "> Found: Ведомость_2024.docx (2.4 MB)"),
+            (0.45, "> Found: Зачетная_книжка.xlsx (890 KB)"),
+            (0.48, "> Found: Пароли_ЭИОС.txt (1.2 KB)"),
+            (0.50, "> Analyzing document structure..."),
+            (0.53, "> Extracting embedded macros..."),
+            (0.56, "> Decrypting VBA module..."),
+            (0.59, "> Extracting grade data from tables..."),
+            (0.62, "> Parsing student records... 847 entries"),
+            (0.65, "> Modifying target grades..."),
+            (0.68, "> Injecting modified content into docx..."),
+            (0.70, "> Rebuilding document hash..."),
+            (0.73, "> Validating modified file integrity..."),
+            (0.76, "> Wiping access logs on teacher-pc..."),
+            (0.79, "> Clearing SMB connection artifacts..."),
+            (0.82, "> Removing RDP session history..."),
+            (0.85, "> Deploying persistence module..."),
+            (0.88, "> Covering tracks: 14 log entries erased"),
+            (0.90, "> Generating false audit trail..."),
+            (0.93, "> Uploading exfiltrated data to C2..."),
+            (0.96, "> Compression ratio: 87.3% (deduplication)"),
+            (0.98, "> Final verification..."),
+            (1.00, "> MISSION COMPLETE — all objectives achieved"),
+        ],
+    }
+
+    def _update_hack_logs(self) -> None:
+        """Генерировать логи взлома по мере продвижения hack_progress."""
+        if self.hack_progress <= 0.0 or self.server_state != "ON":
+            return
+        seq = self._HACK_LOG_SEQUENCES.get(self.night, self._HACK_LOG_SEQUENCES[1])
+        while self._hack_log_idx < len(seq):
+            threshold, msg = seq[self._hack_log_idx]
+            if self.hack_progress >= threshold:
+                ts_m = self.timer // 60
+                ts = f"[{self.hour}:{ts_m:02d}]"
+                self.hack_logs.append(f"{ts} {msg}")
+                self._hack_log_idx += 1
+            else:
+                break
+
+    _AD_IMAGES = ["ad_hhru", "ad_kontur", "ad_sber"]
+
+    def _update_ad(self) -> None:
+        """Случайный спавн рекламы на ноутбуке."""
+        if self.ad_active:
+            self.ad_timer += 1
+            return
+        self.ad_spawn_timer -= 1
+        if self.ad_spawn_timer <= 0:
+            self.ad_active = True
+            self.ad_image_key = random.choice(self._AD_IMAGES)
+            self.ad_timer = 0
+            self.ad_spawn_timer = random.randint(2400, 9600)
 
     # ──────────────────────────────────────────────────────────────────────
     # Утилиты

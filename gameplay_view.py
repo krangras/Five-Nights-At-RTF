@@ -75,17 +75,31 @@ class GameView:
         self._brightness_overlay = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
         self._brightness_overlay.fill((255, 255, 255, 13))
         self.font = pygame.font.Font("assets/fonts/OCR-A.ttf", 30)
-        self.switch_timer = random.randint(60, 180)
-        self.current_idx = 0
+        self._ui_font = pygame.font.SysFont("tahoma", 16)
+        self._ui_font_bold = pygame.font.SysFont("tahoma", 16, bold=True)
+        self._ui_font_sm = pygame.font.SysFont("tahoma", 13)
+        self._ui_font_title = pygame.font.SysFont("tahoma", 14, bold=True)
         self.scale = scale
         self.server_hotspot = pygame.Rect(1151, 163, 131, 244)
         self.laptop_hotspot = pygame.Rect(380, 400, 280, 220)
+        self.switch_timer = random.randint(60, 180)
+        self.current_idx = 0
 
         # Кнопка TAB в офисе (изображение на столе)
         raw_tab = pygame.image.load("assets/cctv/tabbutton.png").convert_alpha()
         self.tabbutton_surf = pygame.transform.scale(raw_tab, (int(600 * scale), int(60 * scale)))
         self.tab_button_rect = pygame.Rect(662, 758, 600, 60)  # оригинальные координаты (1923×818)
         self.tab_button_hovered = False
+
+        raw_wallpaper = pygame.image.load("assets/laptop/wallpaper.png").convert()
+        self.laptop_wallpaper = pygame.transform.smoothscale(raw_wallpaper, (screen_w, screen_h - 40))
+
+        self._ad_images = {}
+        for key in ["ad_hhru", "ad_kontur", "ad_sber"]:
+            raw = pygame.image.load(f"assets/laptop/{key}.png").convert()
+            rw, rh = raw.get_size()
+            scale = min((screen_w - 40) / rw, (screen_h - 80) / rh)
+            self._ad_images[key] = pygame.transform.smoothscale(raw, (int(rw * scale), int(rh * scale)))
 
         # Область экрана планшета — отступаем от краёв, чтобы не задеть рамку
         self.screen_rect = pygame.Rect(0, 0, screen_w, screen_h)
@@ -298,6 +312,12 @@ class GameView:
     def is_laptop_close_clicked(self, mouse_pos):
         return hasattr(self, '_laptop_close_btn') and self._laptop_close_btn.collidepoint(mouse_pos)
 
+    def is_laptop_server_btn_clicked(self, mouse_pos):
+        return hasattr(self, '_laptop_server_btn') and self._laptop_server_btn.collidepoint(mouse_pos)
+
+    def is_laptop_reboot_btn_clicked(self, mouse_pos):
+        return hasattr(self, '_laptop_reboot_btn') and self._laptop_reboot_btn.collidepoint(mouse_pos)
+
     def _draw_hack_bar(self, model) -> None:
         bar_w, bar_h = 300, 20
         x = (self.screen_w - bar_w) // 2
@@ -367,34 +387,21 @@ class GameView:
 
         # Подпись под иконкой
         label_lines = {"mycomputer": "My Computer", "claude": ["Claude", "Mythos"], "recycle": "Recycle Bin"}
-        text_color = (255, 255, 255)
         lines = label_lines.get(key, [key])
         if isinstance(lines, str):
             lines = [lines]
         for j, line in enumerate(lines):
-            rendered = self.font.render(line, True, (0, 0, 0))
-            self.screen.blit(rendered, (ix + 1 + icon_s // 2 - rendered.get_width() // 2 + 1, iy + icon_s + 2 + j * 16 + 1))
-            rendered = self.font.render(line, True, text_color)
-            self.screen.blit(rendered, (ix + icon_s // 2 - rendered.get_width() // 2, iy + icon_s + 2 + j * 16))
+            rendered = self._ui_font_sm.render(line, True, (0, 0, 0))
+            self.screen.blit(rendered, (ix + 1 + icon_s // 2 - rendered.get_width() // 2 + 1, iy + icon_s + 4 + j * 16 + 1))
+            rendered = self._ui_font_sm.render(line, True, (255, 255, 255))
+            self.screen.blit(rendered, (ix + icon_s // 2 - rendered.get_width() // 2, iy + icon_s + 4 + j * 16))
 
     def _draw_laptop_screen(self, model) -> None:
         sw, sh = self.screen_w, self.screen_h
         mx, my = model.laptop_cursor
 
-        # ── Фон — XP Bliss ───────────────────────────────────────────
-        sky_end = int(sh * 0.62)
-        for y in range(sky_end):
-            t = y / sky_end
-            r = int(60 + t * 40)
-            g = int(140 + t * 40)
-            b = int(220 - t * 20)
-            pygame.draw.line(self.screen, (r, g, b), (0, y), (sw, y))
-        for y in range(sky_end, sh):
-            t = (y - sky_end) / (sh - sky_end)
-            r = int(40 + t * 30)
-            g = int(150 + t * 40)
-            b = int(60 + t * 30)
-            pygame.draw.line(self.screen, (r, g, b), (0, y), (sw, y))
+        # ── Фон — обои ─────────────────────────────────────────────
+        self.screen.blit(self.laptop_wallpaper, (0, 0))
 
         # ── Taskbar ──────────────────────────────────────────────────
         tb_h = 40
@@ -420,8 +427,8 @@ class GameView:
         pygame.draw.rect(self.screen, (20, 100, 20), start_rect, 1, border_radius=4)
 
         # Текст Start
-        start_label = self.font.render("start", True, (255, 255, 255))
-        self.screen.blit(start_label, (start_rect.x + 16, start_rect.y + 10))
+        start_label = self._ui_font_bold.render("start", True, (255, 255, 255))
+        self.screen.blit(start_label, (start_rect.x + 12, start_rect.y + 11))
         self._laptop_start_rect = start_rect
 
         # Сепаратор после Start
@@ -433,9 +440,12 @@ class GameView:
         pygame.draw.rect(self.screen, (30, 80, 160), tray_rect)
         pygame.draw.line(self.screen, (80, 130, 210), (tray_rect.x, tb_top), (tray_rect.x, sh))
 
-        # Часы
-        clock_label = self.font.render("12:00", True, (255, 255, 255))
-        self.screen.blit(clock_label, (sw - clock_label.get_width() - 10, sh - tb_h + 10))
+        # Часы — игровое время
+        display_h = 12 if model.hour == 0 else model.hour
+        display_m = model.timer // 60
+        clock_str = f"{display_h}:{display_m:02d}"
+        clock_label = self._ui_font_bold.render(clock_str, True, (255, 255, 255))
+        self.screen.blit(clock_label, (sw - clock_label.get_width() - 10, sh - tb_h + 11))
 
         # ── Иконки на рабочем столе ──────────────────────────────────
         icon_defs = [
@@ -479,7 +489,7 @@ class GameView:
             pygame.draw.circle(self.screen, (100, 100, 100), (menu_x + 24, menu_y + 25), 16, 1)
             pygame.draw.circle(self.screen, (60, 60, 60), (menu_x + 24, menu_y + 22), 5)
             pygame.draw.ellipse(self.screen, (60, 60, 60), (menu_x + 14, menu_y + 28, 20, 14))
-            user_label = self.font.render("Admin", True, (255, 255, 255))
+            user_label = self._ui_font_bold.render("Admin", True, (255, 255, 255))
             self.screen.blit(user_label, (menu_x + 48, menu_y + 18))
 
             # Сепаратор
@@ -508,13 +518,13 @@ class GameView:
                     continue
 
                 if item_label:
-                    txt = self.font.render(item_label, True, (255, 255, 255))
-                    self.screen.blit(txt, (menu_x + 12, iy + 6))
+                    txt = self._ui_font.render(item_label, True, (255, 255, 255))
+                    self.screen.blit(txt, (menu_x + 12, iy + 7))
                 self._laptop_menu_items.append((item_rect, item_key))
 
         # ── Claude Mythos — окно ─────────────────────────────────────
         if model.laptop_app == "claude_mythos":
-            win_w, win_h = 560, 360
+            win_w, win_h = 620, 440
             win_x = sw // 2 - win_w // 2
             win_y = sh // 2 - win_h // 2 - 20
             win_rect = pygame.Rect(win_x, win_y, win_w, win_h)
@@ -540,8 +550,8 @@ class GameView:
                                  (win_x, win_y + y), (win_x + win_w, win_y + y))
             pygame.draw.rect(self.screen, (0, 0, 100), title_rect, 1)
 
-            title_txt = self.font.render("Claude Mythos v2.1", True, (255, 255, 255))
-            self.screen.blit(title_txt, (win_x + 8, win_y + 4))
+            title_txt = self._ui_font_bold.render("Claude Mythos v2.1 — Neural Hack Engine", True, (255, 255, 255))
+            self.screen.blit(title_txt, (win_x + 8, win_y + 5))
 
             # Кнопки управления — XP стиль
             btn_y = win_y + 3
@@ -565,44 +575,137 @@ class GameView:
             close_btn = pygame.Rect(win_x + win_w - 22, btn_y, btn_w, btn_h)
             pygame.draw.rect(self.screen, (180, 60, 40), close_btn, border_radius=2)
             pygame.draw.rect(self.screen, (120, 30, 20), close_btn, 1, border_radius=2)
-            close_x = self.font.render("X", True, (255, 255, 255))
-            self.screen.blit(close_x, (close_btn.x + 5, close_btn.y + 2))
+            close_x = self._ui_font_bold.render("X", True, (255, 255, 255))
+            self.screen.blit(close_x, (close_btn.x + 4, close_btn.y + 2))
             self._laptop_close_btn = close_btn
 
             # Линия под title bar
             pygame.draw.line(self.screen, (10, 60, 140),
                              (win_x, win_y + title_h), (win_x + win_w, win_y + title_h))
 
-            # Содержимое окна
-            content_y = win_y + title_h + 12
-            status = "ACTIVE" if model.server_state == "ON" and model.hack_active else "WAITING"
-            status_color = (40, 200, 40) if status == "ACTIVE" else (200, 160, 40)
+            content_y = win_y + title_h + 8
 
-            lines = [
-                ("Claude Mythos — Neural Hack Engine", (30, 30, 30)),
-                (f"Server: {model.server_state}", (30, 30, 30)),
-                (f"Status: {status}", status_color),
-            ]
-            for i, (line, color) in enumerate(lines):
-                txt = self.font.render(line, True, color)
-                self.screen.blit(txt, (win_x + 15, content_y + i * 26))
+            # ── Строка статуса ─────────────────────────────────────────
+            is_on = model.server_state == "ON"
+            is_overload = model.server_overload
+            is_rebooting = model.server_rebooting
 
-            # Прогресс-бар — XP стиль
-            bar_x, bar_y, bar_w, bar_h = win_x + 15, content_y + 100, win_w - 30, 22
+            if is_on and not is_overload:
+                status_txt = "SERVER: ONLINE"
+                status_clr = (40, 180, 40)
+            elif is_overload:
+                status_txt = "SERVER: OVERLOAD!"
+                status_clr = (220, 50, 30)
+            elif is_rebooting:
+                dots = "." * ((pygame.time.get_ticks() // 500) % 3 + 1)
+                status_txt = f"SERVER: REBOOTING{dots}"
+                status_clr = (200, 160, 40)
+            else:
+                status_txt = "SERVER: OFFLINE"
+                status_clr = (160, 40, 40)
+
+            lbl_server = self._ui_font_bold.render(status_txt, True, status_clr)
+            self.screen.blit(lbl_server, (win_x + 15, content_y))
+
+            # ── Кнопки сервера ─────────────────────────────────────────
+            btn_server_y = content_y + 22
+
+            if model.server_state in ("OFF", "ON") and not is_overload:
+                srv_label = "STOP SERVER" if is_on else "START SERVER"
+                srv_clr = (180, 50, 30) if is_on else (40, 160, 40)
+            else:
+                srv_label = "START SERVER"
+                srv_clr = (120, 120, 120)
+
+            srv_btn = pygame.Rect(win_x + 15, btn_server_y, 130, 24)
+            srv_enabled = model.server_state in ("OFF", "ON") and not is_overload
+            pygame.draw.rect(self.screen, srv_clr if srv_enabled else (160, 160, 160), srv_btn, border_radius=3)
+            pygame.draw.rect(self.screen, (30, 30, 30), srv_btn, 1, border_radius=3)
+            srv_txt = self._ui_font_bold.render(srv_label, True, (255, 255, 255))
+            self.screen.blit(srv_txt, (srv_btn.x + srv_btn.w // 2 - srv_txt.get_width() // 2,
+                                       srv_btn.y + 4))
+            self._laptop_server_btn = srv_btn
+
+            # Кнопка Reboot
+            rebtn = pygame.Rect(win_x + 155, btn_server_y, 100, 24)
+            re_enabled = is_overload or is_rebooting
+            re_clr = (200, 140, 30) if re_enabled else (160, 160, 160)
+            pygame.draw.rect(self.screen, re_clr, rebtn, border_radius=3)
+            pygame.draw.rect(self.screen, (30, 30, 30), rebtn, 1, border_radius=3)
+            re_txt = self._ui_font_bold.render("REBOOT", True, (255, 255, 255) if re_enabled else (120, 120, 120))
+            self.screen.blit(re_txt, (rebtn.x + rebtn.w // 2 - re_txt.get_width() // 2,
+                                      rebtn.y + 4))
+            self._laptop_reboot_btn = rebtn
+
+            # ── Прогресс-бар ──────────────────────────────────────────
+            bar_x = win_x + 15
+            bar_y = btn_server_y + 32
+            bar_w = win_w - 30
+            bar_h = 18
             pygame.draw.rect(self.screen, (220, 220, 220), (bar_x, bar_y, bar_w, bar_h))
             pygame.draw.rect(self.screen, (160, 160, 160), (bar_x, bar_y, bar_w, bar_h), 1)
-
             fill = int(bar_w * model.hack_progress)
             if fill > 0:
-                color = (40, 200, 40) if model.hack_active else (40, 140, 40)
-                pygame.draw.rect(self.screen, color, (bar_x + 1, bar_y + 1, fill - 2, bar_h - 2))
+                clr = (40, 200, 40) if model.hack_active else (40, 140, 40)
+                pygame.draw.rect(self.screen, clr, (bar_x + 1, bar_y + 1, fill - 2, bar_h - 2))
+            pct = self._ui_font_sm.render(f"{int(model.hack_progress * 100)}%", True, (30, 30, 30))
+            self.screen.blit(pct, (bar_x + bar_w - pct.get_width() - 4, bar_y + 1))
 
-            pct_txt = self.font.render(f"HACK PROGRESS: {int(model.hack_progress * 100)}%", True, (30, 30, 30))
-            self.screen.blit(pct_txt, (bar_x, bar_y + bar_h + 8))
+            # ── Терминал — логи ───────────────────────────────────────
+            term_x = win_x + 15
+            term_y = bar_y + bar_h + 8
+            term_w = win_w - 30
+            term_h = win_h - (term_y - win_y) - 12
 
-            if model.server_state != "ON":
-                warn = self.font.render("ENABLE SERVER TO BEGIN HACK", True, (200, 60, 60))
-                self.screen.blit(warn, (win_x + 15, content_y + 160))
+            # Фон терминала
+            pygame.draw.rect(self.screen, (12, 12, 12), (term_x, term_y, term_w, term_h))
+            pygame.draw.rect(self.screen, (60, 60, 60), (term_x, term_y, term_w, term_h), 1)
+
+            # Полоска заголовка терминала
+            pygame.draw.rect(self.screen, (30, 30, 30), (term_x, term_y, term_w, 18))
+            term_hdr = self._ui_font_sm.render("Claude Mythos — Terminal Output", True, (120, 200, 120))
+            self.screen.blit(term_hdr, (term_x + 6, term_y + 2))
+
+            # Логи
+            logs = model.hack_logs
+            line_h = 14
+            max_lines = (term_h - 22) // line_h
+            visible = logs[-max_lines:] if len(logs) > max_lines else logs
+
+            for i, log_line in enumerate(visible):
+                clr = (180, 220, 180) if log_line.startswith("[") else (140, 180, 140)
+                if "ERROR" in log_line or "OVERLOAD" in log_line:
+                    clr = (220, 80, 60)
+                elif "COMPLETE" in log_line or "SUCCESS" in log_line:
+                    clr = (80, 220, 80)
+                rendered = self._ui_font_sm.render(log_line, True, clr)
+                self.screen.blit(rendered, (term_x + 6, term_y + 20 + i * line_h))
+
+            # Мигающий курсор
+            if pygame.time.get_ticks() % 1000 < 600:
+                cur_y = term_y + 20 + len(visible) * line_h
+                if cur_y < term_y + term_h - 4:
+                    pygame.draw.rect(self.screen, (180, 220, 180),
+                                     (term_x + 6, cur_y, 8, line_h - 2))
+
+        # ── Реклама — поверх всего ──────────────────────────────────
+        if model.ad_active and model.ad_image_key in self._ad_images:
+            ad_img = self._ad_images[model.ad_image_key]
+            ax = (sw - ad_img.get_width()) // 2
+            ay = (sh - 40 - ad_img.get_height()) // 2
+            self.screen.blit(ad_img, (ax, ay))
+
+            btn_size = 28
+            bx = ax + ad_img.get_width() - btn_size - 4
+            by = ay + 4
+            self._ad_close_rect = pygame.Rect(bx, by, btn_size, btn_size)
+            pygame.draw.rect(self.screen, (60, 60, 60), self._ad_close_rect)
+            pygame.draw.rect(self.screen, (200, 200, 200), self._ad_close_rect, 1)
+            cross_cx, cross_cy = bx + btn_size // 2, by + btn_size // 2
+            pygame.draw.line(self.screen, (255, 255, 255), (cross_cx - 6, cross_cy - 6), (cross_cx + 6, cross_cy + 6), 2)
+            pygame.draw.line(self.screen, (255, 255, 255), (cross_cx + 6, cross_cy - 6), (cross_cx - 6, cross_cy + 6), 2)
+        else:
+            self._ad_close_rect = None
 
         # ── XP-курсор ────────────────────────────────────────────────
         cx, cy = mx, my
@@ -627,10 +730,11 @@ class GameView:
         self.screen.blit(self._noise_frames[self._noise_idx], (0, 0))
 
         # Всплеск помех только на камере, с которой ушёл или на которую пришёл Алгем
-        on_target_cam = camera_idx in (model.algem_prev_location, model.algem_location)
-        if model.algem_trigger > 0 and on_target_cam and self._glitch_frames:
-            idx = (pygame.time.get_ticks() // 50) % len(self._glitch_frames)
-            self.screen.blit(self._glitch_frames[idx], (0, 0))
+        if model.night > 1:
+            on_target_cam = camera_idx in (model.algem_prev_location, model.algem_location)
+            if model.algem_trigger > 0 and on_target_cam and self._glitch_frames:
+                idx = (pygame.time.get_ticks() // 50) % len(self._glitch_frames)
+                self.screen.blit(self._glitch_frames[idx], (0, 0))
 
         # CRT curvature mask
         self.screen.blit(self.crt_mask, (0, 0))
@@ -763,7 +867,6 @@ class GameView:
                     src = self.bg_off.subsurface(src_rect)
                 zoomed = pygame.transform.smoothscale(src, (zw, zh))
                 self.screen.blit(zoomed, (zx, zy))
-                # Белая рамка вокруг зума
                 pygame.draw.rect(self.screen, (100, 100, 100), (zx, zy, zw, zh), 2)
 
             pygame.display.flip()
@@ -799,7 +902,7 @@ class GameView:
                 self.screen.set_clip(self.screen_rect)
 
                 # Прямой эфир камеры с панорамированием
-                loc = model.algem_location
+                loc = model.algem_location if model.night > 1 else -1
                 cam_idx = model.camera_idx
 
                 if cam_idx == 2 and loc == 2:
@@ -901,7 +1004,7 @@ class GameView:
                 overlay.fill((255, 0, 0, 20))
                 self.screen.blit(overlay, (0, 0))
             if model.server_overload:
-                txt = self.font.render("REBOOT SERVER!", True, color)
+                txt = self.font.render("OVERLOAD! OPEN LAPTOP TO REBOOT", True, color)
             else:
                 dots = "." * ((pygame.time.get_ticks() // 600) % 4)
                 txt = self.font.render(f"REBOOTING{dots}", True, color)

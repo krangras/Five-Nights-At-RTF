@@ -8,7 +8,6 @@ from view import MenuView
 from gameplay_model import GameModel
 from gameplay_view import GameView
 from gameplay_presenter import GamePresenter
-from screamer import ScreamerPlayer
 
 LOADING_FONT_CACHE: dict[int, pygame.font.Font] = {}
 LECTURE_SOUNDS: list[str] = [
@@ -35,6 +34,7 @@ def draw_loading(screen, elapsed_ms):
 
 def main():
     pygame.init()
+    pygame.mixer.set_num_channels(16)
     screen = pygame.display.set_mode((1280, 720))
     clock = pygame.time.Clock()
 
@@ -81,10 +81,14 @@ def main():
 
             if game_m.game_over:
                 pygame.mixer.stop()
-                screamer = ScreamerPlayer("assets/office/screamer.mp4")
-                screamer.extract_audio()
-                screamer.play_audio()
-                state = "SCREAMER"
+                state = "GAME_OVER"
+                game_over_tick = 0
+                try:
+                    path = random.choice(LECTURE_SOUNDS)
+                    lecture_sound = pygame.mixer.Sound(path)
+                    lecture_sound.play()
+                except pygame.error:
+                    lecture_sound = None
                 continue
             elif game_m.night_complete:
                 if game_m.night >= 5:
@@ -92,39 +96,6 @@ def main():
                 else:
                     game_m, game_v, game_p = start_game(game_m.night + 1)
             clock.tick(60)
-        elif state == "SCREAMER":
-            for e in pygame.event.get():
-                if e.type == pygame.QUIT:
-                    screamer.close()
-                    return
-                if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-                    screamer.close()
-                    state = "GAME_OVER"
-                    pygame.mixer.stop()
-                    try:
-                        path = random.choice(LECTURE_SOUNDS)
-                        lecture_sound = pygame.mixer.Sound(path)
-                        lecture_sound.play()
-                    except pygame.error:
-                        lecture_sound = None
-
-            if state == "SCREAMER":
-                frame = screamer.get_frame()
-                if frame is None:
-                    screamer.close()
-                    state = "GAME_OVER"
-                    pygame.mixer.stop()
-                    try:
-                        path = random.choice(LECTURE_SOUNDS)
-                        lecture_sound = pygame.mixer.Sound(path)
-                        lecture_sound.play()
-                    except pygame.error:
-                        lecture_sound = None
-                else:
-                    screen.blit(frame, (0, 0))
-                    pygame.display.flip()
-
-            clock.tick(screamer.fps)
         elif state == "GAME_OVER":
             for e in pygame.event.get():
                 if e.type == pygame.QUIT:
