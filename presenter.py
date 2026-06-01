@@ -36,6 +36,8 @@ class MenuPresenter:
         # Проверяем, наведена ли мышь на кнопки (обновляем модель)
         if self.view.btn_new_game_rect.collidepoint(mouse_pos):
             self.model.hovered_button = "new_game"
+        elif self.model.continue_available and self.view.btn_continue_rect.collidepoint(mouse_pos):
+            self.model.hovered_button = "continue"
         elif self.view.btn_exit_rect.collidepoint(mouse_pos):
             self.model.hovered_button = "exit"
         else:
@@ -59,6 +61,9 @@ class MenuPresenter:
                     pygame.mixer.music.stop()
                     print("Старт игры! Переключаемся на офис...")
                     return "START_GAME"
+                elif self.model.hovered_button == "continue":
+                    pygame.mixer.music.stop()
+                    return "START_CONTINUE"
                 elif self.model.hovered_button == "exit":
                     pygame.quit()
                     sys.exit()

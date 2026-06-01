@@ -26,7 +26,7 @@ import pygame
 from algem_ai import bfs_path
 from gameplay_model import BASE_GRAPH, CAMERA_COUNT, GameModel
 
-HACK_RATE: float = 1.0 / 21600  # прогресс взлома за тик (~6 игровых часов)
+HACK_RATE: float = 1.0 / 1800  # прогресс взлома за тик (~30 сек реального времени)
 
 
 class GamePresenter:
@@ -498,7 +498,6 @@ class GamePresenter:
             self._transition_frames -= 1
             if self._transition_frames <= 0:
                 self.model.server_state = "OFF"
-                self.model.hack_active = False
 
     def _update_tablet_anim(self) -> None:
         """Покадровая анимация открытия/закрытия планшета."""
@@ -714,14 +713,11 @@ class GamePresenter:
 
     def _update_hack(self) -> None:
         """Прогресс взлома через ноутбук (Claude Mythos)."""
-        # Взлом работает только если запущен Claude Mythos и сервер включён
-        should_hack = (
-            self.model.laptop_app == "claude_mythos"
-            and self.model.server_state == "ON"
-            and not self.model.server_rebooting
-        )
-        self.model.hack_active = should_hack
-        if should_hack:
+        # Взлом начинается когда Claude Mythos открыт и сервер включён,
+        # но затем продолжается даже после закрытия ноутбука или выключения сервера
+        if self.model.laptop_app == "claude_mythos" and self.model.server_state == "ON" and not self.model.server_rebooting:
+            self.model.hack_active = True
+        if self.model.hack_active:
             self.model.hack_progress = min(1.0, self.model.hack_progress + HACK_RATE)
 
     def _update_reboot_sound(self) -> None:

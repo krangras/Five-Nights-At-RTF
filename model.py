@@ -1,8 +1,12 @@
 import random
+from save import load_save
 
 class MenuModel:
     def __init__(self):
         self.hovered_button = None
+
+        self.saved_night = load_save()
+        self.continue_available = self.saved_night > 1
         
         # Состояния анимации Кошмарного Алгема
         self.algem_state = "NORMAL"

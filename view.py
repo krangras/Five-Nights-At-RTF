@@ -25,10 +25,13 @@ class MenuView:
         btn_x = int(100 * self.scale_x)
 
         surf_ng = self.button_font.render(">> New Game", True, (255, 255, 255))
+        surf_cont = self.button_font.render(">> Continue", True, (255, 255, 255))
         surf_ex = self.button_font.render(">> Exit", True, (255, 255, 255))
 
         self.btn_new_game_rect = pygame.Rect(btn_x, int(360 * self.scale_y),
                                              surf_ng.get_width(), surf_ng.get_height())
+        self.btn_continue_rect = pygame.Rect(btn_x, int(410 * self.scale_y),
+                                             surf_cont.get_width(), surf_cont.get_height())
         self.btn_exit_rect = pygame.Rect(btn_x, int(460 * self.scale_y),
                                          surf_ex.get_width(), surf_ex.get_height())
 
@@ -159,8 +162,19 @@ class MenuView:
         surf_new = self.button_font.render(text_new, True, color_new)
         self.screen.blit(surf_new, (btn_x, int(360 * sy)))
 
-        surf_cont = self.button_font.render("   Continue", True, (80, 80, 80))
-        self.screen.blit(surf_cont, (btn_x, int(410 * sy)))
+        if model.continue_available:
+            color_cont = (255, 255, 255) if model.hovered_button != "continue" else (140, 140, 140)
+            text_cont = ">> Continue" if model.hovered_button == "continue" else "   Continue"
+            night_label = f" (Night {model.saved_night})"
+            surf_cont = self.button_font.render(text_cont, True, color_cont)
+            self.screen.blit(surf_cont, (btn_x, int(410 * sy)))
+            surf_night = self.button_font.render(night_label, True, color_cont)
+            self.screen.blit(surf_night, (btn_x + surf_cont.get_width(), int(410 * sy)))
+            total_w = surf_cont.get_width() + surf_night.get_width()
+            self.btn_continue_rect = pygame.Rect(btn_x, int(410 * sy), total_w, surf_cont.get_height())
+        else:
+            surf_cont = self.button_font.render("   Continue", True, (80, 80, 80))
+            self.screen.blit(surf_cont, (btn_x, int(410 * sy)))
 
         color_exit = (255, 255, 255) if model.hovered_button != "exit" else (140, 140, 140)
         text_exit = ">> Exit" if model.hovered_button == "exit" else "   Exit"

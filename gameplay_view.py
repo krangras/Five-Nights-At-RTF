@@ -52,21 +52,25 @@ class GameView:
         self.bg_off = pygame.transform.smoothscale(raw_off, target_size)
 
         self.bg_blinks = {}
-        for name, key in [("server_turning_on_red.png", "red"), ("server_turning_on_green.png", "green")]:
+        for name, key in [("server_all_four_lights_are_red.png", "red"), ("server_all_four_lights_are_green.png", "green")]:
             raw = pygame.image.load(f"assets/office/{name}").convert()
             self.bg_blinks[key] = pygame.transform.smoothscale(raw, target_size)
 
         self.bg_frames = []
-        for name in ["office1.png", "office2.png"]:
+        for name in ["server_all_four_lights_are_green.png", "server_all_four_lights_are_green.png"]:
             raw = pygame.image.load(f"assets/office/{name}").convert()
             self.bg_frames.append(pygame.transform.smoothscale(raw, target_size))
+
+        raw_hack = pygame.image.load("assets/office/server_all_four_lights_are_green+hack_is_going.png").convert()
+        self.bg_hack = pygame.transform.smoothscale(raw_hack, target_size)
         norm_list = [
             (self.bg_off, "assets/office/server_is_off.png"),
         ]
-        for key, name in [("red", "server_turning_on_red.png"), ("green", "server_turning_on_green.png")]:
+        for key, name in [("red", "server_all_four_lights_are_red.png"), ("green", "server_all_four_lights_are_green.png")]:
             norm_list.append((self.bg_blinks[key], f"assets/office/{name}"))
-        for i, name in enumerate(["office1.png", "office2.png"]):
+        for i, name in enumerate(["server_all_four_lights_are_green.png", "server_all_four_lights_are_green.png"]):
             norm_list.append((self.bg_frames[i], f"assets/office/{name}"))
+        norm_list.append((self.bg_hack, "assets/office/server_all_four_lights_are_green+hack_is_going.png"))
         _normalize_brightness(norm_list)
 
         self.max_offset = max(0, target_size[0] - screen_w)
@@ -100,6 +104,11 @@ class GameView:
             rw, rh = raw.get_size()
             scale = min((screen_w - 40) / rw, (screen_h - 80) / rh)
             self._ad_images[key] = pygame.transform.smoothscale(raw, (int(rw * scale), int(rh * scale)))
+
+        self._ad_office_images = {}
+        for key in ["ad_hhru", "ad_kontur", "ad_sber"]:
+            raw = pygame.image.load(f"assets/office/server_all_four_lights_are_green+{key}.png").convert()
+            self._ad_office_images[key] = pygame.transform.smoothscale(raw, target_size)
 
         # Область экрана планшета — отступаем от краёв, чтобы не задеть рамку
         self.screen_rect = pygame.Rect(0, 0, screen_w, screen_h)
@@ -826,7 +835,11 @@ class GameView:
 
         if model.laptop_zoom > 0:
             # Рисуем офис с затемнением
-            if model.server_state == "OFF":
+            if model.ad_active and model.ad_image_key in self._ad_office_images:
+                self.screen.blit(self._ad_office_images[model.ad_image_key], (-offset, 0))
+            elif model.laptop_app is not None or model.hack_active:
+                self.screen.blit(self.bg_hack, (-offset, 0))
+            elif model.server_state == "OFF":
                 self.screen.blit(self.bg_off, (-offset, 0))
             elif model.server_state == "TURNING_ON":
                 img = self.bg_blinks.get(model.server_blink, self.bg_off)
@@ -861,7 +874,18 @@ class GameView:
                 min(lh, self.bg_off.get_height() - max(0, ly))
             )
             if src_rect.w > 0 and src_rect.h > 0:
-                if model.server_state == "ON":
+                if model.ad_active and model.ad_image_key in self._ad_office_images:
+                    src = self._ad_office_images[model.ad_image_key].subsurface(src_rect)
+                elif model.laptop_app is not None or model.hack_active:
+                    src = self.bg_hack.subsurface(src_rect)
+                elif model.server_state == "OFF":
+                    src = self.bg_off.subsurface(src_rect)
+                elif model.server_state == "TURNING_ON":
+                    img = self.bg_blinks.get(model.server_blink, self.bg_off)
+                    src = img.subsurface(src_rect)
+                elif model.server_state == "TURNING_OFF":
+                    src = self.bg_off.subsurface(src_rect)
+                elif model.server_state == "ON":
                     src = self.bg_frames[self.current_idx].subsurface(src_rect)
                 else:
                     src = self.bg_off.subsurface(src_rect)
@@ -872,7 +896,11 @@ class GameView:
             pygame.display.flip()
             return
 
-        if model.server_state == "OFF":
+        if model.ad_active and model.ad_image_key in self._ad_office_images:
+            self.screen.blit(self._ad_office_images[model.ad_image_key], (-offset, 0))
+        elif model.laptop_app is not None or model.hack_active:
+            self.screen.blit(self.bg_hack, (-offset, 0))
+        elif model.server_state == "OFF":
             self.screen.blit(self.bg_off, (-offset, 0))
         elif model.server_state == "TURNING_ON":
             img = self.bg_blinks.get(model.server_blink, self.bg_off)
