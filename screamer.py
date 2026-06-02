@@ -1,68 +1,59 @@
 import pygame
-import cv2
-import numpy as np
-import subprocess
-import tempfile
+import glob
 import os
-import atexit
-from imageio_ffmpeg import get_ffmpeg_exe
+import re
 
 
 class ScreamerPlayer:
-    def __init__(self, video_path, screen_size=(1280, 720)):
-        self.video_path = video_path
+    """Покадровый проигрыватель скримера из PNG-фреймов."""
+
+    def __init__(self, frames_dir="assets/screamer", screen_size=(1280, 720),
+                 speed=0.96, door_frames=15, door_speed=8.0):
         self.screen_size = screen_size
-        self.cap = cv2.VideoCapture(video_path)
-        if not self.cap.isOpened():
-            raise RuntimeError(f"Cannot open video: {video_path}")
+        sw, sh = screen_size
+        self._frames: list[tuple[pygame.Surface, float]] = []
+        self._idx = 0
+        self._elapsed = 0.0
+        self._done = False
 
-        self.fps = self.cap.get(cv2.CAP_PROP_FPS)
-        if self.fps <= 0:
-            self.fps = 30
+        pattern = os.path.join(frames_dir, "frame_*_delay-*.png")
+        files = sorted(glob.glob(pattern))
 
-        self._temp_wav = None
-        self._sound = None
-        atexit.register(self.close)
+        for i, path in enumerate(files):
+            match = re.search(r"delay-([\d.]+)s", path)
+            delay = float(match.group(1)) if match else 0.04
+            delay /= door_speed if i < door_frames else speed
 
-    def extract_audio(self):
-        try:
-            ffmpeg = get_ffmpeg_exe()
-            self._temp_wav = tempfile.mktemp(suffix=".wav")
-            subprocess.run(
-                [ffmpeg, "-i", self.video_path, "-vn",
-                 "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2",
-                 "-y", self._temp_wav],
-                capture_output=True, timeout=30
-            )
-            if os.path.exists(self._temp_wav) and os.path.getsize(self._temp_wav) > 1000:
-                self._sound = pygame.mixer.Sound(self._temp_wav)
-        except Exception as e:
-            print(f"Screamer audio error: {e}")
+            raw = pygame.image.load(path).convert()
+            fw, fh = raw.get_size()
+            scale = max(sw / fw, sh / fh)
+            scaled = pygame.transform.smoothscale(raw, (int(fw * scale), int(fh * scale)))
+            sx = (scaled.get_width() - sw) // 2
+            sy = (scaled.get_height() - sh) // 2
+            cropped = scaled.subsurface(pygame.Rect(sx, sy, sw, sh)).copy()
+            self._frames.append((cropped, delay))
 
-    def get_frame(self):
-        ret, frame = self.cap.read()
-        if not ret:
-            return None
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame = np.ascontiguousarray(frame.swapaxes(0, 1))
-        surf = pygame.surfarray.make_surface(frame)
-        surf = surf.convert()
-        if surf.get_size() != self.screen_size:
-            surf = pygame.transform.smoothscale(surf, self.screen_size)
-        return surf
+    @property
+    def done(self):
+        return self._done
 
-    def play_audio(self):
-        if self._sound:
-            self._sound.play()
+    def update(self, dt: float):
+        if self._done or not self._frames:
+            return
+        self._elapsed += dt
+        delay = self._frames[self._idx][1]
+        while self._elapsed >= delay and not self._done:
+            self._elapsed -= delay
+            self._idx += 1
+            if self._idx >= len(self._frames):
+                self._idx = len(self._frames) - 1
+                self._done = True
 
-    def close(self):
-        atexit.unregister(self.close)
-        if self.cap:
-            self.cap.release()
-            self.cap = None
-        if self._temp_wav and os.path.exists(self._temp_wav):
-            try:
-                os.remove(self._temp_wav)
-            except OSError:
-                pass
-            self._temp_wav = None
+    def draw(self, surface: pygame.Surface):
+        if self._frames:
+            surface.blit(self._frames[self._idx][0], (0, 0))
+
+    def reset(self):
+        self._idx = 0
+        self._elapsed = 0.0
+        self._done = False

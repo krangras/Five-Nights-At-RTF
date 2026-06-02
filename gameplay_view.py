@@ -1,6 +1,8 @@
 import pygame
 import random
 import os
+import cv2
+import numpy as np
 
 def _normalize_brightness(surfaces_with_paths, target=15):
     """
@@ -88,6 +90,26 @@ class GameView:
         self.laptop_hotspot = pygame.Rect(380, 400, 280, 220)
         self.switch_timer = random.randint(60, 180)
         self.current_idx = 0
+
+        # ── Offscreen для рендеринга ноутбука + перспектива ─────────
+        self._laptop_offscreen = pygame.Surface((screen_w, screen_h))
+
+        _CORNERS = np.float32([
+            [420, 495], [569, 475], [592, 578], [443, 608],
+        ])
+        dst = _CORNERS * scale
+        x_min, y_min = dst.min(axis=0).astype(int)
+        x_max, y_max = dst.max(axis=0).astype(int)
+        self._lp_out_w = int(x_max - x_min)
+        self._lp_out_h = int(y_max - y_min)
+        self._lp_blit_origin = (int(x_min), int(y_min))
+
+        src_c = np.float32([
+            [0, 0], [self._lp_out_w, 0],
+            [self._lp_out_w, self._lp_out_h], [0, self._lp_out_h],
+        ])
+        dst_c = (dst - np.array([x_min, y_min])).astype(np.float32)
+        self._lp_M = cv2.getPerspectiveTransform(src_c, dst_c)
 
         # Кнопка TAB в офисе (изображение на столе)
         raw_tab = pygame.image.load("assets/cctv/tabbutton.png").convert_alpha()
@@ -919,6 +941,31 @@ class GameView:
 
         if model.server_state != "OFF":
             pass  # двери нет
+
+        # ── Экран ноутбука на столе (перспективный рендеринг) ───────
+        if model.show_real_screen and model.laptop_zoom == 0:
+            old_screen = self.screen
+            self.screen = self._laptop_offscreen
+            self._laptop_offscreen.fill((0, 0, 0))
+            self._draw_laptop_screen(model)
+            self.screen = old_screen
+
+            small = pygame.transform.smoothscale(
+                self._laptop_offscreen, (self._lp_out_w, self._lp_out_h)
+            )
+            arr = pygame.surfarray.array3d(small).transpose(1, 0, 2)
+            bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+            warped = cv2.warpPerspective(bgr, self._lp_M,
+                                         (self._lp_out_w, self._lp_out_h))
+            rgb = cv2.cvtColor(warped, cv2.COLOR_BGR2RGB)
+
+            gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
+            _, mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
+            rgba = np.dstack([rgb, mask])
+            surf = pygame.image.frombuffer(rgba.tobytes(),
+                                           (self._lp_out_w, self._lp_out_h), "RGBA")
+            ox, oy = self._lp_blit_origin
+            self.screen.blit(surf, (ox - offset, oy))
 
         if model.tablet_open or model.tablet_animating:
             if model.tablet_animating:

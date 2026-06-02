@@ -9,6 +9,7 @@ from gameplay_model import GameModel
 from gameplay_view import GameView
 from gameplay_presenter import GamePresenter
 from save import load_save, save_progress
+from screamer import ScreamerPlayer
 
 LOADING_FONT_CACHE: dict[int, pygame.font.Font] = {}
 LECTURE_SOUNDS: list[str] = [
@@ -54,6 +55,7 @@ def main():
     game_over_tick = 0
     night_complete_tick = 0
     night_end_sound = None
+    screamer = None
 
     state = "MENU"
     while True:
@@ -74,10 +76,12 @@ def main():
             draw_loading(screen, pygame.time.get_ticks() - load_start)
             clock.tick(60)
             game_m, game_v, game_p = start_game(_continue_night)
+            screamer = ScreamerPlayer()
             state = "GAME"
         elif state == "GAME":
             for e in pygame.event.get():
                 if e.type == pygame.QUIT:
+                    pygame.mixer.stop()
                     return
                 game_p.handle_event(e)
 
@@ -90,14 +94,14 @@ def main():
             if game_m.game_over:
                 pygame.mixer.stop()
                 save_progress(game_m.night)
-                state = "GAME_OVER"
-                game_over_tick = 0
+                screamer.reset()
                 try:
-                    path = random.choice(LECTURE_SOUNDS)
-                    lecture_sound = pygame.mixer.Sound(path)
-                    lecture_sound.play()
+                    snd_scream = pygame.mixer.Sound("sounds/scream2.wav")
+                    snd_scream.play()
                 except pygame.error:
-                    lecture_sound = None
+                    pass
+                state = "SCREAMER"
+                game_over_tick = 0
                 continue
             elif game_m.night_complete:
                 save_progress(game_m.night + 1)
@@ -111,6 +115,33 @@ def main():
                     pass
                 state = "NIGHT_COMPLETE"
             clock.tick(60)
+        elif state == "SCREAMER":
+            dt = clock.tick(60) / 1000.0
+            for e in pygame.event.get():
+                if e.type == pygame.QUIT:
+                    pygame.mixer.stop()
+                    return
+                if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                    pygame.mixer.stop()
+                    screamer = None
+                    lecture_sound = None
+                    menu_m.saved_night = load_save()
+                    menu_m.continue_available = menu_m.saved_night > 1
+                    state = "MENU"
+
+            screamer.update(dt)
+            screamer.draw(screen)
+            pygame.display.flip()
+
+            if screamer.done:
+                screamer = None
+                state = "GAME_OVER"
+                try:
+                    path = random.choice(LECTURE_SOUNDS)
+                    lecture_sound = pygame.mixer.Sound(path)
+                    lecture_sound.play()
+                except pygame.error:
+                    lecture_sound = None
         elif state == "GAME_OVER":
             for e in pygame.event.get():
                 if e.type == pygame.QUIT:

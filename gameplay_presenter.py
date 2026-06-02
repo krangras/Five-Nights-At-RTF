@@ -235,6 +235,10 @@ class GamePresenter:
         elif key == pygame.K_F1:
             self.model.game_over = True
 
+        # F2 → toggle реального экрана ноутбука
+        elif key == pygame.K_F2:
+            self.model.show_real_screen = not self.model.show_real_screen
+
         # Цифровые клавиши 1–7 — переключение камер
         key_to_cam: dict[int, int] = {
             pygame.K_1: 1,
@@ -394,7 +398,6 @@ class GamePresenter:
         self._laptop_saved_menu = self.model.laptop_start_menu
         self.model.laptop_open = False
         self.model.laptop_zoom = 0.0
-        self.model.laptop_app = None
         self.model.laptop_start_menu = False
 
     def _handle_mouse_motion(self, pos: tuple[int, int]) -> None:

@@ -132,6 +132,7 @@ class GameModel:
         self.laptop_cursor: tuple[int, int] = (640, 360)  # позиция курсора
         self.laptop_start_menu: bool = False      # открыто ли меню Start
         self.laptop_app:    str | None = None     # запущенное приложение
+        self.show_real_screen: bool = True        # показывать реальный экран на ноутбуке (F2)
 
         # ── Реклама на ноутбуке ─────────────────────────────────────────
         self.ad_active:      bool = False         # показывается ли реклама
