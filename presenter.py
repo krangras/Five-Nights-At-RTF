@@ -55,7 +55,10 @@ class MenuPresenter:
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-                
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
+                return "TOGGLE_FULLSCREEN"
+                    
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.model.hovered_button == "new_game":
                     pygame.mixer.music.stop()

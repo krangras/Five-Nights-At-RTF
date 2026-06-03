@@ -110,7 +110,7 @@ class GamePresenter:
         self._wait_playing: bool = False
         self._wait_timer: int = 0
         self._danger_playing: bool = False
-        self._on_node7_grace: int = 0
+        self._on_node5_grace: int = 0
 
         # ── Таймеры приманки (для анимации кнопки) ───────────────────────
         self._bait_timer: int = 0
@@ -354,7 +354,7 @@ class GamePresenter:
         # Кнопка Reboot
         if self.model.laptop_app == "claude_mythos" and self.view.is_laptop_reboot_btn_clicked(pos):
             if self.model.server_overload or self.model.server_rebooting:
-                self._check_node7_attack()
+                self._check_node5_attack()
                 if self.model.game_over:
                     return
                 self.model.server_rebooting = True
@@ -442,7 +442,7 @@ class GamePresenter:
             self._cleanup_on_end()
             return
 
-        self._update_node7_grace()
+        self._update_node5_grace()
 
         if not self._ambience_playing:
             self._start_ambience()
@@ -626,8 +626,8 @@ class GamePresenter:
         self._algem_talk_timer = random.randint(3600, 5400)
 
     def _update_danger_sound(self) -> None:
-        """Звук danger2b.wav когда Алгем на последней камере (node 7)."""
-        on_last = self.model.algem_location == 7
+        """Звук danger2b.wav когда Алгем на последней камере (node 5)."""
+        on_last = self.model.algem_location == 5
         if on_last and not self._danger_playing:
             if self.snd_danger2b:
                 self.snd_danger2b.play(-1)
@@ -643,7 +643,7 @@ class GamePresenter:
 
     def _toggle_tablet(self) -> None:
         """Открыть или закрыть планшет (с анимацией и звуком)."""
-        self._check_node7_attack()
+        self._check_node5_attack()
         if self.model.game_over:
             return
         if not self.model.tablet_open:
@@ -688,7 +688,7 @@ class GamePresenter:
 
     def _toggle_server(self) -> None:
         """Включить или выключить сервер."""
-        self._check_node7_attack()
+        self._check_node5_attack()
         if self.model.game_over:
             return
         if self.model.server_state == "ON":
@@ -749,17 +749,17 @@ class GamePresenter:
         self._bait_timer = 0
         self._bait_cam_timer = 0
 
-    def _check_node7_attack(self) -> None:
-        """Если Алгем на node 7 дольше grace-периода — атака через любой триггер."""
-        if self._on_node7_grace >= 60:
+    def _check_node5_attack(self) -> None:
+        """Если Алгем на node 5 дольше grace-периода — атака через любой триггер."""
+        if self._on_node5_grace >= 60:
             self.model.game_over = True
 
-    def _update_node7_grace(self) -> None:
-        """Обновить счётчик времени Алгема на node 7."""
-        if self.model.algem_location == 7:
-            self._on_node7_grace += 1
+    def _update_node5_grace(self) -> None:
+        """Обновить счётчик времени Алгема на node 5."""
+        if self.model.algem_location == 5:
+            self._on_node5_grace += 1
         else:
-            self._on_node7_grace = 0
+            self._on_node5_grace = 0
 
     def _update_ad(self) -> None:
         """Управление рекламой: запуск звука и притяжение Алгема."""

@@ -427,7 +427,7 @@ class AlgemAI:
             True если случайно забрёл в офис (редко, только при algo_chance).
         """
         # На последней камере не двигается без приманки
-        if self.location == 7 and self._lure_node < 0:
+        if self.location == 5 and self._lure_node < 0:
             return False
 
         next_node = self._choose_patrol_node()
@@ -513,7 +513,7 @@ class AlgemAI:
         На последней камере (node 7) стоит на месте без приманки.
         """
         # На node 7 не двигается, пока не сработает приманка
-        if self.location == 7 and self._lure_node < 0:
+        if self.location == 5 and self._lure_node < 0:
             return 7
 
         neighbors = self._graph.get(self.location, [])

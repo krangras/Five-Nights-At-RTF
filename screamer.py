@@ -8,13 +8,15 @@ class ScreamerPlayer:
     """Покадровый проигрыватель скримера из PNG-фреймов."""
 
     def __init__(self, frames_dir="assets/screamer", screen_size=(1280, 720),
-                 speed=0.96, door_frames=15, door_speed=8.0):
+                 speed=0.96, door_frames=15, door_speed=8.0, scream_frame=40):
         self.screen_size = screen_size
         sw, sh = screen_size
         self._frames: list[tuple[pygame.Surface, float]] = []
         self._idx = 0
         self._elapsed = 0.0
         self._done = False
+        self.scream_frame = scream_frame
+        self.scream_triggered = False
 
         pattern = os.path.join(frames_dir, "frame_*_delay-*.png")
         files = sorted(glob.glob(pattern))
@@ -33,6 +35,10 @@ class ScreamerPlayer:
             cropped = scaled.subsurface(pygame.Rect(sx, sy, sw, sh)).copy()
             self._frames.append((cropped, delay))
 
+        self._red_overlay = pygame.Surface(screen_size, pygame.SRCALPHA)
+        self._red_overlay.fill((180, 0, 0, 0))
+        self._red_start = 60
+
     @property
     def done(self):
         return self._done
@@ -48,12 +54,21 @@ class ScreamerPlayer:
             if self._idx >= len(self._frames):
                 self._idx = len(self._frames) - 1
                 self._done = True
+        if not self.scream_triggered and self._idx >= self.scream_frame:
+            self.scream_triggered = True
 
     def draw(self, surface: pygame.Surface):
         if self._frames:
             surface.blit(self._frames[self._idx][0], (0, 0))
+            total = len(self._frames) - 1
+            if self._idx >= self._red_start:
+                progress = (self._idx - self._red_start) / max(1, total - self._red_start)
+                alpha = int(progress * 255)
+                self._red_overlay.fill((180, 0, 0, alpha))
+                surface.blit(self._red_overlay, (0, 0))
 
     def reset(self):
         self._idx = 0
         self._elapsed = 0.0
         self._done = False
+        self._red_overlay.fill((180, 0, 0, 0))

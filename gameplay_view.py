@@ -159,12 +159,12 @@ class GameView:
         # Кроме коворкинга — у него координата левого верхнего угла
         self._minimap_icon_positions = {
             1: (447, 303),  # ALGEM'S ROOM
-            2: (207, 334),  # MAIN HALL — самый низ
+            2: (331, 120),  # CANTEEN
             3: (270, 279),  # TOILETS
-            4: (88,  213),  # WEST HALL
-            5: (331, 120),  # CANTEEN — чуть правее и ниже в углу
-            6: (32,  116),  # COWORKING
-            7: (148,  65),  # SERVICE ROOM — самый верх
+            4: (207, 334),  # MAIN HALL
+            5: (148,  65),  # SERVICE ROOM
+            6: (88,  213),  # WEST HALL
+            7: (32,  116),  # COWORKING
         }
 
         # Камеры — каждая грузится, масштабируется под высоту screen_rect, затемняется и тонируется
@@ -980,13 +980,13 @@ class GameView:
                 loc = model.algem_location if model.night > 1 else -1
                 cam_idx = model.camera_idx
 
-                if cam_idx == 2 and loc == 2:
+                if cam_idx == 4 and loc == 4:
                     if model.algem_main_hall_sprite == 0 and self._algem_main_hall_surf:
                         cam_surf = self._algem_main_hall_surf
                     elif model.algem_main_hall_sprite == 1 and self._algem_mainhall_watching:
                         cam_surf = self._algem_mainhall_watching
                     else:
-                        cam_surf = self.camera_surfaces.get(2)
+                        cam_surf = self.camera_surfaces.get(4)
                 elif loc == cam_idx:
                     cam_surf = self._algem_surfaces.get(cam_idx)
                     if cam_surf is None:

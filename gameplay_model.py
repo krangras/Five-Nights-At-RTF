@@ -27,13 +27,13 @@ from algem_ai import AlgemAI, AIState, bfs_path   # noqa: F401
 # ─────────────────────────────────────────────────────────────────────────────
 
 CAMERAS: list[tuple[int, str, str, str]] = [
-    (1, "01", "ALGEM'S ROOM", "algems' room.png"),
-    (2, "02", "MAIN HALL",    "main_hall.png"),
-    (3, "03", "TOILETS",      "toilets.png"),
-    (4, "04", "WEST HALL",    "westhall.png"),
-    (5, "05", "CANTEEN",      "canteen.png"),
-    (6, "06", "COWORKING",    "coworking.png"),
-    (7, "07", "SERVICE ROOM", "service_room.png"),
+    (1, "01", "ALGEM'S ROOM",  "algems' room.png"),
+    (2, "02", "CANTEEN",       "canteen.png"),
+    (3, "03", "TOILETS",       "toilets.png"),
+    (4, "04", "MAIN HALL",     "main_hall.png"),
+    (5, "05", "SERVICE ROOM",  "service_room.png"),
+    (6, "06", "WEST HALL",     "westhall.png"),
+    (7, "07", "COWORKING",     "coworking.png"),
 ]
 CAMERA_COUNT: int = len(CAMERAS)
 
@@ -41,20 +41,20 @@ CAMERA_COUNT: int = len(CAMERAS)
 # Узел 0 — офис (цель), узлы 1–7 — камеры.
 BASE_GRAPH: dict[int, list[int]] = {
     0: [],
-    1: [2],          # Комната Алгема
-    2: [1, 3, 4],    # Главный коридор
-    3: [2, 4],       # Туалеты
-    4: [2, 3, 5, 7], # Западный коридор → через серверную
-    5: [4, 6],       # Столовая
-    6: [5, 7],       # Коворкинг
-    7: [6, 4, 0],    # Серверная — последняя камера перед офисом
+    1: [4],          # ALGEM'S ROOM — тупик
+    2: [6, 7],       # CANTEEN
+    3: [4, 6],       # TOILETS
+    4: [1, 3, 6],    # MAIN HALL
+    5: [7, 6, 0],    # SERVICE ROOM — последняя перед офисом
+    6: [4, 3, 2, 5], # WEST HALL — хаб
+    7: [2, 5],       # COWORKING
 }
 
 # Вентиляционные короткие пути: {id: (из, в)}
 # При поломке вентиля соответствующее ребро добавляется в граф.
 VENT_CONNECTIONS: dict[str, tuple[int, int]] = {
-    "VENT_A": (6, 3),  # Коворкинг → Туалеты (обходной путь)
-    "VENT_B": (5, 2),  # Столовая → Главный коридор (обходной путь)
+    "VENT_A": (7, 3),  # COWORKING → TOILETS (обходной путь)
+    "VENT_B": (2, 4),  # CANTEEN → MAIN HALL (обходной путь)
 }
 
 
