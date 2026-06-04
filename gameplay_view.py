@@ -479,9 +479,10 @@ class GameView:
         self.screen.blit(clock_label, (sw - clock_label.get_width() - 10, sh - tb_h + 11))
 
         # ── Иконки на рабочем столе ──────────────────────────────────
+        app_name = model.night_app["name"]
         icon_defs = [
             ("My Computer", 30, 30, "mycomputer"),
-            ("Claude Mythos", 30, 130, "claude"),
+            (app_name, 30, 130, "claude"),
             ("Recycle Bin", 30, 240, "recycle"),
         ]
         self._laptop_icons = []
@@ -529,7 +530,7 @@ class GameView:
                              (menu_x + menu_w - 4, sep_y + 4))
 
             menu_items = [
-                ("Claude Mythos", "claude"),
+                (app_name, "claude"),
                 ("My Computer", "mycomputer"),
                 ("", None),
                 ("Shutdown", "shutdown"),
@@ -581,7 +582,7 @@ class GameView:
                                  (win_x, win_y + y), (win_x + win_w, win_y + y))
             pygame.draw.rect(self.screen, (0, 0, 100), title_rect, 1)
 
-            title_txt = self._ui_font_bold.render("Claude Mythos v2.1 — Neural Hack Engine", True, (255, 255, 255))
+            title_txt = self._ui_font_bold.render(model.night_app["title"], True, (255, 255, 255))
             self.screen.blit(title_txt, (win_x + 8, win_y + 5))
 
             # Кнопки управления — XP стиль
@@ -694,7 +695,7 @@ class GameView:
 
             # Полоска заголовка терминала
             pygame.draw.rect(self.screen, (30, 30, 30), (term_x, term_y, term_w, 18))
-            term_hdr = self._ui_font_sm.render("Claude Mythos — Terminal Output", True, (120, 200, 120))
+            term_hdr = self._ui_font_sm.render(model.night_app["header"], True, (120, 200, 120))
             self.screen.blit(term_hdr, (term_x + 6, term_y + 2))
 
             # Логи

@@ -58,6 +58,7 @@ class GamePresenter:
         self._laptop_saved_menu = False
 
         # ── Ленивая загрузка звуков ──────────────────────────────────────
+        self._keys_held: set[int] = set()  # currently held keys for combos
         self._sound_paths: dict[str, str] = {
             "snd_on": "sounds/night1/server_turning_on.mp3",
             "snd_work": "sounds/night1/server_is_working.mp3",
@@ -209,7 +210,11 @@ class GamePresenter:
         пользовательские действия в вызовы модели.
         """
         if event.type == pygame.KEYDOWN:
+            self._keys_held.add(event.key)
             self._handle_keydown(event)
+
+        elif event.type == pygame.KEYUP:
+            self._keys_held.discard(event.key)
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self._handle_click(event.pos)
@@ -439,6 +444,12 @@ class GamePresenter:
             self.model.night_start_ticks -= 1
 
         if self.model.game_over or self.model.night_complete:
+            self._cleanup_on_end()
+            return
+
+        # DEBUG: C+D → skip to next night
+        if pygame.K_c in self._keys_held and pygame.K_d in self._keys_held:
+            self.model.night_complete = True
             self._cleanup_on_end()
             return
 
