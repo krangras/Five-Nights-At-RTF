@@ -572,7 +572,7 @@ class AlgemAI:
         if node != self.location:
             self.prev_location = self.location
             self.location      = node
-            self.trigger_timer = 60
+            self.trigger_timer = 30
 
             # В Главном коридоре — случайный вариант спрайта
             if node == 1:

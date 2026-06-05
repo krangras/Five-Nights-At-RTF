@@ -73,6 +73,7 @@ class GamePresenter:
             "snd_endnight": "sounds/night_ends.wav",
             "snd_wait": "sounds/wait.wav",
             "snd_danger2b": "sounds/danger2b.wav",
+
         }
         self._ad_path: str = "sounds/laptop/ad.mp3"
         self._snd_off_length: int = 60
@@ -85,6 +86,7 @@ class GamePresenter:
         self._algem_leave_channel: pygame.mixer.Channel = pygame.mixer.Channel(4)
         self._cam_init_channel: pygame.mixer.Channel = pygame.mixer.Channel(6)
         self._cam_switch_channel: pygame.mixer.Channel = pygame.mixer.Channel(7)
+
         self._ad_playing: bool = False
         self._ad_channel: pygame.mixer.Channel = pygame.mixer.Channel(8)
         self._algem_talk_timer: int = random.randint(1800, 3600)
@@ -313,8 +315,9 @@ class GamePresenter:
                     self._activate_bait()
                 return
 
-            # MAP TOGGLE — в будущем смена режима отображения карты
+            # MAP TOGGLE — переключение между камерами и вентиляцией
             if self.view.is_map_clicked(pos):
+                self.view.vent_map_mode = not self.view.vent_map_mode
                 return
 
             # Кнопки RESET VENT_A / RESET VENT_B
@@ -466,6 +469,7 @@ class GamePresenter:
         self._update_algem_sounds()
         self._update_danger_sound()
         self._update_reboot_sound()
+
         self._update_ad()
         self._update_laptop()
 
@@ -751,6 +755,7 @@ class GamePresenter:
                 self._wait_timer = 0
                 if self.snd_wait:
                     self.snd_wait.play()
+
 
     def _activate_bait(self) -> None:
         """Активировать аудио-приманку на текущей камере."""
