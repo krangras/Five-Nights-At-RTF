@@ -8,7 +8,7 @@ class ScreamerPlayer:
     """Покадровый проигрыватель скримера из PNG-фреймов."""
 
     def __init__(self, frames_dir="assets/screamer", screen_size=(1280, 720),
-                 speed=0.96, door_frames=15, door_speed=8.0, scream_frame=40):
+                 speed=1.0, door_frames=15, door_speed=8.0, scream_frame=40):
         self.screen_size = screen_size
         sw, sh = screen_size
         self._frames: list[tuple[pygame.Surface, float]] = []

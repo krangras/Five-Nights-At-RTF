@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import copy
 import random
+from collections import deque
 from enum import Enum, auto
 
 from algem_ai import AlgemAI, AIState, bfs_path   # noqa: F401
@@ -34,28 +35,73 @@ CAMERAS: list[tuple[int, str, str, str]] = [
     (5, "05", "SERVICE ROOM",  "service_room.png"),
     (6, "06", "WEST HALL",     "westhall.png"),
     (7, "07", "COWORKING",     "coworking.png"),
+    (8, "08", "UPPER VENT",    "cam8.png"),
+    (9, "09", "LEFT VENT",     "cam9.png"),
+    (10, "10", "LEFT VENT LOW", "cam_10.png"),
+    (11, "11", "RIGHT VENT",   "cam11.png"),
 ]
 CAMERA_COUNT: int = len(CAMERAS)
+
+# Индексы вент-камер (8–11)
+VENT_CAMERAS: set[int] = {8, 9, 10, 11}
+
+
+def find_nearest_vent_camera(
+    current_cam: int,
+    graph: dict[int, list[int]],
+) -> int:
+    """BFS: найти ближайшую вент-камеру к current_cam."""
+    if current_cam in VENT_CAMERAS:
+        return current_cam
+    visited: set[int] = {current_cam}
+    queue: deque[list[int]] = deque([[current_cam]])
+    while queue:
+        path = queue.popleft()
+        node = path[-1]
+        for nb in graph.get(node, []):
+            if nb in visited:
+                continue
+            new_path = path + [nb]
+            if nb in VENT_CAMERAS:
+                return nb
+            visited.add(nb)
+            queue.append(new_path)
+    return 8  # fallback
+
 
 # Базовый граф: {узел: [соседи]}
 # Узел 0 — офис (цель), узлы 1–7 — камеры.
 BASE_GRAPH: dict[int, list[int]] = {
-    0: [],
-    1: [4],          # ALGEM'S ROOM — тупик
-    2: [6, 7],       # CANTEEN
-    3: [4, 6],       # TOILETS
-    4: [1, 3, 6],    # MAIN HALL
-    5: [7, 6, 0],    # SERVICE ROOM — последняя перед офисом
-    6: [4, 3, 2, 5], # WEST HALL — хаб
-    7: [2, 5],       # COWORKING
+    0: [],             # OFFICE
+    1: [4],            # ALGEM'S ROOM — тупик
+    2: [6, 7, 9],      # CANTEEN → WEST HALL, COWORKING, LEFT VENT
+    3: [4, 6, 8],      # TOILETS → MAIN HALL, WEST HALL, UPPER VENT
+    4: [1, 3, 6, 9],   # MAIN HALL → ALGEM'S ROOM, TOILETS, WEST HALL, LEFT VENT
+    5: [7, 6, 0],      # SERVICE ROOM — последняя перед офисом
+    6: [4, 3, 2, 5],   # WEST HALL — хаб
+    7: [2, 5, 8],      # COWORKING → CANTEEN, SERVICE ROOM, UPPER VENT
+    8: [3, 7, 11],     # UPPER VENT — между TOILETS, COWORKING и RIGHT VENT
+    9: [2, 4, 10],     # LEFT VENT — между CANTEEN, MAIN HALL и LEFT VENT LOW
+    10: [9, 5],        # LEFT VENT LOW → LEFT VENT, SERVICE ROOM
+    11: [8, 5],        # RIGHT VENT → UPPER VENT, SERVICE ROOM
 }
 
 # Вентиляционные короткие пути: {id: (из, в)}
-# При поломке вентиля соответствующее ребро добавляется в граф.
 VENT_CONNECTIONS: dict[str, tuple[int, int]] = {
-    "VENT_A": (7, 3),  # COWORKING → TOILETS (обходной путь)
-    "VENT_B": (2, 4),  # CANTEEN → MAIN HALL (обходной путь)
+    "VENT_A": (7, 3),  # COWORKING → TOILETS
+    "VENT_B": (2, 4),  # CANTEEN → MAIN HALL
 }
+
+# Точки блокировки вентов (SEAL) — {id: (из, в)}
+# При активном seal ребро ВРЕМЕННО удаляется из графа.
+VENT_SEALS: dict[str, tuple[int, int]] = {
+    "SEAL_TOP_RIGHT":  (7, 2),  # COWORKING → CANTEEN
+    "SEAL_CENTER":     (3, 4),  # TOILETS → MAIN HALL
+    "SEAL_MID_RIGHT":  (2, 6),  # CANTEEN → WEST HALL
+    "SEAL_BOTTOM_LEFT": (6, 4), # WEST HALL → MAIN HALL
+}
+
+SEAL_DURATION = 300  # 5 секунд при 60 FPS
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -63,16 +109,15 @@ VENT_CONNECTIONS: dict[str, tuple[int, int]] = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 class VentState(Enum):
-    """
-    Состояния вентиляционного канала.
-
-    OK        — всё в порядке, канал закрыт для Алгема.
-    ERROR     — поломка: канал открыт, Алгем может использовать как шорткат.
-    RESETTING — игрок нажал «RESET», идёт перезагрузка (~5 секунд).
-    """
     OK        = auto()
     ERROR     = auto()
     RESETTING = auto()
+
+
+class SealState(Enum):
+    OPEN    = auto()
+    SEALING = auto()
+    CLOSED  = auto()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -150,7 +195,7 @@ class GameModel:
         self.cam_dir:           int   = 1
 
         # Сколько тиков игрок смотрел на каждую камеру
-        self.camera_watch_ticks: dict[int, int] = {i: 0 for i in range(1, 8)}
+        self.camera_watch_ticks: dict[int, int] = {i: 0 for i in range(1, CAMERA_COUNT + 1)}
 
         # ── ИИ Алгема ────────────────────────────────────────────────────
         # AlgemAI инкапсулирует FSM, A* и всю логику перемещения.
@@ -170,18 +215,24 @@ class GameModel:
         self.bait_cooldown:     dict[int, int]  = {}   # {camera_idx: тиков до перезарядки}
 
         # ── Вентиляция ───────────────────────────────────────────────────
-        # Два вентиляционных канала; при ошибке открывается шорткат в графе.
         self.vents:             dict[str, VentState] = {
             vid: VentState.OK for vid in VENT_CONNECTIONS
         }
-        # Таймер до случайной поломки (тики)
         self._vent_error_timers: dict[str, int] = {
             vid: self._vent_break_interval() for vid in VENT_CONNECTIONS
         }
-        # Прогресс перезагрузки (тики до завершения, 0 = не идёт)
         self._vent_reset_timers: dict[str, int] = {
             vid: 0 for vid in VENT_CONNECTIONS
         }
+
+        # ── Блокировка вентов (SEAL) ─────────────────────────────────────
+        self.seals: dict[str, SealState] = {
+            sid: SealState.OPEN for sid in VENT_SEALS
+        }
+        self._seal_timers: dict[str, int] = {
+            sid: 0 for sid in VENT_SEALS
+        }
+        self.currently_sealing_id: str | None = None  # отслеживаем текущий закрываемый seal
 
         # ── Телефонный звонок (Ночь 1) ───────────────────────────────────
         self.phone_call_ready:  bool = True
@@ -258,7 +309,31 @@ class GameModel:
         if self.vents.get(vent_id) != VentState.ERROR:
             return
         self.vents[vent_id]              = VentState.RESETTING
-        self._vent_reset_timers[vent_id] = 300   # 5 секунд при 60 FPS
+        self._vent_reset_timers[vent_id] = 300
+
+    def start_seal(self, seal_id: str) -> None:
+        """Начать блокировку вентиляционного прохода seal_id (~5 сек).
+        
+        Можно закрывать только один seal одновременно.
+        При клике на новый seal — все остальные автоматически открываются.
+        Кликать можно только на OPEN seal'ы.
+        """
+        # Проверяем, что клик на OPEN seal (нельзя кликать на CLOSED)
+        if self.seals.get(seal_id) != SealState.OPEN:
+            return
+        
+        # Если уже есть seal в процессе закрывания, игнорируем новый
+        if self.currently_sealing_id is not None:
+            return
+        
+        # Открыть все закрытые seal'ы (зеленеют)
+        for sid in VENT_SEALS:
+            if self.seals[sid] == SealState.CLOSED:
+                self.seals[sid] = SealState.OPEN
+        
+        self.seals[seal_id] = SealState.SEALING
+        self._seal_timers[seal_id] = SEAL_DURATION
+        self.currently_sealing_id = seal_id
 
     # ──────────────────────────────────────────────────────────────────────
     # Главный тик модели
@@ -292,6 +367,7 @@ class GameModel:
         self._update_camera_watch()
         self._update_bait()
         self._update_vents()
+        self._update_seals()
         self._update_server_load()
         self._update_hack_logs()
         self._update_ad()
@@ -395,12 +471,24 @@ class GameModel:
                     self.vents[vid] = VentState.OK
                     self._vent_error_timers[vid] = self._vent_break_interval()
 
+    def _update_seals(self) -> None:
+        """Обновить таймеры блокировки вентов."""
+        for sid in VENT_SEALS:
+            if self.seals[sid] == SealState.SEALING:
+                self._seal_timers[sid] -= 1
+                if self._seal_timers[sid] <= 0:
+                    # После SEALING -> CLOSED (закрыта полностью)
+                    self.seals[sid] = SealState.CLOSED
+                    # Если этот seal был текущим активным, сбросить флаг
+                    if self.currently_sealing_id == sid:
+                        self.currently_sealing_id = None
+
     def _update_ai(self) -> None:
         """
         Тик ИИ Алгема.
 
-        Передаём актуальный граф (с учётом сломанных вентов) и данные
-        о просмотре камер, затем вызываем tick().
+        Передаём актуальный граф, данные о просмотре камер,
+        состояние сервера и рекламы для шкалы внимания.
         """
         if self.algem_in_office:
             return   # Алгем уже в офисе, ждём закрытия планшета
@@ -414,6 +502,13 @@ class GameModel:
         target = self.hack_progress if self.server_state == "ON" else 0.0
         self._hack_attraction += (target - self._hack_attraction) * 0.01
         self._ai.hack_attraction = self._hack_attraction
+
+        # Передаём состояние сервера и рекламы для шкалы внимания
+        server_on = self.server_state == "ON"
+        self._ai.update_game_state(
+            server_on=server_on,
+            ad_active=self.ad_active,
+        )
 
         # Тик ИИ
         reached_office = self._ai.tick(self.hour)
@@ -729,14 +824,18 @@ class GameModel:
         """
         Собрать актуальный граф движения.
 
-        Базовый граф + рёбра сломанных вентов.
-        Создаёт новый объект каждый тик — не мутирует BASE_GRAPH.
+        Базовый граф + рёбра сломанных вентов - рёбра заблокированных seal'ов.
         """
         g: dict[int, list[int]] = copy.deepcopy(BASE_GRAPH)
         for vid, (src, dst) in VENT_CONNECTIONS.items():
             if self.vents[vid] == VentState.ERROR:
                 if dst not in g[src]:
                     g[src] = g[src] + [dst]
+        for sid, (src, dst) in VENT_SEALS.items():
+            # Блокируем проход если seal в процессе закрывания ИЛИ уже закрыт
+            if self.seals[sid] in (SealState.SEALING, SealState.CLOSED):
+                if dst in g.get(src, []):
+                    g[src] = [n for n in g[src] if n != dst]
         return g
 
     def _vent_break_interval(self) -> int:

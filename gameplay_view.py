@@ -117,6 +117,7 @@ class GameView:
         self._brightness_overlay.fill((255, 255, 255, 13))
         self.font = pygame.font.Font("assets/fonts/OCR-A.ttf", 30)
         self.font_small = pygame.font.Font("assets/fonts/OCR-A.ttf", 18)
+        self.font_very_small = pygame.font.Font("assets/fonts/OCR-A.ttf", 11)
         self._ui_font = pygame.font.SysFont("tahoma", 16)
         self._ui_font_bold = pygame.font.SysFont("tahoma", 16, bold=True)
         self._ui_font_sm = pygame.font.SysFont("tahoma", 13)
@@ -203,9 +204,14 @@ class GameView:
             2: "cam2.png",
             3: "cam3.png",
             4: "cam4.png",
-            5: "cam5.png",
-            6: "cam6.png",
-            7: "cam7.png",
+            5: "cam7.png",
+            6: "cam5.png",
+            7: "cam6.png",
+            8: "cam9.png",
+            9: "cam10.png",
+            10: "cam11.png",
+            11: "cam8.png",
+            12: "cam10.png",
         }
         for idx, fname in icon_map.items():
             img = pygame.image.load(f"assets/cctv/{fname}").convert_alpha()
@@ -248,6 +254,35 @@ class GameView:
         }
         self._vent_reset_rects: dict[str, pygame.Rect] = {}
 
+        # Иконки вент-камер (8–11) — внутри duct-проходов, рядом с seal'ами
+        # Реальные duct'ы в vent_map.png (1306x1204):
+        #   Горизонт. верхний:  y≈45,  x: 16–1127
+        #   Горизонт. средний:  y≈560, x: 16–1127
+        #   Горизонт. нижний:   y≈903, x: 16–170
+        #   Вертик. левый:      x≈18,  y: 43–906
+        #   Вертик. средний:    x≈339, y: 43–541
+        #   Вертик. правый:     x≈1124,y: 43–746
+        self._vent_cam_positions = {
+            8:  (int(900 * vent_sx),  int(45 * vent_sy)),   # верхний горизонт. duct, правая часть
+            9:  (int(18 * vent_sx),   int(200 * vent_sy)),  # левый вертик. duct, верхняя часть
+            10: (int(18 * vent_sx),   int(750 * vent_sy)),  # левый вертик. duct, нижняя часть
+            11: (int(1124 * vent_sx), int(620 * vent_sy)),  # правый вертик. duct, нижняя часть (НОВАЯ)
+        }
+
+        # Точки блокировки (SEAL) — (sx, sy, direction) в координатах vent overlay
+        # direction: "V" = вертикальная полоска поперёк горизонт. duct'а
+        #            "H" = горизонтальная полоска поперёк вертик. duct'а
+        # Точные центры duct-линий из vent_map.png (по пикселям):
+        #   верхний горизонт: y=45    левый вертик: x=18
+        #   правый вертик: x=1124   нижний горизонт: y=903
+        self._seal_positions = {
+            "SEAL_TOP_RIGHT":   (int(1050 * vent_sx), int(45 * vent_sy),   "V"),  # верхн. duct, левее перекрёстия
+            "SEAL_CENTER":      (int(18 * vent_sx),   int(145 * vent_sy),  "H"),  # левый duct, над CAM09
+            "SEAL_MID_RIGHT":   (int(1124 * vent_sx), int(700 * vent_sy),  "H"),  # правый duct, ниже CAM11
+            "SEAL_BOTTOM_LEFT": (int(70 * vent_sx),   int(903 * vent_sy),  "V"),  # нижний duct
+        }
+        self._seal_rects: dict[str, pygame.Rect] = {}
+
         # Координаты центров иконок в пространстве мини-карты (500×462)
         # Кроме коворкинга — у него координата левого верхнего угла
         self._minimap_icon_positions = {
@@ -267,7 +302,14 @@ class GameView:
         self.camera_max_offsets = {}
         cam_h = self.screen_rect.h
         for idx, _display_id, name, fname in CAMERAS:
-            raw = pygame.image.load(f"assets/cameras/{fname}").convert()
+            path = f"assets/cameras/{fname}"
+            if not os.path.exists(path):
+                path = f"assets/vents_cameras/{fname}"
+            raw = pygame.image.load(path).convert()
+            if path.startswith("assets/vents_cameras"):
+                target_w = int(raw.get_height() * 16 / 9)
+                offset = (raw.get_width() - target_w) // 2
+                raw = raw.subsurface((offset, 0, target_w, raw.get_height()))
             scale = cam_h / raw.get_height()
             cw = int(raw.get_width() * scale)
             surf = pygame.transform.smoothscale(raw, (cw, cam_h))
@@ -286,6 +328,10 @@ class GameView:
         def _load_cam(path):
             try:
                 raw = pygame.image.load(path).convert()
+                if path.startswith("assets/vents_cameras"):
+                    target_w = int(raw.get_height() * 16 / 9)
+                    offset = (raw.get_width() - target_w) // 2
+                    raw = raw.subsurface((offset, 0, target_w, raw.get_height()))
                 s = cam_h / raw.get_height()
                 cw = int(raw.get_width() * s)
                 surf = pygame.transform.smoothscale(raw, (cw, cam_h))
@@ -315,9 +361,16 @@ class GameView:
             5: "service_room_algem.png",
             6: "westhall_algem.png",
             7: "coworking_algem.png",
+            8: "cam8_with_algem.png",
+            9: "cam9_with_algem.png",
+            10: "cam10_with_algem.png",
+            11: "cam11_with_algem.png",
         }
         for cam_idx, fname in algem_files.items():
-            s = _load_cam(f"assets/cameras/{fname}")
+            path = f"assets/cameras/{fname}"
+            if not os.path.exists(path):
+                path = f"assets/vents_cameras/{fname}"
+            s = _load_cam(path)
             if s:
                 self._algem_surfaces[cam_idx] = s
 
@@ -346,7 +399,7 @@ class GameView:
             ):
                 img = pygame.image.load(f"assets/cctv/{fname}").convert()
                 s = pygame.transform.smoothscale(img, (screen_w, screen_h))
-                s.set_alpha(45)
+                s.set_alpha(20)
                 self._noise_frames.append(s)
         self._noise_idx = 0
         self._noise_timer = 0
@@ -1130,7 +1183,7 @@ class GameView:
         self._noise_timer -= 1
         if self._noise_timer <= 0:
             self._noise_idx = (self._noise_idx + 1) % len(self._noise_frames)
-            self._noise_timer = random.randint(1, 3)
+            self._noise_timer = 2
         self.screen.blit(self._noise_frames[self._noise_idx], (0, 0))
 
         # Всплеск помех на камере, где был и где сейчас Алгем
@@ -1244,69 +1297,112 @@ class GameView:
             )
 
     def _draw_vent_map(self, model, mx, my):
-        """Карта вентиляции: camera_map как основа + синие duct-линии поверх."""
-        from gameplay_model import VentState
+        """Карта вентиляции: camera_map + duct-линии + камеры + seal-точки."""
+        from gameplay_model import SealState
 
-        # Основа — та же карта камер, комнаты на месте
+        # Основа — карта камер + duct-линии
         self.screen.blit(self._minimap_bg, (mx, my))
-        # Синие вент-линии поверх
         self.screen.blit(self._vent_overlay, (mx, my))
 
-        self._vent_reset_rects.clear()
-        mm_w, mm_h = self._minimap_size
+        # Иконки вент-камер (8–11) — стиль FNAF3: серый прямоугольник + "CAM XX"
+        for cidx, (cx, cy) in self._vent_cam_positions.items():
+            icon = self._cam_icons.get(cidx)
+            if icon is None:
+                continue
+            iw, ih = icon.get_width(), icon.get_height()
+            ix = mx + cx - iw // 2
+            iy = my + cy - ih // 2
 
-        for vid, (vx, vy) in self._vent_indicator_pos.items():
-            ix = mx + vx
-            iy = my + vy
-            state = model.vents.get(vid, VentState.OK)
-
-            if state == VentState.OK:
-                color = (40, 200, 40)
-            elif state == VentState.ERROR:
-                blink = (pygame.time.get_ticks() // 400) % 2 == 0
-                color = (220, 40, 40) if blink else (120, 20, 20)
+            # Определяем активность
+            is_active = (cidx == model.camera_idx)
+            if is_active:
+                blink_green = ((pygame.time.get_ticks() - self._cam_blink_start) // 1000) % 2 == 0
+                tint_color = (40, 220, 40) if blink_green else (90, 90, 90)
+                border_color = (40, 220, 40) if blink_green else (180, 180, 180)
             else:
-                color = (220, 200, 40)
+                tint_color = (60, 60, 60)
+                border_color = (140, 140, 140)
 
-            pygame.draw.circle(self.screen, color, (ix, iy), 8)
-            glow = pygame.Surface((24, 24), pygame.SRCALPHA)
-            glow_color = (*color, 60)
-            pygame.draw.circle(glow, glow_color, (12, 12), 12)
-            self.screen.blit(
-                glow, (ix - 12, iy - 12), special_flags=pygame.BLEND_ADD
+            # Фон иконки (полупрозрачный тёмный)
+            bg = pygame.Surface((iw, ih), pygame.SRCALPHA)
+            bg.fill((10, 10, 10, 180))
+            self.screen.blit(bg, (ix, iy))
+
+            # Tint поверх иконки
+            self.screen.blit(icon, (ix, iy))
+            tint = pygame.Surface((iw, ih), pygame.SRCALPHA)
+            tint.fill((*tint_color, 150))
+            self.screen.blit(tint, (ix, iy))
+
+            # Рамка
+            pygame.draw.rect(self.screen, border_color, (ix - 2, iy - 2, iw + 4, ih + 4), 1)
+
+        # Seal-точки — аутентичный стиль FNAF 3:
+        # зелёная горизонтальная полоска + текст "SEAL" над ней
+        self._seal_rects.clear()
+
+        for sid, (sx, sy, direction) in self._seal_positions.items():
+            state = model.seals.get(sid, SealState.OPEN)
+            ix = mx + sx
+            iy = my + sy
+
+            if state == SealState.OPEN:
+                bar_color = (40, 210, 40)  # зелёный
+            elif state == SealState.SEALING:
+                bar_color = (220, 180, 40)  # жёлтый — процесс закрывания
+            else:  # CLOSED
+                bar_color = (200, 50, 50)  # красный — полностью закрыта
+
+            # FNAF3-style seal: полоска, ориентация зависит от direction
+            # "H" = горизонтальная (22×5), "V" = вертикальная (5×22)
+            if direction == "V":
+                BAR_W, BAR_H = 5, 22
+            else:
+                BAR_W, BAR_H = 22, 5
+
+            rx = ix - BAR_W // 2
+            ry = iy - BAR_H // 2
+
+            # Кликабельная зона
+            click_rect = pygame.Rect(rx - 4, ry - 4, BAR_W + 8, BAR_H + 8)
+            self._seal_rects[sid] = click_rect
+
+            # Тёмный фон-подложка для читаемости
+            bg_surf = pygame.Surface((BAR_W + 2, BAR_H + 2), pygame.SRCALPHA)
+            bg_surf.fill((0, 0, 0, 120))
+            self.screen.blit(bg_surf, (rx - 1, ry - 1))
+
+            # Основная полоска
+            pygame.draw.rect(self.screen, bar_color, (rx, ry, BAR_W, BAR_H))
+
+            # Блик (светлая полоска по краю)
+            highlight = (
+                min(bar_color[0] + 80, 255),
+                min(bar_color[1] + 80, 255),
+                min(bar_color[2] + 80, 255),
             )
+            if direction == "V":
+                pygame.draw.line(self.screen, highlight, (rx + 1, ry + 1), (rx + 1, ry + BAR_H - 2))
+            else:
+                pygame.draw.line(self.screen, highlight, (rx + 1, ry + 1), (rx + BAR_W - 2, ry + 1))
 
-            label = "VENT A" if vid == "VENT_A" else "VENT B"
-            lbl_surf = self.font_small.render(label, True, (180, 180, 190))
-            self.screen.blit(
-                lbl_surf, (ix - lbl_surf.get_width() // 2, iy + 14)
-            )
+            # Тонкая рамка
+            pygame.draw.rect(self.screen, (200, 200, 200), (rx, ry, BAR_W, BAR_H), 1)
 
-            if state == VentState.ERROR:
-                rw, rh = 50, 18
-                rx = ix - rw // 2
-                ry = iy + 30
-                self._vent_reset_rects[vid] = pygame.Rect(rx, ry, rw, rh)
-                pygame.draw.rect(self.screen, (180, 30, 30), (rx, ry, rw, rh))
-                pygame.draw.rect(
-                    self.screen, (255, 255, 255), (rx, ry, rw, rh), 1
-                )
-                rst = self.font_small.render("RESET", True, (255, 255, 255))
-                self.screen.blit(
-                    rst, (rx + rw // 2 - rst.get_width() // 2, ry + 1)
-                )
-            elif state == VentState.RESETTING:
-                rw, rh = 50, 18
-                rx = ix - rw // 2
-                ry = iy + 30
-                pygame.draw.rect(self.screen, (80, 80, 30), (rx, ry, rw, rh))
-                pygame.draw.rect(
-                    self.screen, (255, 255, 255), (rx, ry, rw, rh), 1
-                )
-                rst = self.font_small.render("WAIT", True, (200, 200, 100))
-                self.screen.blit(
-                    rst, (rx + rw // 2 - rst.get_width() // 2, ry + 1)
-                )
+            # Glow (мягкое свечение вокруг)
+            gw, gh = BAR_W + 10, BAR_H + 10
+            glow = pygame.Surface((gw, gh), pygame.SRCALPHA)
+            pygame.draw.rect(glow, (*bar_color, 35), (5, 5, BAR_W, BAR_H))
+            self.screen.blit(glow, (rx - 5, ry - 5), special_flags=pygame.BLEND_ADD)
+
+    def get_seal_clicked(self, mouse_pos):
+        """Возвращает seal_id, если клик попал на seal-точку, иначе None."""
+        if mouse_pos is None:
+            return None
+        for sid, rect in self._seal_rects.items():
+            if rect.collidepoint(mouse_pos):
+                return sid
+        return None
 
     def get_vent_reset_clicked(self, mouse_pos):
         """Возвращает vent_id, если клик попал на кнопку RESET, иначе None."""
@@ -1318,13 +1414,14 @@ class GameView:
         return None
 
     def get_minimap_hotspot(self, screen_pos):
-        if self.vent_map_mode:
-            return None
         mx, my = self._minimap_pos
         rx, ry = screen_pos
         pad = 6
-        for cidx, (cx, cy) in self._minimap_icon_positions.items():
-            icon = self._cam_icons[cidx]
+        positions = self._vent_cam_positions if self.vent_map_mode else self._minimap_icon_positions
+        for cidx, (cx, cy) in positions.items():
+            icon = self._cam_icons.get(cidx)
+            if icon is None:
+                continue
             iw, ih = icon.get_size()
             ix = mx + cx - iw // 2
             iy = my + cy - ih // 2
@@ -1531,8 +1628,8 @@ class GameView:
                 # Кнопки BAIT (сверху) и MAP (снизу) — слева от мини-карты
                 mmx, mmy = self._minimap_pos
                 bw, bh = self._btn_size
-                gap = 20
-                bx = mmx - bw + 4
+                gap = 15
+                bx = mmx - bw - 15
                 by = mmy + int(self._minimap_size[1] * 0.6)
 
                 if not model.bait_active:

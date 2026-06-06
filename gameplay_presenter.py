@@ -24,7 +24,11 @@ import numpy as np
 import pygame
 
 from algem_ai import bfs_path
-from gameplay_model import BASE_GRAPH, CAMERA_COUNT, GameModel
+from gameplay_model import (
+    BASE_GRAPH, CAMERA_COUNT, VENT_CAMERAS,
+    GameModel, SealState, VENT_SEALS,
+    find_nearest_vent_camera,
+)
 
 HACK_RATE: float = 1.0 / 1800  # прогресс взлома за тик (~30 сек реального времени)
 
@@ -54,8 +58,12 @@ class GamePresenter:
         # ── Флаги UI ─────────────────────────────────────────────────────
         self._camera_inited: bool = False  # первое открытие планшета
         self._tab_prev_hovered: bool = False  # для edge-trigger ховера
+        self._tab_hover_cooldown: int = 0  # кулдаун после toggle по ховеру (в тиках)
         self._laptop_saved_app = None
         self._laptop_saved_menu = False
+
+        # ── Запоминание камеры при переключении vent/map ──────────────────
+        self._last_regular_cam: int = 1
 
         # ── Ленивая загрузка звуков ──────────────────────────────────────
         self._keys_held: set[int] = set()  # currently held keys for combos
@@ -82,18 +90,26 @@ class GamePresenter:
             f"sounds/algemistalking/ambience{i}.mp3"
             for i in (1, 2, 4, 5, 6, 7, 8, 9, 10)
         ]
+        self._vent_sound_paths: list[str] = [
+            f"sounds/vents/{f}" for f in (
+                "vent_closer1.wav", "vent_louder2.wav",
+                "vent_quiet1.wav", "vent_quiet2.wav",
+            )
+        ]
         self._algem_talk_channel: pygame.mixer.Channel = pygame.mixer.Channel(5)
         self._algem_leave_channel: pygame.mixer.Channel = pygame.mixer.Channel(4)
         self._cam_init_channel: pygame.mixer.Channel = pygame.mixer.Channel(6)
         self._cam_switch_channel: pygame.mixer.Channel = pygame.mixer.Channel(7)
+        self._vent_sound_channel: pygame.mixer.Channel = pygame.mixer.Channel(9)
 
         self._ad_playing: bool = False
         self._ad_channel: pygame.mixer.Channel = pygame.mixer.Channel(8)
         self._algem_talk_timer: int = random.randint(1800, 3600)
+        self._vent_sound_timer: int = 0
 
         # ── Звуки Алгема: расстояние от офиса ────────────────────────────
         self._office_distance: dict[int, int] = {}
-        for node in range(1, 8):
+        for node in range(1, CAMERA_COUNT + 1):
             path = bfs_path(node, 0, BASE_GRAPH)
             self._office_distance[node] = len(path) - 1 if path else 4
         # (расстояние → (kernel_size, volume))
@@ -112,6 +128,8 @@ class GamePresenter:
         self._end_sound_played: bool = False
         self._wait_playing: bool = False
         self._wait_timer: int = 0
+        self._seal_playing: bool = False
+        self._seal_timer: int = 0
         self._danger_playing: bool = False
         self._on_node5_grace: int = 0
 
@@ -159,6 +177,18 @@ class GamePresenter:
                     print(f"[GamePresenter] Sound not found: {path}")
             object.__setattr__(self, '__gadget_cache', cache)
         return object.__getattribute__(self, '__gadget_cache')
+
+    @property
+    def _vent_sounds(self) -> list[pygame.mixer.Sound]:
+        if not hasattr(self, '__vent_sounds_cache'):
+            cache: list[pygame.mixer.Sound] = []
+            for path in self._vent_sound_paths:
+                try:
+                    cache.append(pygame.mixer.Sound(path))
+                except pygame.error:
+                    print(f"[GamePresenter] Sound not found: {path}")
+            object.__setattr__(self, '__vent_sounds_cache', cache)
+        return object.__getattribute__(self, '__vent_sounds_cache')
 
     @property
     def _algem_talk_sounds(self) -> list[pygame.mixer.Sound]:
@@ -255,6 +285,8 @@ class GamePresenter:
             pygame.K_5: 5,
             pygame.K_6: 6,
             pygame.K_7: 7,
+            pygame.K_8: 8,
+            pygame.K_9: 9,
         }
         if key in key_to_cam and self.model.tablet_open and not self.model.laptop_open:
             self._switch_camera(key_to_cam[key])
@@ -317,7 +349,19 @@ class GamePresenter:
 
             # MAP TOGGLE — переключение между камерами и вентиляцией
             if self.view.is_map_clicked(pos):
-                self.view.vent_map_mode = not self.view.vent_map_mode
+                going_vent = not self.view.vent_map_mode
+                self.view.vent_map_mode = going_vent
+                if going_vent:
+                    # Сохраняем текущую обычную камеру и переключаем на ближайшую вент
+                    if self.model.camera_idx not in VENT_CAMERAS:
+                        self._last_regular_cam = self.model.camera_idx
+                    nearest = find_nearest_vent_camera(
+                        self._last_regular_cam, BASE_GRAPH,
+                    )
+                    self._switch_camera(nearest)
+                else:
+                    # Возврат к обычной камере
+                    self._switch_camera(self._last_regular_cam)
                 return
 
             # Кнопки RESET VENT_A / RESET VENT_B
@@ -325,6 +369,14 @@ class GamePresenter:
             if vent_hit is not None:
                 self.model.start_vent_reset(vent_hit)
                 return
+
+            # Seal-точки на карте вентиляции
+            if self.view.vent_map_mode:
+                seal_hit = self.view.get_seal_clicked(pos)
+                if seal_hit is not None:
+                    self.model.start_seal(seal_hit)
+                    self._play_seal_sound()
+                    return
 
             # Остальные клики внутри планшета поглощаем
             if self.view.screen_rect.collidepoint(pos):
@@ -424,9 +476,10 @@ class GamePresenter:
         hovered = self.view.is_tabbutton_clicked(pos)
         self.view.tab_button_hovered = hovered
 
-        # Edge-trigger: только при входе в зону ховера
-        if hovered and not self._tab_prev_hovered:
+        # Edge-trigger: только при входе в зону ховера (с кулдауном)
+        if hovered and not self._tab_prev_hovered and self._tab_hover_cooldown <= 0:
             self._toggle_tablet()
+            self._tab_hover_cooldown = 30  # 0.5 сек при 60 FPS
 
         self._tab_prev_hovered = hovered
 
@@ -445,6 +498,9 @@ class GamePresenter:
                 self.snd_startnight.play()
                 self._start_played = True
             self.model.night_start_ticks -= 1
+
+        if self._tab_hover_cooldown > 0:
+            self._tab_hover_cooldown -= 1
 
         if self.model.game_over or self.model.night_complete:
             self._cleanup_on_end()
@@ -467,8 +523,10 @@ class GamePresenter:
         self._update_bait_anim()
         self._update_phone()
         self._update_algem_sounds()
+        self._update_vent_sounds()
         self._update_danger_sound()
         self._update_reboot_sound()
+        self._update_seal_sound()
 
         self._update_ad()
         self._update_laptop()
@@ -640,6 +698,30 @@ class GamePresenter:
         self._algem_talk_channel.play(random.choice(variants))
         self._algem_talk_timer = random.randint(3600, 5400)
 
+    def _update_vent_sounds(self) -> None:
+        """Звуки вентиляции когда Алгем в вент-узлах (8, 9).
+        Громкость зависит от расстояния до node 7 (камера 7):
+        чем ближе, тем громче."""
+        loc = self.model.algem_location
+        in_vent = loc in (8, 9)
+        if not in_vent:
+            if self._vent_sound_channel.get_busy():
+                self._vent_sound_channel.stop()
+            self._vent_sound_timer = 0
+            return
+
+        path = bfs_path(loc, 7, BASE_GRAPH)
+        dist = len(path) - 1 if path else 4
+        volume = self._dist_params.get(dist, (0, 0.12))[1]
+
+        if not self._vent_sound_channel.get_busy():
+            if not self._vent_sounds:
+                return
+            self._vent_sound_channel.play(random.choice(self._vent_sounds), loops=-1)
+            self._vent_sound_timer = 0
+
+        self._vent_sound_channel.set_volume(volume)
+
     def _update_danger_sound(self) -> None:
         """Звук danger2b.wav когда Алгем на последней камере (node 5)."""
         on_last = self.model.algem_location == 5
@@ -664,6 +746,9 @@ class GamePresenter:
         if not self.model.tablet_open:
             self._open_tablet()
         elif not self.model.tablet_animating:
+            # Нельзя закрывать планшет, если идёт процесс закрывания seal'а
+            if self.model.currently_sealing_id is not None:
+                return
             self._close_tablet()
 
     def _open_tablet(self) -> None:
@@ -697,6 +782,8 @@ class GamePresenter:
 
     def _switch_camera(self, idx: int) -> None:
         """Переключить активную камеру с звуком."""
+        if self.model.camera_idx == idx:
+            return
         self.model.camera_idx = idx
         if self.snd_cam_switch:
             self._cam_switch_channel.play(self.snd_cam_switch)
@@ -751,8 +838,35 @@ class GamePresenter:
 
         if self._wait_playing:
             self._wait_timer += 1
-            if self._wait_timer >= 180:  # раз в 3 секунды
+            if self._wait_timer >= 180:
                 self._wait_timer = 0
+                if self.snd_wait:
+                    self.snd_wait.play()
+
+    def _play_seal_sound(self) -> None:
+        """Запустить звук блокировки (сейчас используем snd_wait)."""
+        if not self._seal_playing and self.snd_wait:
+            self._seal_playing = True
+            self._seal_timer = 0
+            self.snd_wait.play()
+
+    def _update_seal_sound(self) -> None:
+        """Обновить циклическое воспроизведение звука блокировки."""
+        active = any(
+            self.model.seals.get(s) == SealState.SEALING
+            for s in VENT_SEALS
+        )
+        if active and not self._seal_playing:
+            self._play_seal_sound()
+        if not active and self._seal_playing:
+            if self.snd_wait:
+                self.snd_wait.stop()
+            self._seal_playing = False
+
+        if self._seal_playing:
+            self._seal_timer += 1
+            if self._seal_timer >= 180:
+                self._seal_timer = 0
                 if self.snd_wait:
                     self.snd_wait.play()
 
@@ -778,15 +892,13 @@ class GamePresenter:
             self._on_node5_grace = 0
 
     def _update_ad(self) -> None:
-        """Управление рекламой: запуск звука и притяжение Алгема."""
+        """Управление рекламой: запуск звука. Шум от рекламы теперь в attention scale."""
         if self.model.ad_active:
             if not self._ad_playing:
                 pygame.mixer.music.load(self._ad_path)
                 pygame.mixer.music.set_volume(1.0)
                 pygame.mixer.music.play(-1)
                 self._ad_playing = True
-            if self.model.night > 1:
-                self.model._hack_attraction = min(1.0, self.model._hack_attraction + 0.002)
         else:
             if self._ad_playing:
                 pygame.mixer.music.stop()
@@ -822,6 +934,7 @@ class GamePresenter:
         self._wait_playing = False
         self._algem_talk_channel.stop()
         self._algem_leave_channel.stop()
+        self._vent_sound_channel.stop()
         self._cam_init_channel.stop()
         self._camera_inited = False
         if self._ad_playing:

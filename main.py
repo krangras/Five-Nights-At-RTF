@@ -94,6 +94,17 @@ def main():
     night_complete_tick = 0
     night_end_sound = None
     screamer = None
+    _nt_frames = []
+
+    # ── Финальная сцена (ночь 5) ──────────────────────────────────────
+    final_scene_img = None
+    final_scene_music = None
+    final_scene_speech = None
+    final_scene_tick = 0
+    final_scene_phase = ""  # FADE_IN | SHOWING | FADE_OUT
+    final_scene_speech_played = False
+    final_scene_music_chan = None
+    final_scene_speech_chan = None
 
     game_surface = pygame.Surface(GAME_SIZE)
 
@@ -167,6 +178,16 @@ def main():
                     night_end_sound.play()
                 except pygame.error:
                     pass
+                # Загрузка кадров анимации перехода ночи
+                _nt_frames = []
+                for _i in range(350, 353):
+                    try:
+                        _raw = pygame.image.load(
+                            f"assets/night_transfer/{_i}.png"
+                        ).convert_alpha()
+                        _nt_frames.append(_raw)
+                    except pygame.error:
+                        pass
                 state = "NIGHT_COMPLETE"
             clock.tick(60)
         elif state == "SCREAMER":
@@ -247,46 +268,119 @@ def main():
                     pygame.mixer.stop()
                     return
 
-            game_surface.fill((0, 0, 0))
+            night_complete_tick += 1
+            completed_night = game_m.night
 
             font_big = _get_loading_font(80)
-            font_sub = _get_loading_font(30)
 
-            night_complete_tick += 1
+            am_surf = font_big.render("AM", True, (255, 255, 255))
+            am_x = GAME_SIZE[0] // 2 + 10
+            am_y = GAME_SIZE[1] // 2 - am_surf.get_height() // 2
 
-            if night_complete_tick < 60:
-                alpha = min(255, night_complete_tick * 12)
-                am_surf = font_big.render("6 AM", True, (255, 255, 255))
-                am_surf.set_alpha(alpha)
-                game_surface.blit(am_surf, (640 - am_surf.get_width() // 2, 360 - am_surf.get_height() // 2))
+            if _nt_frames:
+                digit_h = am_surf.get_height()
+                nt_phase = min(night_complete_tick // 20, len(_nt_frames) - 1)
+                digit_raw = _nt_frames[nt_phase]
+                digit_w = int(digit_raw.get_width() * (digit_h / digit_raw.get_height()))
+                digit_surf = pygame.transform.smoothscale(digit_raw, (digit_w, digit_h))
+                digit_x = am_x - digit_w - 6
+                digit_y = am_y
+                game_surface.blit(digit_surf, (digit_x, digit_y))
 
-                completed_night = game_m.night
-                if completed_night >= 5:
-                    sub = font_sub.render("You survived all nights!", True, (200, 200, 200))
-                else:
-                    sub = font_sub.render(f"Night {completed_night} Complete", True, (200, 200, 200))
-                sub.set_alpha(alpha)
-                game_surface.blit(sub, (640 - sub.get_width() // 2, 360 + 60))
-            else:
-                am_surf = font_big.render("6 AM", True, (255, 255, 255))
-                game_surface.blit(am_surf, (640 - am_surf.get_width() // 2, 360 - am_surf.get_height() // 2))
-
-                completed_night = game_m.night
-                if completed_night >= 5:
-                    sub = font_sub.render("You survived all nights!", True, (200, 200, 200))
-                else:
-                    sub = font_sub.render(f"Night {completed_night} Complete", True, (200, 200, 200))
-                game_surface.blit(sub, (640 - sub.get_width() // 2, 360 + 60))
+            game_surface.blit(am_surf, (am_x, am_y))
 
             sound_done = night_end_sound is None or not pygame.mixer.get_busy()
             if sound_done:
                 menu_m.saved_night = load_save()
                 menu_m.continue_available = menu_m.saved_night > 1
                 if completed_night >= 5:
-                    state = "MENU"
+                    # Загрузка ассетов финальной сцены
+                    final_scene_tick = 0
+                    final_scene_phase = "FADE_IN"
+                    final_scene_speech_played = False
+                    try:
+                        raw = pygame.image.load(
+                            "assets/final_scene/"
+                            "dfa83ef3-a181-4a77-8216-f80b0834de0a.png"
+                        ).convert()
+                        final_scene_img = pygame.transform.smoothscale(
+                            raw, GAME_SIZE
+                        )
+                    except pygame.error:
+                        final_scene_img = None
+                    final_scene_music_chan = None
+                    final_scene_speech_chan = None
+                    try:
+                        snd = pygame.mixer.Sound(
+                            "sounds/final_scene/mb2.wav"
+                        )
+                        snd.set_volume(0.5)
+                        final_scene_music_chan = snd.play(loops=-1)
+                    except pygame.error:
+                        pass
+                    try:
+                        snd = pygame.mixer.Sound(
+                            "sounds/final_scene/algems' final speech.mp3"
+                        )
+                        snd.set_volume(1.0)
+                        final_scene_speech_chan = snd.play()
+                    except pygame.error:
+                        pass
+                    state = "FINAL_SCENE"
                 else:
                     game_m, game_v, game_p = start_game(completed_night + 1)
                     state = "GAME"
+
+            pygame.transform.smoothscale(game_surface, screen.get_size(), screen)
+            pygame.display.flip()
+            clock.tick(60)
+        elif state == "FINAL_SCENE":
+            for e in pygame.event.get():
+                if e.type == pygame.QUIT:
+                    pygame.mixer.stop()
+                    return
+                if e.type == pygame.KEYDOWN and final_scene_speech_played:
+                    final_scene_phase = "FADE_OUT"
+                    final_scene_tick = 0
+
+            game_surface.fill((0, 0, 0))
+            final_scene_tick += 1
+
+            if final_scene_phase == "FADE_IN":
+                if final_scene_img is not None:
+                    alpha = min(255, final_scene_tick * 4)
+                    final_scene_img.set_alpha(alpha)
+                    game_surface.blit(final_scene_img, (0, 0))
+                if final_scene_tick >= 64:
+                    final_scene_phase = "SHOWING"
+                    final_scene_tick = 0
+
+            elif final_scene_phase == "SHOWING":
+                if final_scene_img is not None:
+                    final_scene_img.set_alpha(255)
+                    game_surface.blit(final_scene_img, (0, 0))
+                if (
+                    not final_scene_speech_played
+                    and (
+                        final_scene_speech_chan is None
+                        or not final_scene_speech_chan.get_busy()
+                    )
+                ):
+                    final_scene_speech_played = True
+
+            elif final_scene_phase == "FADE_OUT":
+                if final_scene_img is not None:
+                    alpha = max(0, 255 - final_scene_tick * 8)
+                    final_scene_img.set_alpha(alpha)
+                    game_surface.blit(final_scene_img, (0, 0))
+                if final_scene_tick >= 32:
+                    pygame.mixer.stop()
+                    final_scene_img = None
+                    final_scene_music_chan = None
+                    final_scene_speech_chan = None
+                    menu_m.saved_night = load_save()
+                    menu_m.continue_available = menu_m.saved_night > 1
+                    state = "MENU"
 
             pygame.transform.smoothscale(game_surface, screen.get_size(), screen)
             pygame.display.flip()

@@ -198,6 +198,18 @@ class AlgemAI:
         5: (90, 180),
     }
 
+    # Детерминированные параметры баланса по ночам
+    # Скорость роста шкалы внимания от шума сервера (в тиках)
+    NIGHT_SERVER_GROWTH: dict[int, float] = {
+        1: 0.0, 2: 6.0, 3: 12.0, 4: 18.0, 5: 25.0,
+    }
+    # Скорость падения шкалы в тишине (сервер выкл)
+    SILENCE_DECAY: float = 15.0
+    # Рост шкалы от рекламы (когда иммунитет прошёл)
+    AD_GROWTH: float = 40.0
+    # Окно безопасности рекламы (секунды)
+    AD_SAFE_WINDOW: float = 2.0
+
     # Зоны патруля по ночам (какие узлы доступны для случайного блуждания)
     _PATROL_ZONES: dict[int, set[int]] = {
         1: {1, 2, 3, 4, 5, 6, 7},
@@ -250,6 +262,13 @@ class AlgemAI:
         # Чем выше значение, тем сильнее сервер притягивает Алгема.
         self.hack_attraction: float = 0.0
 
+        # ── Шкала внимания [0..100] — детерминированная замена random ────
+        self.attention: float = 0.0
+        self._server_on: bool = False
+        self._ad_active: bool = False
+        self._ad_safe_timer: float = 0.0   # таймер иммунитета рекламы (секунды)
+        self._ad_immune: bool = True       # True пока не прошло AD_SAFE_WINDOW
+
         # ── Вспомогательные ─────────────────────────────────────────────
         self.main_hall_sprite: int  = 0   # вариант спрайта в Главном коридоре
         self._camera_watch:    dict[int, int] = {}  # передаётся из GameModel
@@ -283,6 +302,52 @@ class AlgemAI:
         """
         self._camera_watch = watch
 
+    def update_game_state(
+        self,
+        server_on: bool,
+        ad_active: bool,
+        dt: float = 1 / 60,
+    ) -> None:
+        """
+        Передать состояние сервера и рекламы для расчёта шкалы внимания.
+
+        Args:
+            server_on : True если сервер включён.
+            ad_active : True если рекламный баннер виден.
+            dt        : дельта-тайм в секундах (по умолчанию 1/60).
+        """
+        old_ad = self._ad_active
+        self._server_on = server_on
+        self._ad_active = ad_active
+
+        # Рассчитываем прирост шкалы внимания
+        growth = 0.0
+
+        if server_on:
+            growth += self.NIGHT_SERVER_GROWTH.get(self._night, 0.0)
+        else:
+            # Сервер выключен — шкала падает
+            growth -= self.SILENCE_DECAY
+
+        # Реклама: окно безопасности 2 сек
+        if ad_active:
+            if not old_ad:
+                # Реклама только что появилась — запускаем таймер иммунитета
+                self._ad_safe_timer = 0.0
+                self._ad_immune = True
+            if self._ad_immune:
+                self._ad_safe_timer += dt
+                if self._ad_safe_timer >= self.AD_SAFE_WINDOW:
+                    self._ad_immune = False
+            if not self._ad_immune:
+                growth += self.AD_GROWTH
+        else:
+            self._ad_safe_timer = 0.0
+            self._ad_immune = True
+
+        self.attention += growth * dt
+        self.attention = max(0.0, min(100.0, self.attention))
+
     def notify_audio_lure(self, target_node: int, duration: int = 480) -> None:
         """
         Сообщить ИИ об активации аудио-приманки в комнате target_node.
@@ -305,6 +370,10 @@ class AlgemAI:
         if path is None or len(path) - 1 > 2:
             return          # Слишком далеко — не слышит
 
+        # 15% шанс что приманка не сработает
+        if random.random() < 0.15:
+            return
+
         self._lure_node       = target_node
         self._lure_ticks_left = duration
 
@@ -322,10 +391,10 @@ class AlgemAI:
         """
         Один игровой тик ИИ.
 
-        Обновляет таймеры, агрессию, и при необходимости делает ход.
+        Обновляет шкалу внимания, таймеры, и при необходимости делает ход.
 
         Args:
-            hour : текущий игровой час (0–5); ускоряет поведение.
+            hour : текущий игровой час (0–5).
 
         Returns:
             True  — Алгем добрался до офиса (Game Over).
@@ -351,11 +420,6 @@ class AlgemAI:
             if self._entry_timer <= 0:
                 return True     # Время вышло — Алгем ворвался в офис
             return False        # Ещё входит, не двигаемся
-
-        # Накопление агрессии в состоянии IDLE
-        if self.state is AIState.IDLE:
-            gain = 0.0006 * (1 + self._night * 0.25)
-            self.aggression = min(1.0, self.aggression + gain)
 
         # Таймер хода
         self._move_timer -= 1
@@ -388,43 +452,40 @@ class AlgemAI:
     def _step_idle(self, hour: int) -> bool:
         """
         Состояние IDLE: ожидание.
+        Решения детерминированы на основе шкалы внимания.
         """
         self._idle_ticks_left -= 1
         if self._idle_ticks_left > 0:
             return False
 
-        # FNAF-style: на ранних часах Алгем более пассивен
-        hour_factor = (hour / 6.0) * 0.5
-        idle_chance = 0.95 - (self._night * 0.05) - hour_factor
-        
-        if self.hack_attraction < 0.05 and random.random() < idle_chance:
-            self._idle_ticks_left = random.randint(300, 600)
+        # Сервер выключен и шкала на нуле — Алгем отступает
+        if not self._server_on and self.attention <= 0 and self.location != 1:
+            # Отступаем на одну камеру назад (к предыдущей позиции)
+            neighbors = self._graph.get(self.location, [])
+            if self.prev_location in neighbors and self.prev_location != self.OFFICE_NODE:
+                self._move_to(self.prev_location)
+            elif neighbors:
+                # Идём в соседнюю камеру, не в офис
+                safe = [n for n in neighbors if n != self.OFFICE_NODE]
+                if safe:
+                    self._move_to(safe[0])
+            self._idle_ticks_left = 60
             return False
 
-        # Переход в ATTACK: на ночах 1–3 без сервера — только PATROL
-        attack_threshold = 0.7 - (self._night * 0.05)
+        # Порог перехода в ATTACK зависит от ночи
+        attack_threshold = 70.0 - (self._night * 2.0)
         can_attack = self.hack_attraction >= 0.05 or self._night > 3
-        if can_attack and self.aggression > attack_threshold and random.random() < (0.3 + hour * 0.1):
-            if self._night > 1:
-                self.state = AIState.ATTACK
-            else:
-                self.state = AIState.PATROL
-                self.aggression = max(0.0, self.aggression - 0.1)
+
+        if can_attack and self.attention >= attack_threshold:
+            self.state = AIState.ATTACK
         else:
-            self.state            = AIState.PATROL
-            self.aggression       = max(0.0, self.aggression - 0.1)
+            self.state = AIState.PATROL
         return False
 
     def _step_patrol(self) -> bool:
         """
-        Состояние PATROL: случайное блуждание с весами.
-
-        Узлы выбираются взвешенно:
-          - Менее наблюдаемые камеры притягивают сильнее.
-          - Если активна аудио-приманка — направляется к ней через BFS.
-
-        Returns:
-            True если случайно забрёл в офис (редко, только при algo_chance).
+        Состояние PATROL: блуждание с весами.
+        Решения детерминированы на основе шкалы внимания.
         """
         # На последней камере не двигается без приманки
         if self.location == 5 and self._lure_node < 0:
@@ -437,19 +498,17 @@ class AlgemAI:
 
         self._move_to(next_node)
 
-        # Вероятностный переход в ATTACK (только со 2-й ночи и с сервером)
-        can_attack = self.hack_attraction >= 0.05 or self._night > 3
-        if can_attack and self._night > 1:
-            night_factor   = self._night / 5.0
-            hack_mult      = self.hack_attraction
-            attack_chance  = (0.06 + night_factor * 0.18 + self.aggression * 0.15) * hack_mult
-            if random.random() < attack_chance:
-                self.state = AIState.ATTACK
+        # Сервер выключен и шкала на нуле — отступаем обратно в IDLE
+        if not self._server_on and self.attention <= 0:
+            self.state = AIState.IDLE
+            self._idle_ticks_left = 30
+            return False
 
-        # Редкое задумывание → IDLE (делает поведение менее предсказуемым)
-        elif random.random() < 0.025:
-            self.state             = AIState.IDLE
-            self._idle_ticks_left  = random.randint(60, 180)
+        # Детерминированный переход в ATTACK по порогу шкалы
+        can_attack = self.hack_attraction >= 0.05 or self._night > 3
+        attack_threshold = 80.0 - (self._night * 3.0)
+        if can_attack and self.attention >= attack_threshold:
+            self.state = AIState.ATTACK
 
         return False
 
@@ -610,27 +669,27 @@ class AlgemAI:
 
     def _compute_interval(self, hour: int) -> int:
         """
-        Интервал между ходами (тиков).
+        Интервал между ходами (тиков) — детерминированный.
 
-        Влияющие факторы:
-          - Номер ночи (чем выше — тем быстрее).
-          - Игровой час (каждый час ускоряет на 20 тиков).
-          - Состояние ATTACK: вдвое быстрее для нагнетания напряжения.
-          - Приманка сервера (hack_attraction): ускоряет движение Алгема.
-
-        Минимум — 60 тиков (1 секунда при 60 FPS).
+        Чем выше шкала внимания, тем быстрее следующий шаг.
+        При нулевой шкале (сервер выкл) — интервал максимален.
         """
         lo, hi = self._NIGHT_SPEED.get(self._night, (120, 240))
 
-        speed_mult = 0.5 if self.state is AIState.ATTACK else 1.0
+        # Базовый интервал уменьшается пропорционально шкале внимания
+        # attention=0 → hi, attention=100 → lo
+        attention_factor = self.attention / 100.0
+        interval = int(hi - (hi - lo) * attention_factor)
 
-        # Приманка сервера: до 3x ускорения при hack_attraction = 1.0
-        # Когда сервер выключен (hack_attraction ≈ 0) — базовая скорость
-        hack_mult = 1.0 - self.hack_attraction * 0.67
+        # В ATTACK — интервал вдвое меньше
+        if self.state is AIState.ATTACK:
+            interval = max(60, interval // 2)
 
-        lo_adj = max(60, int((lo - hour * 20) * speed_mult * hack_mult))
-        hi_adj = max(90, int((hi - hour * 20) * speed_mult * hack_mult))
-        return random.randint(lo_adj, hi_adj)
+        # Ускорение от hack_attraction
+        hack_mult = 1.0 - self.hack_attraction * 0.5
+        interval = max(60, int(interval * hack_mult))
+
+        return interval
 
     # ──────────────────────────────────────────────────────────────────────
     # Debug / repr
