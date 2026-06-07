@@ -7,6 +7,10 @@ class MenuPresenter:
         self.view = view
         self._prev_hover = None
         self._blip_sound = None
+        try:
+            self._blip_sound = pygame.mixer.Sound("sounds/blip3.mp3")
+        except pygame.error:
+            pass
 
     def _ensure_music(self):
         if pygame.mixer.music.get_busy():

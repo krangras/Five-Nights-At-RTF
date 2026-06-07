@@ -1744,18 +1744,4 @@ class GameView:
                 ),
             )
 
-        # ── Game over / Night complete ──────────────────────────
-        if model.night_complete:
-            overlay = pygame.Surface((self.screen_w, self.screen_h))
-            overlay.fill((0, 0, 0))
-            self.screen.blit(overlay, (0, 0))
-            txt = self.font.render("6 AM", True, (30, 200, 30))
-            self.screen.blit(
-                txt,
-                (
-                    self.screen_w // 2 - txt.get_width() // 2,
-                    self.screen_h // 2 - 30,
-                ),
-            )
-
         self.screen.blit(self._brightness_overlay, (0, 0))

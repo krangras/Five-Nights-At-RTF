@@ -191,17 +191,17 @@ class AlgemAI:
 
     # Конфиг скоростей для каждой ночи: (мин. интервал, макс. интервал) в тиках
     _NIGHT_SPEED: dict[int, tuple[int, int]] = {
-        1: (600, 900),
-        2: (420, 600),
-        3: (300, 420),
-        4: (180, 300),
-        5: (90, 180),
+        1: (1200, 1800),  # 20-30 сек
+        2: (900, 1200),   # 15-20 сек
+        3: (600, 900),    # 10-15 сек
+        4: (420, 600),    # 7-10 сек
+        5: (300, 420),    # 5-7 сек
     }
 
     # Детерминированные параметры баланса по ночам
     # Скорость роста шкалы внимания от шума сервера (в тиках)
     NIGHT_SERVER_GROWTH: dict[int, float] = {
-        1: 0.0, 2: 6.0, 3: 12.0, 4: 18.0, 5: 25.0,
+        1: 0.0, 2: 3.0, 3: 6.0, 4: 10.0, 5: 15.0,
     }
     # Скорость падения шкалы в тишине (сервер выкл)
     SILENCE_DECAY: float = 15.0
@@ -212,11 +212,11 @@ class AlgemAI:
 
     # Зоны патруля по ночам (какие узлы доступны для случайного блуждания)
     _PATROL_ZONES: dict[int, set[int]] = {
-        1: {1, 2, 3, 4, 5, 6, 7},
-        2: {1, 2, 3, 4},
-        3: {1, 2, 3, 4, 5, 7},
-        4: {1, 2, 3, 4, 5, 6, 7},
-        5: {1, 2, 3, 4, 5, 6, 7},
+        1: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+        2: {1, 2, 3, 4, 8, 9, 10, 11},
+        3: {1, 2, 3, 4, 5, 7, 8, 9, 10, 11},
+        4: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+        5: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
     }
 
     def __init__(
@@ -473,8 +473,8 @@ class AlgemAI:
             return False
 
         # Порог перехода в ATTACK зависит от ночи
-        attack_threshold = 70.0 - (self._night * 2.0)
-        can_attack = self.hack_attraction >= 0.05 or self._night > 3
+        attack_threshold = 85.0 - (self._night * 3.0)
+        can_attack = self.hack_attraction >= 0.05 or self._ad_active
 
         if can_attack and self.attention >= attack_threshold:
             self.state = AIState.ATTACK
@@ -505,8 +505,8 @@ class AlgemAI:
             return False
 
         # Детерминированный переход в ATTACK по порогу шкалы
-        can_attack = self.hack_attraction >= 0.05 or self._night > 3
-        attack_threshold = 80.0 - (self._night * 3.0)
+        can_attack = self.hack_attraction >= 0.05 or self._ad_active
+        attack_threshold = 90.0 - (self._night * 3.0)
         if can_attack and self.attention >= attack_threshold:
             self.state = AIState.ATTACK
 
@@ -566,14 +566,14 @@ class AlgemAI:
         Взвешенный выбор следующего узла для PATROL.
 
         Если активна аудио-приманка — BFS к её источнику.
-        Иначе — стохастический выбор с учётом наблюдаемости камер
-        и зоны патруля (первые ночи ходит только рядом со своей комнатой).
+        Иначе — шанс пойти через вентиляцию, или стохастический выбор
+        с учётом наблюдаемости камер и зоны патруля.
 
         На последней камере (node 7) стоит на месте без приманки.
         """
-        # На node 7 не двигается, пока не сработает приманка
+        # На последней камере (5) без приманки — никуда не идёт самоубиться
         if self.location == 5 and self._lure_node < 0:
-            return 7
+            return self.location
 
         neighbors = self._graph.get(self.location, [])
         if not neighbors:
@@ -681,9 +681,9 @@ class AlgemAI:
         attention_factor = self.attention / 100.0
         interval = int(hi - (hi - lo) * attention_factor)
 
-        # В ATTACK — интервал вдвое меньше
+        # В ATTACK — интервал чуть меньше (25% ускорение вместо 50%)
         if self.state is AIState.ATTACK:
-            interval = max(60, interval // 2)
+            interval = max(90, int(interval * 0.75))
 
         # Ускорение от hack_attraction
         hack_mult = 1.0 - self.hack_attraction * 0.5

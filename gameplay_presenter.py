@@ -65,9 +65,9 @@ class GamePresenter:
         # ── Запоминание камеры при переключении vent/map ──────────────────
         self._last_regular_cam: int = 1
 
-        # ── Ленивая загрузка звуков ──────────────────────────────────────
-        self._keys_held: set[int] = set()  # currently held keys for combos
-        self._sound_paths: dict[str, str] = {
+        # ── Загрузка всех звуков сразу ───────────────────────────────────
+        self._keys_held: set[int] = set()
+        _sound_defs: dict[str, str] = {
             "snd_on": "sounds/night1/server_turning_on.mp3",
             "snd_work": "sounds/night1/server_is_working.mp3",
             "snd_off": "sounds/night1/server_turning_off.mp3",
@@ -81,21 +81,35 @@ class GamePresenter:
             "snd_endnight": "sounds/night_ends.wav",
             "snd_wait": "sounds/wait.wav",
             "snd_danger2b": "sounds/danger2b.wav",
-
         }
+        for attr, path in _sound_defs.items():
+            try:
+                snd = pygame.mixer.Sound(path)
+                if attr == "snd_ambience":
+                    snd.set_volume(0.35)
+                setattr(self, attr, snd)
+            except pygame.error:
+                setattr(self, attr, None)
         self._ad_path: str = "sounds/laptop/ad.mp3"
         self._snd_off_length: int = 60
-        self._gadget_paths: list[str] = [f"sounds/gadget{i}.mp3" for i in range(1, 5)]
-        self._algem_talk_paths: list[str] = [
-            f"sounds/algemistalking/ambience{i}.mp3"
-            for i in (1, 2, 4, 5, 6, 7, 8, 9, 10)
-        ]
-        self._vent_sound_paths: list[str] = [
-            f"sounds/vents/{f}" for f in (
-                "vent_closer1.wav", "vent_louder2.wav",
-                "vent_quiet1.wav", "vent_quiet2.wav",
-            )
-        ]
+        self.__gadget_cache: list[pygame.mixer.Sound] = []
+        for i in range(1, 5):
+            try:
+                self.__gadget_cache.append(pygame.mixer.Sound(f"sounds/gadget{i}.mp3"))
+            except pygame.error:
+                pass
+        self.__algem_talk_cache: list[pygame.mixer.Sound] = []
+        for i in (1, 2, 4, 5, 6, 7, 8, 9, 10):
+            try:
+                self.__algem_talk_cache.append(pygame.mixer.Sound(f"sounds/algemistalking/ambience{i}.mp3"))
+            except pygame.error:
+                pass
+        self.__vent_sounds_cache: list[pygame.mixer.Sound] = []
+        for f in ("vent_closer1.wav", "vent_louder2.wav", "vent_quiet1.wav", "vent_quiet2.wav"):
+            try:
+                self.__vent_sounds_cache.append(pygame.mixer.Sound(f"sounds/vents/{f}"))
+            except pygame.error:
+                pass
         self._algem_talk_channel: pygame.mixer.Channel = pygame.mixer.Channel(5)
         self._algem_leave_channel: pygame.mixer.Channel = pygame.mixer.Channel(4)
         self._cam_init_channel: pygame.mixer.Channel = pygame.mixer.Channel(6)
@@ -145,22 +159,6 @@ class GamePresenter:
     # Ленивая загрузка звуков
     # ──────────────────────────────────────────────────────────────────────
 
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("snd_"):
-            path = self._sound_paths.get(name)
-            if path:
-                try:
-                    sound = pygame.mixer.Sound(path)
-                    setattr(self, name, sound)
-                    if name == "snd_ambience":
-                        sound.set_volume(0.35)
-                    return sound
-                except pygame.error:
-                    print(f"[GamePresenter] Sound not found: {path}")
-                    setattr(self, name, None)
-                    return None
-        raise AttributeError(f"'GamePresenter' has no attribute '{name}'")
-
     @property
     def _off_frames(self) -> int:
         snd = self.snd_off
@@ -168,39 +166,15 @@ class GamePresenter:
 
     @property
     def _gadget_sounds(self) -> list[pygame.mixer.Sound]:
-        if not hasattr(self, '__gadget_cache'):
-            cache: list[pygame.mixer.Sound] = []
-            for path in self._gadget_paths:
-                try:
-                    cache.append(pygame.mixer.Sound(path))
-                except pygame.error:
-                    print(f"[GamePresenter] Sound not found: {path}")
-            object.__setattr__(self, '__gadget_cache', cache)
-        return object.__getattribute__(self, '__gadget_cache')
+        return self.__gadget_cache
 
     @property
     def _vent_sounds(self) -> list[pygame.mixer.Sound]:
-        if not hasattr(self, '__vent_sounds_cache'):
-            cache: list[pygame.mixer.Sound] = []
-            for path in self._vent_sound_paths:
-                try:
-                    cache.append(pygame.mixer.Sound(path))
-                except pygame.error:
-                    print(f"[GamePresenter] Sound not found: {path}")
-            object.__setattr__(self, '__vent_sounds_cache', cache)
-        return object.__getattribute__(self, '__vent_sounds_cache')
+        return self.__vent_sounds_cache
 
     @property
     def _algem_talk_sounds(self) -> list[pygame.mixer.Sound]:
-        if not hasattr(self, '__algem_talk_cache'):
-            cache: list[pygame.mixer.Sound] = []
-            for path in self._algem_talk_paths:
-                try:
-                    cache.append(pygame.mixer.Sound(path))
-                except pygame.error:
-                    print(f"[GamePresenter] Sound not found: {path}")
-            object.__setattr__(self, '__algem_talk_cache', cache)
-        return object.__getattribute__(self, '__algem_talk_cache')
+        return self.__algem_talk_cache
 
     @staticmethod
     def _make_muffled(sound: pygame.mixer.Sound, kernel_size: int) -> pygame.mixer.Sound:

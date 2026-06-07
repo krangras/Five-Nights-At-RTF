@@ -3,6 +3,7 @@ import math
 import random
 import threading
 import pygame
+import cv2
 from model import MenuModel
 from presenter import MenuPresenter
 from view import MenuView
@@ -78,11 +79,34 @@ def main():
         screen = pygame.display.set_mode(WINDOWED_SIZE)
         is_fullscreen = False
     clock = pygame.time.Clock()
-    try:
-        snd_scream = pygame.mixer.Sound("sounds/screamer.mp3")
-        snd_scream.set_volume(0.5)
-    except pygame.error:
-        pass
+
+    _snd_cache: dict[str, pygame.mixer.Sound] = {}
+    _snd_paths = [
+        ("screamer", "sounds/screamer.mp3"),
+        ("night_ends", "sounds/night_ends.wav"),
+    ]
+    for _key, _path in _snd_paths:
+        try:
+            _snd_cache[_key] = pygame.mixer.Sound(_path)
+            if _key == "screamer":
+                _snd_cache[_key].set_volume(0.5)
+        except pygame.error:
+            pass
+    _lecture_sounds_cache: list[pygame.mixer.Sound] = []
+    for i in range(1, 7):
+        try:
+            _lecture_sounds_cache.append(pygame.mixer.Sound(f"sounds/lectures/lecture{i}.mp3"))
+        except pygame.error:
+            pass
+    _final_scene_sounds: dict[str, pygame.mixer.Sound] = {}
+    for _key, _path in [
+        ("music", "sounds/final_scene/mb2.wav"),
+        ("speech", "sounds/final_scene/algems' final speech.mp3"),
+    ]:
+        try:
+            _final_scene_sounds[_key] = pygame.mixer.Sound(_path)
+        except pygame.error:
+            pass
 
     menu_m, menu_v = MenuModel(), MenuView(screen)
     menu_p = MenuPresenter(menu_m, menu_v)
@@ -94,7 +118,27 @@ def main():
     night_complete_tick = 0
     night_end_sound = None
     screamer = None
-    _nt_frames = []
+    _nt_video_frames = []
+    _nt_video_fps = 30.0
+
+    def _preload_night_transfer():
+        nonlocal _nt_video_frames, _nt_video_fps
+        try:
+            cap = cv2.VideoCapture("assets/night_transfer/night_transfer.mp4")
+            _nt_video_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            while True:
+                ret, bgr = cap.read()
+                if not ret:
+                    break
+                rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+                h, w = rgb.shape[:2]
+                surf = pygame.image.frombuffer(rgb.tobytes(), (w, h), "RGB")
+                if (w, h) != GAME_SIZE:
+                    surf = pygame.transform.smoothscale(surf, GAME_SIZE)
+                _nt_video_frames.append(surf)
+            cap.release()
+        except Exception:
+            _nt_video_frames = []
 
     # ── Финальная сцена (ночь 5) ──────────────────────────────────────
     final_scene_img = None
@@ -139,6 +183,7 @@ def main():
             clock.tick(60)
             game_m, game_v, game_p = start_game(_continue_night)
             screamer = ScreamerPlayer(screen_size=GAME_SIZE)
+            _preload_night_transfer()
             state = "GAME"
         elif state == "GAME":
             for e in pygame.event.get():
@@ -162,32 +207,22 @@ def main():
                 save_progress(game_m.night)
                 screamer.reset()
                 try:
-                    snd_scream.play()
-                except pygame.error:
+                    _snd_cache["screamer"].play()
+                except (pygame.error, KeyError):
                     pass
                 state = "SCREAMER"
                 game_over_tick = 0
                 continue
             elif game_m.night_complete:
-                save_progress(game_m.night + 1)
+                save_progress(min(game_m.night + 1, 5))
                 pygame.mixer.stop()
                 night_complete_tick = 0
-                night_end_sound = None
-                try:
-                    night_end_sound = pygame.mixer.Sound("sounds/night_ends.wav")
+                if "night_ends" in _snd_cache:
+                    night_end_sound = _snd_cache["night_ends"]
+                    night_end_sound.set_volume(2.0)
                     night_end_sound.play()
-                except pygame.error:
-                    pass
-                # Загрузка кадров анимации перехода ночи
-                _nt_frames = []
-                for _i in range(350, 353):
-                    try:
-                        _raw = pygame.image.load(
-                            f"assets/night_transfer/{_i}.png"
-                        ).convert_alpha()
-                        _nt_frames.append(_raw)
-                    except pygame.error:
-                        pass
+                else:
+                    night_end_sound = None
                 state = "NIGHT_COMPLETE"
             clock.tick(60)
         elif state == "SCREAMER":
@@ -212,21 +247,14 @@ def main():
             if screamer.done:
                 screamer = None
                 state = "GAME_OVER"
-                try:
-                    path = random.choice(LECTURE_SOUNDS)
-                    lecture_sound = pygame.mixer.Sound(path)
+                if _lecture_sounds_cache:
+                    lecture_sound = random.choice(_lecture_sounds_cache)
                     lecture_sound.set_volume(1.5)
                     lecture_sound.play()
                     def _echo():
-                        try:
-                            snd = pygame.mixer.Sound(path)
-                            snd.set_volume(0.4)
-                            snd.play()
-                        except pygame.error:
-                            pass
+                        lecture_sound.set_volume(0.4)
+                        lecture_sound.play()
                     threading.Timer(0.3, _echo).start()
-                except pygame.error:
-                    lecture_sound = None
         elif state == "GAME_OVER":
             for e in pygame.event.get():
                 if e.type == pygame.QUIT:
@@ -265,36 +293,38 @@ def main():
         elif state == "NIGHT_COMPLETE":
             for e in pygame.event.get():
                 if e.type == pygame.QUIT:
+                    _nt_video_frames = []
                     pygame.mixer.stop()
                     return
+                if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                    _nt_video_frames = []
+                    pygame.mixer.stop()
+                    menu_m.saved_night = load_save()
+                    menu_m.continue_available = menu_m.saved_night > 1
+                    state = "MENU"
+                    continue
 
             night_complete_tick += 1
             completed_night = game_m.night
 
-            font_big = _get_loading_font(80)
-
-            am_surf = font_big.render("AM", True, (255, 255, 255))
-            am_x = GAME_SIZE[0] // 2 + 10
-            am_y = GAME_SIZE[1] // 2 - am_surf.get_height() // 2
-
-            if _nt_frames:
-                digit_h = am_surf.get_height()
-                nt_phase = min(night_complete_tick // 20, len(_nt_frames) - 1)
-                digit_raw = _nt_frames[nt_phase]
-                digit_w = int(digit_raw.get_width() * (digit_h / digit_raw.get_height()))
-                digit_surf = pygame.transform.smoothscale(digit_raw, (digit_w, digit_h))
-                digit_x = am_x - digit_w - 6
-                digit_y = am_y
-                game_surface.blit(digit_surf, (digit_x, digit_y))
-
-            game_surface.blit(am_surf, (am_x, am_y))
+            video_done = True
+            if _nt_video_frames:
+                frame_idx = min(
+                    int(night_complete_tick * _nt_video_fps / 60.0),
+                    len(_nt_video_frames) - 1,
+                )
+                game_surface.blit(_nt_video_frames[frame_idx], (0, 0))
+                if frame_idx < len(_nt_video_frames) - 1:
+                    video_done = False
+            else:
+                game_surface.fill((0, 0, 0))
 
             sound_done = night_end_sound is None or not pygame.mixer.get_busy()
-            if sound_done:
+            if video_done and sound_done:
+                pygame.mixer.stop()
                 menu_m.saved_night = load_save()
                 menu_m.continue_available = menu_m.saved_night > 1
                 if completed_night >= 5:
-                    # Загрузка ассетов финальной сцены
                     final_scene_tick = 0
                     final_scene_phase = "FADE_IN"
                     final_scene_speech_played = False
@@ -310,22 +340,12 @@ def main():
                         final_scene_img = None
                     final_scene_music_chan = None
                     final_scene_speech_chan = None
-                    try:
-                        snd = pygame.mixer.Sound(
-                            "sounds/final_scene/mb2.wav"
-                        )
-                        snd.set_volume(0.5)
-                        final_scene_music_chan = snd.play(loops=-1)
-                    except pygame.error:
-                        pass
-                    try:
-                        snd = pygame.mixer.Sound(
-                            "sounds/final_scene/algems' final speech.mp3"
-                        )
-                        snd.set_volume(1.0)
-                        final_scene_speech_chan = snd.play()
-                    except pygame.error:
-                        pass
+                    if "music" in _final_scene_sounds:
+                        _final_scene_sounds["music"].set_volume(0.5)
+                        final_scene_music_chan = _final_scene_sounds["music"].play(loops=-1)
+                    if "speech" in _final_scene_sounds:
+                        _final_scene_sounds["speech"].set_volume(1.0)
+                        final_scene_speech_chan = _final_scene_sounds["speech"].play()
                     state = "FINAL_SCENE"
                 else:
                     game_m, game_v, game_p = start_game(completed_night + 1)
