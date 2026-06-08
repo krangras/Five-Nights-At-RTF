@@ -101,6 +101,13 @@ VENT_SEALS: dict[str, tuple[int, int]] = {
     "SEAL_BOTTOM_LEFT": (6, 4), # WEST HALL → MAIN HALL
 }
 
+SEAL_CAMERA_MAP: dict[int, str] = {
+    8: "SEAL_TOP_RIGHT",
+    9: "SEAL_CENTER",
+    10: "SEAL_BOTTOM_LEFT",
+    11: "SEAL_MID_RIGHT",
+}
+
 SEAL_DURATION = 300  # 5 секунд при 60 FPS
 
 

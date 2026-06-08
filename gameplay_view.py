@@ -5,6 +5,8 @@ import cv2
 import numpy as np
 import pygame
 
+from gameplay_model import SEAL_CAMERA_MAP
+
 
 def _normalize_brightness(surfaces_with_paths, target=15):
     """
@@ -164,6 +166,7 @@ class GameView:
         self.tabbutton_surf = pygame.transform.scale(
             raw_tab, (int(600 * scale), int(60 * scale))
         )
+        self._tab_button_dx = 28
         self.tab_button_rect = pygame.Rect(
             662, 758, 600, 60
         )  # оригинальные координаты (1923×818)
@@ -207,10 +210,10 @@ class GameView:
             5: "cam7.png",
             6: "cam5.png",
             7: "cam6.png",
-            8: "cam9.png",
-            9: "cam10.png",
-            10: "cam11.png",
-            11: "cam8.png",
+            8: "cam8.png",
+            9: "cam9.png",
+            10: "cam10.png",
+            11: "cam11.png",
             12: "cam10.png",
         }
         for idx, fname in icon_map.items():
@@ -264,7 +267,7 @@ class GameView:
         #   Вертик. правый:     x≈1124,y: 43–746
         self._vent_cam_positions = {
             8:  (int(900 * vent_sx),  int(45 * vent_sy)),   # верхний горизонт. duct, правая часть
-            9:  (int(18 * vent_sx),   int(200 * vent_sy)),  # левый вертик. duct, верхняя часть
+            9:  (int(18 * vent_sx),   int(145 * vent_sy)),  # левый вертик. duct, верхняя часть
             10: (int(18 * vent_sx),   int(750 * vent_sy)),  # левый вертик. duct, нижняя часть
             11: (int(1124 * vent_sx), int(620 * vent_sy)),  # правый вертик. duct, нижняя часть (НОВАЯ)
         }
@@ -277,9 +280,9 @@ class GameView:
         #   правый вертик: x=1124   нижний горизонт: y=903
         self._seal_positions = {
             "SEAL_TOP_RIGHT":   (int(1050 * vent_sx), int(45 * vent_sy),   "V"),  # верхн. duct, левее перекрёстия
-            "SEAL_CENTER":      (int(18 * vent_sx),   int(145 * vent_sy),  "H"),  # левый duct, над CAM09
+            "SEAL_CENTER":      (int(18 * vent_sx),   int(200 * vent_sy),  "H"),  # левый duct, под CAM09
             "SEAL_MID_RIGHT":   (int(1124 * vent_sx), int(700 * vent_sy),  "H"),  # правый duct, ниже CAM11
-            "SEAL_BOTTOM_LEFT": (int(70 * vent_sx),   int(903 * vent_sy),  "V"),  # нижний duct
+            "SEAL_BOTTOM_LEFT": (int(18 * vent_sx),  int(845 * vent_sy),  "H"),  # по центру короткого правого участка у CAM10
         }
         self._seal_rects: dict[str, pygame.Rect] = {}
 
@@ -299,6 +302,7 @@ class GameView:
         from gameplay_model import CAMERAS
 
         self.camera_surfaces = {}
+        self._closed_vent_surfaces: dict[int, pygame.Surface] = {}
         self.camera_max_offsets = {}
         cam_h = self.screen_rect.h
         for idx, _display_id, name, fname in CAMERAS:
@@ -353,6 +357,19 @@ class GameView:
         self._algem_mainhall_watching = _load_cam(
             "assets/cameras/algem_mainhall_is_watching_you.png"
         )
+        closed_cam_files = {
+            8: "cam_8_closed.png",
+            9: "cam_9_closed.png",
+            10: "cam_10_closed.png",
+            11: "cam_11_closed.png",
+        }
+        for cam_idx, fname in closed_cam_files.items():
+            path = f"assets/vents_cameras/{fname}"
+            if os.path.exists(path):
+                surf = _load_cam(path)
+                if surf is not None:
+                    self._closed_vent_surfaces[cam_idx] = surf
+
         algem_files = {
             1: "algems' room_with_algem.png",
             2: "canteen_algem.png",
@@ -433,18 +450,41 @@ class GameView:
 
         # Кнопки BAIT и MAP — одинаковый размер
         self._btn_size = (64, 34)
+        self._bait_btn_icon_size = (56, 28)
+        self._map_btn_icon_size = (52, 26)
         raw_bait = pygame.image.load(
             "assets/cameras/playaudio.png"
         ).convert_alpha()
         raw_map = pygame.image.load(
             "assets/cameras/maptoggle.png"
         ).convert_alpha()
-        self._bait_btn_img = pygame.transform.scale(raw_bait, self._btn_size)
-        self._map_btn_img = pygame.transform.scale(raw_map, self._btn_size)
         self._btn_bg = pygame.Surface(self._btn_size, pygame.SRCALPHA)
         self._btn_bg.fill((15, 15, 25, 200))
+        self._bait_btn_img = pygame.Surface(self._btn_size, pygame.SRCALPHA)
+        self._map_btn_img = pygame.Surface(self._btn_size, pygame.SRCALPHA)
+        bait_fill = raw_bait.get_at(
+            (raw_bait.get_width() // 2, raw_bait.get_height() // 2)
+        )
+        map_fill = raw_map.get_at(
+            (raw_map.get_width() // 2, raw_map.get_height() // 2)
+        )
+        self._seal_btn_fill = bait_fill
+        self._bait_btn_img.fill(bait_fill)
+        self._map_btn_img.fill(map_fill)
+        bait_scaled = pygame.transform.scale(raw_bait, self._bait_btn_icon_size)
+        map_scaled = pygame.transform.scale(raw_map, self._map_btn_icon_size)
+        bait_x = (self._btn_size[0] - self._bait_btn_icon_size[0]) // 2
+        bait_y = (self._btn_size[1] - self._bait_btn_icon_size[1]) // 2
+        map_x = (self._btn_size[0] - self._map_btn_icon_size[0]) // 2 - 1
+        map_y = (self._btn_size[1] - self._map_btn_icon_size[1]) // 2 - 1
+        self._bait_btn_img.blit(bait_scaled, (bait_x, bait_y))
+        self._map_btn_img.blit(map_scaled, (map_x, map_y))
         self._bait_btn_rect = pygame.Rect(0, 0, *self._btn_size)
         self._map_btn_rect = pygame.Rect(0, 0, *self._btn_size)
+        self._seal_btn_frames = [
+            self._build_status_button(["SEALING", dots])
+            for dots in (".", "..", "...")
+        ]
 
         # Аудио-иконки для мини-карты (audio1-4.png)
         self._audio_icons = []
@@ -453,6 +493,27 @@ class GameView:
                 f"assets/cameras/audio{i}.png"
             ).convert_alpha()
             self._audio_icons.append(pygame.transform.scale(img, (60, 50)))
+
+    def _build_status_button(
+        self,
+        lines: list[str],
+    ) -> pygame.Surface:
+        """Собрать маленькую UI-плашку в том же духе, что и остальные кнопки."""
+        surf = pygame.Surface(self._btn_size, pygame.SRCALPHA)
+        surf.fill(self._seal_btn_fill)
+        pygame.draw.rect(surf, (255, 255, 255), (0, 0, *self._btn_size), 1)
+
+        rendered = [
+            self.font_very_small.render(line, False, (245, 245, 245))
+            for line in lines
+        ]
+        total_h = sum(s.get_height() for s in rendered) + 1 * (len(rendered) - 1)
+        y = (self._btn_size[1] - total_h) // 2 - 1
+        for text_surf in rendered:
+            x = (self._btn_size[0] - text_surf.get_width()) // 2
+            surf.blit(text_surf, (x, y))
+            y += text_surf.get_height() + 1
+        return surf
 
     def is_server_clicked(self, mouse_pos, offset):
         img_x = (mouse_pos[0] + offset) / self.scale
@@ -467,7 +528,11 @@ class GameView:
     def is_tabbutton_clicked(self, mouse_pos):
         if mouse_pos is None:
             return False
-        tx = self.screen_rect.centerx - self.tabbutton_surf.get_width() // 2
+        tx = (
+            self.screen_rect.centerx
+            - self.tabbutton_surf.get_width() // 2
+            + self._tab_button_dx
+        )
         ty = self.screen_rect.bottom - self.tabbutton_surf.get_height() - 5
         rect = pygame.Rect(tx, ty, *self.tabbutton_surf.get_size())
         return rect.collidepoint(mouse_pos)
@@ -1234,7 +1299,8 @@ class GameView:
         label = f"CAM {display_id}  {cam_name}"
         label_surf = self.font.render(label, True, (180, 180, 190))
         self.screen.blit(
-            label_surf, (self.screen_rect.x + 15, self.screen_rect.bottom - 35)
+            label_surf,
+            (self.screen_rect.x + 15, self.screen_rect.bottom - 35),
         )
 
         # Corruption on UI text (static interference)
@@ -1614,6 +1680,11 @@ class GameView:
                             cam_surf.blit(dark, (0, 0))
                 else:
                     cam_surf = self.camera_surfaces.get(cam_idx)
+
+                seal_id = SEAL_CAMERA_MAP.get(cam_idx)
+                seal_state = model.seals.get(seal_id) if seal_id is not None else None
+                if seal_state is not None and seal_state.name == "CLOSED":
+                    cam_surf = self._closed_vent_surfaces.get(cam_idx, cam_surf)
                 cam_max_off = self.camera_max_offsets.get(model.camera_idx, 0)
                 if cam_surf is not None:
                     off = int((model.cam_look + 1) / 2 * cam_max_off)
@@ -1632,27 +1703,34 @@ class GameView:
                 bx = mmx - bw - 15
                 by = mmy + int(self._minimap_size[1] * 0.6)
 
-                if not model.bait_active:
-                    self.screen.blit(self._btn_bg, (bx, by))
-                    self.screen.blit(self._bait_btn_img, (bx, by))
-                    pygame.draw.rect(
-                        self.screen, (255, 255, 255), (bx, by, bw, bh), 1
-                    )
+                if not self.vent_map_mode:
+                    if not model.bait_active:
+                        self.screen.blit(self._btn_bg, (bx, by))
+                        self.screen.blit(self._bait_btn_img, (bx, by))
+                        pygame.draw.rect(
+                            self.screen, (255, 255, 255), (bx, by, bw, bh), 1
+                        )
+                    else:
+                        dot_y = by + bh // 2
+                        dot_r = 3
+                        dot_gap = 12
+                        total_w = 5 * dot_gap
+                        start_x = bx + bw // 2 - total_w // 2
+                        for i in range(6):
+                            if i <= model.bait_step:
+                                pygame.draw.circle(
+                                    self.screen,
+                                    (255, 255, 255),
+                                    (start_x + i * dot_gap, dot_y),
+                                    dot_r,
+                                )
+                    self._bait_btn_rect.topleft = (bx, by)
                 else:
-                    dot_y = by + bh // 2
-                    dot_r = 3
-                    dot_gap = 12
-                    total_w = 5 * dot_gap
-                    start_x = bx + bw // 2 - total_w // 2
-                    for i in range(6):
-                        if i <= model.bait_step:
-                            pygame.draw.circle(
-                                self.screen,
-                                (255, 255, 255),
-                                (start_x + i * dot_gap, dot_y),
-                                dot_r,
-                            )
-                self._bait_btn_rect.topleft = (bx, by)
+                    self._bait_btn_rect.topleft = (-1000, -1000)
+                    if model.currently_sealing_id is not None:
+                        frame_idx = (pygame.time.get_ticks() // 300) % 3
+                        self.screen.blit(self._seal_btn_frames[frame_idx], (bx, by))
+
                 my = by + bh + gap
                 self.screen.blit(self._btn_bg, (bx, my))
                 self.screen.blit(self._map_btn_img, (bx, my))
@@ -1664,7 +1742,11 @@ class GameView:
                 self.screen.set_clip(old_clip)
 
         # Кнопка TAB — на столе
-        tx = self.screen_rect.centerx - self.tabbutton_surf.get_width() // 2
+        tx = (
+            self.screen_rect.centerx
+            - self.tabbutton_surf.get_width() // 2
+            + self._tab_button_dx
+        )
         ty = self.screen_rect.bottom - self.tabbutton_surf.get_height() - 5
         self.screen.blit(self.tabbutton_surf, (tx, ty))
 
@@ -1716,9 +1798,6 @@ class GameView:
             panel_w, panel_h = 360, 48
             px = (self.screen_w - panel_w) // 2
             py = 90
-            panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
-            panel.fill((0, 0, 0, 180))
-            self.screen.blit(panel, (px, py))
             color = (255, 60, 60) if model.server_overload else (60, 255, 60)
             if (
                 model.server_overload

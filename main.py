@@ -90,6 +90,8 @@ def main():
             _snd_cache[_key] = pygame.mixer.Sound(_path)
             if _key == "screamer":
                 _snd_cache[_key].set_volume(0.5)
+            elif _key == "night_ends":
+                _snd_cache[_key].set_volume(0.55)
         except pygame.error:
             pass
     _lecture_sounds_cache: list[pygame.mixer.Sound] = []
@@ -219,7 +221,6 @@ def main():
                 night_complete_tick = 0
                 if "night_ends" in _snd_cache:
                     night_end_sound = _snd_cache["night_ends"]
-                    night_end_sound.set_volume(2.0)
                     night_end_sound.play()
                 else:
                     night_end_sound = None
@@ -249,10 +250,10 @@ def main():
                 state = "GAME_OVER"
                 if _lecture_sounds_cache:
                     lecture_sound = random.choice(_lecture_sounds_cache)
-                    lecture_sound.set_volume(1.5)
+                    lecture_sound.set_volume(0.62)
                     lecture_sound.play()
                     def _echo():
-                        lecture_sound.set_volume(0.4)
+                        lecture_sound.set_volume(0.28)
                         lecture_sound.play()
                     threading.Timer(0.3, _echo).start()
         elif state == "GAME_OVER":
@@ -341,10 +342,10 @@ def main():
                     final_scene_music_chan = None
                     final_scene_speech_chan = None
                     if "music" in _final_scene_sounds:
-                        _final_scene_sounds["music"].set_volume(0.5)
+                        _final_scene_sounds["music"].set_volume(0.42)
                         final_scene_music_chan = _final_scene_sounds["music"].play(loops=-1)
                     if "speech" in _final_scene_sounds:
-                        _final_scene_sounds["speech"].set_volume(1.0)
+                        _final_scene_sounds["speech"].set_volume(0.72)
                         final_scene_speech_chan = _final_scene_sounds["speech"].play()
                     state = "FINAL_SCENE"
                 else:

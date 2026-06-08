@@ -198,17 +198,22 @@ class AlgemAI:
         5: (300, 420),    # 5-7 сек
     }
 
-    # Детерминированные параметры баланса по ночам
-    # Скорость роста шкалы внимания от шума сервера (в тиках)
+    # Детерминированные параметры баланса по ночам.
+    # Нарастающий интерес: чем дольше шумят системы, тем сильнее они тянут Алгема.
     NIGHT_SERVER_GROWTH: dict[int, float] = {
-        1: 0.0, 2: 3.0, 3: 6.0, 4: 10.0, 5: 15.0,
+        1: 0.0, 2: 6.0, 3: 9.0, 4: 12.0, 5: 15.0,
     }
-    # Скорость падения шкалы в тишине (сервер выкл)
-    SILENCE_DECAY: float = 15.0
-    # Рост шкалы от рекламы (когда иммунитет прошёл)
-    AD_GROWTH: float = 40.0
+    SERVER_INTEREST_CAP: float = 55.0
+    AD_GROWTH: float = 26.0
+    AD_INTEREST_CAP: float = 45.0
+    HACK_INTEREST_SCALE: float = 22.0
+    # Скорость падения шкалы в тишине (сервер выкл, реклама закрыта)
+    SILENCE_DECAY: float = 18.0
     # Окно безопасности рекламы (секунды)
     AD_SAFE_WINDOW: float = 2.0
+    # При ненулевом интересе Алгем начинает чаще выбирать узлы ближе к офису.
+    OFFICE_PULL_START: float = 18.0
+    OFFICE_PULL_MAX: float = 0.85
 
     # Зоны патруля по ночам (какие узлы доступны для случайного блуждания)
     _PATROL_ZONES: dict[int, set[int]] = {
@@ -268,6 +273,8 @@ class AlgemAI:
         self._ad_active: bool = False
         self._ad_safe_timer: float = 0.0   # таймер иммунитета рекламы (секунды)
         self._ad_immune: bool = True       # True пока не прошло AD_SAFE_WINDOW
+        self._server_interest: float = 0.0
+        self._ad_interest: float = 0.0
 
         # ── Вспомогательные ─────────────────────────────────────────────
         self.main_hall_sprite: int  = 0   # вариант спрайта в Главном коридоре
@@ -320,14 +327,17 @@ class AlgemAI:
         self._server_on = server_on
         self._ad_active = ad_active
 
-        # Рассчитываем прирост шкалы внимания
-        growth = 0.0
-
         if server_on:
-            growth += self.NIGHT_SERVER_GROWTH.get(self._night, 0.0)
+            growth = self.NIGHT_SERVER_GROWTH.get(self._night, 0.0)
+            self._server_interest = min(
+                self.SERVER_INTEREST_CAP,
+                self._server_interest + growth * dt,
+            )
         else:
-            # Сервер выключен — шкала падает
-            growth -= self.SILENCE_DECAY
+            self._server_interest = max(
+                0.0,
+                self._server_interest - self.SILENCE_DECAY * dt,
+            )
 
         # Реклама: окно безопасности 2 сек
         if ad_active:
@@ -340,12 +350,27 @@ class AlgemAI:
                 if self._ad_safe_timer >= self.AD_SAFE_WINDOW:
                     self._ad_immune = False
             if not self._ad_immune:
-                growth += self.AD_GROWTH
+                self._ad_interest = min(
+                    self.AD_INTEREST_CAP,
+                    self._ad_interest + self.AD_GROWTH * dt,
+                )
         else:
             self._ad_safe_timer = 0.0
             self._ad_immune = True
+            self._ad_interest = max(
+                0.0,
+                self._ad_interest - self.SILENCE_DECAY * dt,
+            )
 
-        self.attention += growth * dt
+        target_attention = min(
+            100.0,
+            self._server_interest
+            + self._ad_interest
+            + self.hack_attraction * self.HACK_INTEREST_SCALE,
+        )
+        if not server_on and not ad_active and self.hack_attraction <= 0.01:
+            target_attention = 0.0
+        self.attention += (target_attention - self.attention) * 0.12
         self.attention = max(0.0, min(100.0, self.attention))
 
     def notify_audio_lure(self, target_node: int, duration: int = 480) -> None:
@@ -474,7 +499,11 @@ class AlgemAI:
 
         # Порог перехода в ATTACK зависит от ночи
         attack_threshold = 85.0 - (self._night * 3.0)
-        can_attack = self.hack_attraction >= 0.05 or self._ad_active
+        can_attack = (
+            self.hack_attraction >= 0.05
+            or self._server_interest >= 8.0
+            or self._ad_interest >= 8.0
+        )
 
         if can_attack and self.attention >= attack_threshold:
             self.state = AIState.ATTACK
@@ -505,7 +534,11 @@ class AlgemAI:
             return False
 
         # Детерминированный переход в ATTACK по порогу шкалы
-        can_attack = self.hack_attraction >= 0.05 or self._ad_active
+        can_attack = (
+            self.hack_attraction >= 0.05
+            or self._server_interest >= 8.0
+            or self._ad_interest >= 8.0
+        )
         attack_threshold = 90.0 - (self._night * 3.0)
         if can_attack and self.attention >= attack_threshold:
             self.state = AIState.ATTACK
@@ -600,7 +633,18 @@ class AlgemAI:
             watch    = self._camera_watch.get(n, 0)
             observed = min(1.0, watch / 300.0)
             penalty  = 0.05 if n == self.OFFICE_NODE else 1.0
-            weights.append(max(0.05, (1.0 - observed * 0.85)) * penalty)
+            weight = max(0.05, (1.0 - observed * 0.85)) * penalty
+
+            if self.attention >= self.OFFICE_PULL_START and n != self.OFFICE_NODE:
+                office_dist = self._base_heuristic.get(n, 999)
+                if office_dist < 999:
+                    pull = min(
+                        self.OFFICE_PULL_MAX,
+                        (self.attention - self.OFFICE_PULL_START) / 100.0,
+                    )
+                    weight *= 1.0 + max(0.0, 4.0 - office_dist) * 0.18 * pull
+
+            weights.append(weight)
 
         total = sum(weights)
         r     = random.uniform(0.0, total)
@@ -704,6 +748,6 @@ class AlgemAI:
         return (
             f"AlgemAI(state={self.state.name}, "
             f"loc={self.location}, "
-            f"aggr={self.aggression:.2f}, "
+            f"attention={self.attention:.1f}, "
             f"lure={self._lure_node})"
         )

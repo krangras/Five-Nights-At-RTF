@@ -196,6 +196,18 @@ class TestWeightedRandomWalk:
         w_other = next(w for n, w in weights if n != 0)
         assert w_office < w_other
 
+    def test_attention_biases_patrol_toward_office_route(self):
+        ai = AlgemAI(copy.deepcopy(GRAPH), night=3, start_node=4)
+        ai.state = AIState.PATROL
+        ai.attention = 75.0
+        ai.update_camera_watch({1: 0, 3: 0, 5: 0, 7: 0})
+        counts = {1: 0, 3: 0, 5: 0, 7: 0}
+        random.seed(42)
+        for _ in range(500):
+            counts[ai._choose_patrol_node()] += 1
+        assert counts[7] > counts[1]
+        assert counts[7] > counts[3]
+
 # ══════════════════════════════════════════════════════════════════
 # 4. FSM
 # ══════════════════════════════════════════════════════════════════
@@ -301,3 +313,32 @@ class TestProgression:
         ip = ai_patrol._compute_interval(2)
         ia = ai_attack._compute_interval(2)
         assert ia <= ip
+
+
+class TestInterest:
+    def test_server_noise_accumulates_attention(self):
+        ai = AlgemAI(copy.deepcopy(GRAPH), night=3, start_node=2)
+        for _ in range(600):
+            ai.update_game_state(server_on=True, ad_active=False)
+        assert ai.attention > 0.0
+        assert ai._server_interest > 0.0
+
+    def test_ad_noise_accumulates_after_safe_window(self):
+        ai = AlgemAI(copy.deepcopy(GRAPH), night=3, start_node=2)
+        for _ in range(180):
+            ai.update_game_state(server_on=False, ad_active=True)
+        assert ai._ad_immune is False
+        assert ai._ad_interest > 0.0
+        assert ai.attention > 0.0
+
+    def test_silence_makes_algem_lose_interest(self):
+        ai = AlgemAI(copy.deepcopy(GRAPH), night=3, start_node=2)
+        for _ in range(900):
+            ai.update_game_state(server_on=True, ad_active=True)
+        hot_attention = ai.attention
+        for _ in range(2400):
+            ai.update_game_state(server_on=False, ad_active=False)
+        assert hot_attention > 0.0
+        assert ai.attention < 1.0
+        assert ai._server_interest < 1.0
+        assert ai._ad_interest < 1.0

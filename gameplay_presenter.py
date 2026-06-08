@@ -26,11 +26,56 @@ import pygame
 from algem_ai import bfs_path
 from gameplay_model import (
     BASE_GRAPH, CAMERA_COUNT, VENT_CAMERAS,
-    GameModel, SealState, VENT_SEALS,
+    GameModel, SealState, SEAL_CAMERA_MAP, VENT_SEALS,
     find_nearest_vent_camera,
 )
 
-HACK_RATE: float = 1.0 / 1800  # прогресс взлома за тик (~30 сек реального времени)
+HACK_TICKS_BY_NIGHT: dict[int, int] = {
+    1: 1800,  # ~30 сек
+    2: 2160,  # ~36 сек
+    3: 2520,  # ~42 сек
+    4: 2880,  # ~48 сек
+    5: 3240,  # ~54 сек
+}
+
+SOUND_BASE_VOLUMES: dict[str, float] = {
+    "snd_on": 0.42,
+    "snd_work": 0.24,
+    "snd_off": 0.42,
+    "snd_tablet": 0.33,
+    "snd_cam_switch": 0.24,
+    "snd_cam_init": 0.34,
+    "snd_ambience": 0.22,
+    "snd_algem_leave": 0.45,
+    "snd_phone_call": 0.52,
+    "snd_startnight": 0.48,
+    "snd_endnight": 0.55,
+    "snd_wait": 0.30,
+    "snd_vent_close": 0.36,
+    "snd_danger2b": 0.34,
+}
+
+TALK_DIST_PARAMS: dict[int, tuple[int, float]] = {
+    0: (0, 0.88),
+    1: (5, 0.62),
+    2: (13, 0.40),
+    3: (24, 0.24),
+    4: (36, 0.13),
+}
+
+VENT_DIST_VOLUMES: dict[int, float] = {
+    0: 0.70,
+    1: 0.53,
+    2: 0.36,
+    3: 0.22,
+    4: 0.12,
+}
+
+CHANNEL_MASTERS: dict[str, float] = {
+    "algem_talk": 0.82,
+    "vent": 0.86,
+    "ad": 0.38,
+}
 
 
 class GamePresenter:
@@ -80,13 +125,13 @@ class GamePresenter:
             "snd_startnight": "sounds/night_starts.wav",
             "snd_endnight": "sounds/night_ends.wav",
             "snd_wait": "sounds/wait.wav",
+            "snd_vent_close": "sounds/vents/vent_close.wav",
             "snd_danger2b": "sounds/danger2b.wav",
         }
         for attr, path in _sound_defs.items():
             try:
                 snd = pygame.mixer.Sound(path)
-                if attr == "snd_ambience":
-                    snd.set_volume(0.35)
+                snd.set_volume(SOUND_BASE_VOLUMES.get(attr, 0.5))
                 setattr(self, attr, snd)
             except pygame.error:
                 setattr(self, attr, None)
@@ -95,19 +140,25 @@ class GamePresenter:
         self.__gadget_cache: list[pygame.mixer.Sound] = []
         for i in range(1, 5):
             try:
-                self.__gadget_cache.append(pygame.mixer.Sound(f"sounds/gadget{i}.mp3"))
+                snd = pygame.mixer.Sound(f"sounds/gadget{i}.mp3")
+                snd.set_volume(0.30)
+                self.__gadget_cache.append(snd)
             except pygame.error:
                 pass
         self.__algem_talk_cache: list[pygame.mixer.Sound] = []
         for i in (1, 2, 4, 5, 6, 7, 8, 9, 10):
             try:
-                self.__algem_talk_cache.append(pygame.mixer.Sound(f"sounds/algemistalking/ambience{i}.mp3"))
+                snd = pygame.mixer.Sound(f"sounds/algemistalking/ambience{i}.mp3")
+                snd.set_volume(0.82)
+                self.__algem_talk_cache.append(snd)
             except pygame.error:
                 pass
         self.__vent_sounds_cache: list[pygame.mixer.Sound] = []
         for f in ("vent_closer1.wav", "vent_louder2.wav", "vent_quiet1.wav", "vent_quiet2.wav"):
             try:
-                self.__vent_sounds_cache.append(pygame.mixer.Sound(f"sounds/vents/{f}"))
+                snd = pygame.mixer.Sound(f"sounds/vents/{f}")
+                snd.set_volume(0.78)
+                self.__vent_sounds_cache.append(snd)
             except pygame.error:
                 pass
         self._algem_talk_channel: pygame.mixer.Channel = pygame.mixer.Channel(5)
@@ -126,14 +177,7 @@ class GamePresenter:
         for node in range(1, CAMERA_COUNT + 1):
             path = bfs_path(node, 0, BASE_GRAPH)
             self._office_distance[node] = len(path) - 1 if path else 4
-        # (расстояние → (kernel_size, volume))
-        self._dist_params: dict[int, tuple[int, float]] = {
-            0: (0, 1.0),
-            1: (5, 0.70),
-            2: (15, 0.42),
-            3: (25, 0.25),
-            4: (40, 0.12),
-        }
+        self._dist_params: dict[int, tuple[int, float]] = TALK_DIST_PARAMS
         self._algem_talk_variants: dict[int, list[pygame.mixer.Sound]] | None = None
 
         self._ambience_playing: bool = False
@@ -144,6 +188,7 @@ class GamePresenter:
         self._wait_timer: int = 0
         self._seal_playing: bool = False
         self._seal_timer: int = 0
+        self._prev_seal_states: dict[str, SealState] = dict(self.model.seals)
         self._danger_playing: bool = False
         self._on_node5_grace: int = 0
 
@@ -313,7 +358,7 @@ class GamePresenter:
         # 3. Кнопки внутри открытого планшета
         if self.model.tablet_open and not self.model.tablet_animating:
             # PLAY AUDIO (аудио-приманка)
-            if self.view.is_bait_clicked(pos):
+            if not self.view.vent_map_mode and self.view.is_bait_clicked(pos):
                 if (
                     not self.model.bait_active
                     and self.model.camera_idx not in self.model.bait_cooldown
@@ -348,8 +393,10 @@ class GamePresenter:
             if self.view.vent_map_mode:
                 seal_hit = self.view.get_seal_clicked(pos)
                 if seal_hit is not None:
+                    prev_seals = dict(self.model.seals)
                     self.model.start_seal(seal_hit)
                     self._play_seal_sound()
+                    self._play_reopened_viewed_seal_sound(prev_seals)
                     return
 
             # Остальные клики внутри планшета поглощаем
@@ -504,6 +551,7 @@ class GamePresenter:
 
         self._update_ad()
         self._update_laptop()
+        self._update_sound_mix()
 
     # ──────────────────────────────────────────────────────────────────────
     # Внутренние методы обновления подсистем
@@ -651,7 +699,9 @@ class GamePresenter:
                 dist = len(cam_to_algem) - 1 if cam_to_algem else 4
             else:
                 dist = self._office_distance.get(self.model.algem_location, 4)
-            self._algem_talk_channel.set_volume(self._dist_params.get(dist, (0, 0.18))[1])
+            self._algem_talk_channel.set_volume(
+                self._distance_volume(self._dist_params, dist, "algem_talk")
+            )
             return
 
         if self._algem_talk_timer > 0:
@@ -668,25 +718,30 @@ class GamePresenter:
         else:
             dist = self._office_distance.get(self.model.algem_location, 4)
         variants = self._talk_variants.get(dist, self._talk_variants[4])
-        self._algem_talk_channel.set_volume(self._dist_params.get(dist, (0, 0.18))[1])
+        self._algem_talk_channel.set_volume(
+            self._distance_volume(self._dist_params, dist, "algem_talk")
+        )
         self._algem_talk_channel.play(random.choice(variants))
         self._algem_talk_timer = random.randint(3600, 5400)
 
     def _update_vent_sounds(self) -> None:
-        """Звуки вентиляции когда Алгем в вент-узлах (8, 9).
-        Громкость зависит от расстояния до node 7 (камера 7):
-        чем ближе, тем громче."""
+        """Звуки вентиляции, привязанные к последней обычной камере игрока."""
         loc = self.model.algem_location
-        in_vent = loc in (8, 9)
+        in_vent = loc in VENT_CAMERAS
         if not in_vent:
             if self._vent_sound_channel.get_busy():
                 self._vent_sound_channel.stop()
             self._vent_sound_timer = 0
             return
 
-        path = bfs_path(loc, 7, BASE_GRAPH)
-        dist = len(path) - 1 if path else 4
-        volume = self._dist_params.get(dist, (0, 0.12))[1]
+        dist = self._vent_listen_distance(
+            algem_node=self.model.algem_location,
+            camera_idx=self.model.camera_idx,
+            last_regular_cam=self._last_regular_cam,
+            tablet_open=self.model.tablet_open,
+            tablet_animating=self.model.tablet_animating,
+        )
+        volume = self._distance_volume(VENT_DIST_VOLUMES, dist, "vent")
 
         if not self._vent_sound_channel.get_busy():
             if not self._vent_sounds:
@@ -696,11 +751,49 @@ class GamePresenter:
 
         self._vent_sound_channel.set_volume(volume)
 
+    @staticmethod
+    def _distance_volume(
+        params: dict[int, float] | dict[int, tuple[int, float]],
+        dist: int,
+        channel_key: str | None = None,
+    ) -> float:
+        """Получить итоговую громкость по дистанции с optional master-уровнем канала."""
+        raw = params.get(dist, params.get(4, 0.12))
+        volume = raw[1] if isinstance(raw, tuple) else raw
+        if channel_key is None:
+            return volume
+        return max(0.0, min(1.0, volume * CHANNEL_MASTERS.get(channel_key, 1.0)))
+
+    @staticmethod
+    def _vent_listen_distance(
+        algem_node: int,
+        camera_idx: int,
+        last_regular_cam: int,
+        tablet_open: bool,
+        tablet_animating: bool,
+    ) -> int:
+        """Расстояние для вент-звука: слушаем от обычной камеры, а не от vent-view."""
+        if algem_node not in VENT_CAMERAS:
+            return 4
+
+        if tablet_open and not tablet_animating:
+            listener_cam = (
+                last_regular_cam
+                if camera_idx in VENT_CAMERAS
+                else camera_idx
+            )
+            path = bfs_path(listener_cam, algem_node, BASE_GRAPH)
+            return len(path) - 1 if path else 4
+
+        path = bfs_path(7, algem_node, BASE_GRAPH)
+        return len(path) - 1 if path else 4
+
     def _update_danger_sound(self) -> None:
         """Звук danger2b.wav когда Алгем на последней камере (node 5)."""
         on_last = self.model.algem_location == 5
         if on_last and not self._danger_playing:
             if self.snd_danger2b:
+                self.snd_danger2b.set_volume(SOUND_BASE_VOLUMES["snd_danger2b"])
                 self.snd_danger2b.play(-1)
             self._danger_playing = True
         elif not on_last and self._danger_playing:
@@ -797,7 +890,9 @@ class GamePresenter:
         if self.model.laptop_app == "claude_mythos" and self.model.server_state == "ON" and not self.model.server_rebooting:
             self.model.hack_active = True
         if self.model.hack_active:
-            self.model.hack_progress = min(1.0, self.model.hack_progress + HACK_RATE)
+            hack_ticks = HACK_TICKS_BY_NIGHT.get(self.model.night, HACK_TICKS_BY_NIGHT[5])
+            hack_rate = 1.0 / hack_ticks
+            self.model.hack_progress = min(1.0, self.model.hack_progress + hack_rate)
 
     def _update_reboot_sound(self) -> None:
         if self.model.server_rebooting and not self._wait_playing:
@@ -824,8 +919,31 @@ class GamePresenter:
             self._seal_timer = 0
             self.snd_wait.play()
 
+    def _play_reopened_viewed_seal_sound(
+        self,
+        prev_seals: dict[str, SealState],
+    ) -> None:
+        """Проиграть звук, если текущая vent-камера только что открылась обратно."""
+        viewed_seal = SEAL_CAMERA_MAP.get(self.model.camera_idx)
+        if viewed_seal is None:
+            return
+        if (
+            prev_seals.get(viewed_seal) == SealState.CLOSED
+            and self.model.seals.get(viewed_seal) == SealState.OPEN
+            and self.snd_vent_close
+        ):
+            self.snd_vent_close.play()
+
     def _update_seal_sound(self) -> None:
         """Обновить циклическое воспроизведение звука блокировки."""
+        for seal_id, prev_state in self._prev_seal_states.items():
+            if (
+                prev_state == SealState.SEALING
+                and self.model.seals.get(seal_id) == SealState.CLOSED
+                and self.snd_vent_close
+            ):
+                self.snd_vent_close.play()
+
         active = any(
             self.model.seals.get(s) == SealState.SEALING
             for s in VENT_SEALS
@@ -843,6 +961,8 @@ class GamePresenter:
                 self._seal_timer = 0
                 if self.snd_wait:
                     self.snd_wait.play()
+
+        self._prev_seal_states = dict(self.model.seals)
 
 
     def _activate_bait(self) -> None:
@@ -870,13 +990,45 @@ class GamePresenter:
         if self.model.ad_active:
             if not self._ad_playing:
                 pygame.mixer.music.load(self._ad_path)
-                pygame.mixer.music.set_volume(1.0)
+                pygame.mixer.music.set_volume(CHANNEL_MASTERS["ad"])
                 pygame.mixer.music.play(-1)
                 self._ad_playing = True
         else:
             if self._ad_playing:
                 pygame.mixer.music.stop()
                 self._ad_playing = False
+
+    def _update_sound_mix(self) -> None:
+        """Лёгкий runtime-микс, чтобы важные сигналы не тонули в фоне."""
+        ambience_target = SOUND_BASE_VOLUMES["snd_ambience"]
+        if self.model.tablet_open or self.model.laptop_open:
+            ambience_target *= 0.82
+        if self._danger_playing or self._ad_playing:
+            ambience_target *= 0.65
+        if self._wait_playing or self._seal_playing:
+            ambience_target *= 0.78
+        if self.snd_ambience:
+            self.snd_ambience.set_volume(max(0.06, min(1.0, ambience_target)))
+
+        if self.snd_work and self.model.server_state == "ON":
+            work_target = SOUND_BASE_VOLUMES["snd_work"]
+            if self.model.laptop_app == "claude_mythos":
+                work_target *= 1.12
+            if self._danger_playing:
+                work_target *= 0.88
+            self.snd_work.set_volume(max(0.08, min(1.0, work_target)))
+
+        if self.snd_phone_call:
+            phone_target = SOUND_BASE_VOLUMES["snd_phone_call"]
+            if self.model.tablet_open:
+                phone_target *= 0.92
+            self.snd_phone_call.set_volume(max(0.10, min(1.0, phone_target)))
+
+        if self.snd_wait:
+            wait_target = SOUND_BASE_VOLUMES["snd_wait"]
+            if self._seal_playing:
+                wait_target *= 0.92
+            self.snd_wait.set_volume(max(0.08, min(1.0, wait_target)))
 
     def _close_ad(self) -> None:
         """Закрыть рекламу и остановить звук."""

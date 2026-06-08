@@ -3,7 +3,21 @@ import random
 
 import pytest
 
-from gameplay_model import GameModel, VentState, VENT_CONNECTIONS, BASE_GRAPH
+from gameplay_model import (
+    BASE_GRAPH,
+    GameModel,
+    SEAL_CAMERA_MAP,
+    SealState,
+    VentState,
+    VENT_CONNECTIONS,
+)
+from gameplay_presenter import (
+    CHANNEL_MASTERS,
+    GamePresenter,
+    HACK_TICKS_BY_NIGHT,
+    TALK_DIST_PARAMS,
+    VENT_DIST_VOLUMES,
+)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -191,6 +205,11 @@ class TestServer:
         m._update_server_load()
         assert m.server_overload == False
 
+    def test_hack_duration_increases_each_night(self):
+        durations = [HACK_TICKS_BY_NIGHT[night] for night in range(1, 6)]
+        assert durations == sorted(durations)
+        assert durations[0] < durations[-1]
+
 # ══════════════════════════════════════════════════════════════════
 # 5. Graph building
 # ══════════════════════════════════════════════════════════════════
@@ -220,6 +239,23 @@ class TestGraph:
         g_orig = copy.deepcopy(BASE_GRAPH)
         m._build_current_graph()
         assert BASE_GRAPH == g_orig
+
+    def test_seal_camera_map_covers_all_vent_cameras(self):
+        assert SEAL_CAMERA_MAP == {
+            8: "SEAL_TOP_RIGHT",
+            9: "SEAL_CENTER",
+            10: "SEAL_BOTTOM_LEFT",
+            11: "SEAL_MID_RIGHT",
+        }
+
+    def test_starting_another_seal_reopens_previous_closed_one(self):
+        m = GameModel(night=1)
+        m.seals["SEAL_CENTER"] = SealState.CLOSED
+
+        m.start_seal("SEAL_TOP_RIGHT")
+
+        assert m.seals["SEAL_CENTER"] == SealState.OPEN
+        assert m.seals["SEAL_TOP_RIGHT"] == SealState.SEALING
 
 # ══════════════════════════════════════════════════════════════════
 # 6. Model integration
@@ -256,3 +292,95 @@ class TestIntegration:
         watch_before = m.camera_watch_ticks[1]
         m._update_camera_watch()
         assert m.camera_watch_ticks[1] == watch_before
+
+
+class TestVentAudio:
+    def test_reopened_viewed_seal_plays_transition_sound(self):
+        class DummySound:
+            def __init__(self):
+                self.play_calls = 0
+
+            def play(self):
+                self.play_calls += 1
+
+        presenter = GamePresenter.__new__(GamePresenter)
+        presenter.model = type("ModelStub", (), {})()
+        presenter.model.camera_idx = 9
+        presenter.model.seals = {"SEAL_CENTER": SealState.OPEN}
+        presenter.snd_vent_close = DummySound()
+
+        presenter._play_reopened_viewed_seal_sound(
+            {"SEAL_CENTER": SealState.CLOSED}
+        )
+
+        assert presenter.snd_vent_close.play_calls == 1
+
+    def test_seal_close_sound_plays_on_completed_sealing(self):
+        class DummySound:
+            def __init__(self):
+                self.play_calls = 0
+                self.stop_calls = 0
+
+            def play(self):
+                self.play_calls += 1
+
+            def stop(self):
+                self.stop_calls += 1
+
+        presenter = GamePresenter.__new__(GamePresenter)
+        presenter.model = type("ModelStub", (), {})()
+        presenter.model.seals = {"SEAL_CENTER": SealState.CLOSED}
+        presenter.snd_vent_close = DummySound()
+        presenter.snd_wait = DummySound()
+        presenter._prev_seal_states = {"SEAL_CENTER": SealState.SEALING}
+        presenter._seal_playing = True
+        presenter._seal_timer = 0
+
+        presenter._update_seal_sound()
+
+        assert presenter.snd_vent_close.play_calls == 1
+        assert presenter.snd_wait.stop_calls == 1
+
+    def test_vent_sound_uses_last_regular_camera_distance(self):
+        close_dist = GamePresenter._vent_listen_distance(
+            algem_node=9,
+            camera_idx=9,
+            last_regular_cam=2,
+            tablet_open=True,
+            tablet_animating=False,
+        )
+        far_dist = GamePresenter._vent_listen_distance(
+            algem_node=9,
+            camera_idx=11,
+            last_regular_cam=6,
+            tablet_open=True,
+            tablet_animating=False,
+        )
+        assert close_dist < far_dist
+        assert close_dist >= 0
+        assert far_dist > close_dist
+
+    def test_vent_sound_supports_lower_vent_nodes(self):
+        dist = GamePresenter._vent_listen_distance(
+            algem_node=10,
+            camera_idx=10,
+            last_regular_cam=5,
+            tablet_open=True,
+            tablet_animating=False,
+        )
+        assert dist >= 0
+
+    def test_talk_curve_fades_with_distance(self):
+        volumes = [
+            GamePresenter._distance_volume(TALK_DIST_PARAMS, dist, "algem_talk")
+            for dist in range(5)
+        ]
+        assert volumes == sorted(volumes, reverse=True)
+
+    def test_vent_curve_fades_with_distance(self):
+        volumes = [
+            GamePresenter._distance_volume(VENT_DIST_VOLUMES, dist, "vent")
+            for dist in range(5)
+        ]
+        assert volumes == sorted(volumes, reverse=True)
+        assert volumes[0] <= CHANNEL_MASTERS["vent"]
