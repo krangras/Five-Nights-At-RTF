@@ -26,18 +26,61 @@ class MenuView:
 
         surf_ng = self.button_font.render(">> New Game", True, (255, 255, 255))
         surf_cont = self.button_font.render(">> Continue", True, (255, 255, 255))
+        surf_set = self.button_font.render(">> Settings", True, (255, 255, 255))
         surf_ex = self.button_font.render(">> Exit", True, (255, 255, 255))
 
         self.btn_new_game_rect = pygame.Rect(btn_x, int(360 * self.scale_y),
                                              surf_ng.get_width(), surf_ng.get_height())
         self.btn_continue_rect = pygame.Rect(btn_x, int(410 * self.scale_y),
                                              surf_cont.get_width(), surf_cont.get_height())
-        self.btn_exit_rect = pygame.Rect(btn_x, int(460 * self.scale_y),
+        self.btn_settings_rect = pygame.Rect(btn_x, int(460 * self.scale_y),
+                                             surf_set.get_width(), surf_set.get_height())
+        self.btn_exit_rect = pygame.Rect(btn_x, int(510 * self.scale_y),
                                          surf_ex.get_width(), surf_ex.get_height())
+
+        self.btn_fullscreen_rect = pygame.Rect(0, 0, 0, 0)
+        self.btn_back_rect = pygame.Rect(0, 0, 0, 0)
 
         self.bg_images = {}
         self._load_assets()
         self.noise_frames = self._generate_static_noise()
+
+    def update_screen(self, screen):
+        self.screen = screen
+        info = pygame.display.Info()
+        self.w = info.current_w
+        self.h = info.current_h
+        self.scale_x = self.w / 1024
+        self.scale_y = self.h / 768
+        sx, sy = self.scale_x, self.scale_y
+
+        font_size_title = int(65 * sy)
+        font_size_btn = int(30 * sy)
+        try:
+            self.title_font = pygame.font.Font("assets/fonts/OCR-A.ttf", font_size_title)
+            self.button_font = pygame.font.Font("assets/fonts/OCR-A.ttf", font_size_btn)
+        except IOError:
+            self.title_font = pygame.font.SysFont("Arial", font_size_title, bold=True)
+            self.button_font = pygame.font.SysFont("Arial", font_size_btn)
+
+        size = (self.w, self.h)
+        for key in self.bg_images:
+            self.bg_images[key] = pygame.transform.smoothscale(self.bg_images[key], size)
+        self.glitch_images = [pygame.transform.smoothscale(img, size) for img in self.glitch_images]
+        self.noise_frames = self._generate_static_noise()
+        self._update_button_rects()
+
+    def _update_button_rects(self):
+        sx, sy = self.scale_x, self.scale_y
+        btn_x = int(100 * sx)
+        surf_ng = self.button_font.render(">> New Game", True, (255, 255, 255))
+        surf_cont = self.button_font.render(">> Continue", True, (255, 255, 255))
+        surf_set = self.button_font.render(">> Settings", True, (255, 255, 255))
+        surf_ex = self.button_font.render(">> Exit", True, (255, 255, 255))
+        self.btn_new_game_rect = pygame.Rect(btn_x, int(360 * sy), surf_ng.get_width(), surf_ng.get_height())
+        self.btn_continue_rect = pygame.Rect(btn_x, int(410 * sy), surf_cont.get_width(), surf_cont.get_height())
+        self.btn_settings_rect = pygame.Rect(btn_x, int(460 * sy), surf_set.get_width(), surf_set.get_height())
+        self.btn_exit_rect = pygame.Rect(btn_x, int(510 * sy), surf_ex.get_width(), surf_ex.get_height())
 
     def _load_assets(self):
         size = (self.w, self.h)
@@ -122,7 +165,7 @@ class MenuView:
         
         return frames
 
-    def draw_menu(self, model):
+    def _draw_menu_bg(self, model):
         sx, sy = self.scale_x, self.scale_y
 
         if model.algem_state == "NORMAL":
@@ -132,23 +175,22 @@ class MenuView:
             shake_y = random.randint(int(-5 * sy), int(5 * sy))
             self.screen.blit(self.glitch_images[model.glitch_frame_idx], (shake_x, shake_y))
 
-        # ТВ-шум
         self.screen.blit(self.noise_frames[model.noise_frame], (0, 0))
-        
-        # Сканирующие линии (постоянно)
         self.screen.blit(self.scanlines, (0, 0))
-        
-        # Горизонтальные помехи (часто)
+
         for _ in range(random.randint(2, 5)):
             y = random.randint(0, self.h - 1)
             h_bar = random.randint(1, 4)
             bar = pygame.Surface((self.w, h_bar), pygame.SRCALPHA)
             bar.fill((255, 255, 255, random.randint(20, 60)))
             self.screen.blit(bar, (0, y))
-        
-        # Виньетка
+
         self.screen.blit(self.vignette, (0, 0))
 
+    def draw_menu(self, model):
+        self._draw_menu_bg(model)
+
+        sx, sy = self.scale_x, self.scale_y
         title_x = int(100 * sx)
         title_top = self.title_font.render("FIVE NIGHTS", True, (255, 255, 255))
         title_bot = self.title_font.render("AT RTF", True, (255, 255, 255))
@@ -176,9 +218,45 @@ class MenuView:
             surf_cont = self.button_font.render("   Continue", True, (80, 80, 80))
             self.screen.blit(surf_cont, (btn_x, int(410 * sy)))
 
+        color_set = (255, 255, 255) if model.hovered_button != "settings" else (140, 140, 140)
+        text_set = ">> Settings" if model.hovered_button == "settings" else "   Settings"
+        surf_set = self.button_font.render(text_set, True, color_set)
+        self.screen.blit(surf_set, (btn_x, int(460 * sy)))
+
         color_exit = (255, 255, 255) if model.hovered_button != "exit" else (140, 140, 140)
         text_exit = ">> Exit" if model.hovered_button == "exit" else "   Exit"
         surf_exit = self.button_font.render(text_exit, True, color_exit)
-        self.screen.blit(surf_exit, (btn_x, int(460 * sy)))
+        self.screen.blit(surf_exit, (btn_x, int(510 * sy)))
+
+        pygame.display.flip()
+
+    # ── Экран настроек ───────────────────────────────────────────────────
+
+    def draw_settings(self, is_fullscreen: bool, hovered: str | None = None, model=None):
+        if model:
+            self._draw_menu_bg(model)
+        else:
+            self.screen.fill((10, 10, 15))
+        sx, sy = self.scale_x, self.scale_y
+
+        title = self.title_font.render("SETTINGS", True, (255, 255, 255))
+        self.screen.blit(title, (int(100 * sx), int(100 * sy)))
+
+        btn_x = int(100 * sx)
+
+        fs_label = "ON" if is_fullscreen else "OFF"
+        color_fs = (255, 255, 255) if hovered != "fullscreen" else (140, 140, 140)
+        text_fs = f">> Fullscreen: {fs_label}" if hovered == "fullscreen" else f"   Fullscreen: {fs_label}"
+        surf_fs = self.button_font.render(text_fs, True, color_fs)
+        self.screen.blit(surf_fs, (btn_x, int(280 * sy)))
+        self.btn_fullscreen_rect = pygame.Rect(btn_x, int(280 * sy),
+                                               surf_fs.get_width(), surf_fs.get_height())
+
+        color_back = (255, 255, 255) if hovered != "back" else (140, 140, 140)
+        text_back = ">> Back" if hovered == "back" else "   Back"
+        surf_back = self.button_font.render(text_back, True, color_back)
+        self.screen.blit(surf_back, (btn_x, int(360 * sy)))
+        self.btn_back_rect = pygame.Rect(btn_x, int(360 * sy),
+                                         surf_back.get_width(), surf_back.get_height())
 
         pygame.display.flip()

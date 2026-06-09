@@ -92,13 +92,13 @@ VENT_CONNECTIONS: dict[str, tuple[int, int]] = {
     "VENT_B": (2, 4),  # CANTEEN → MAIN HALL
 }
 
-# Точки блокировки вентов (SEAL) — {id: (из, в)}
-# При активном seal ребро ВРЕМЕННО удаляется из графа.
-VENT_SEALS: dict[str, tuple[int, int]] = {
-    "SEAL_TOP_RIGHT":  (7, 2),  # COWORKING → CANTEEN
-    "SEAL_CENTER":     (3, 4),  # TOILETS → MAIN HALL
-    "SEAL_MID_RIGHT":  (2, 6),  # CANTEEN → WEST HALL
-    "SEAL_BOTTOM_LEFT": (6, 4), # WEST HALL → MAIN HALL
+# Точки блокировки вентов (SEAL) — {id: vent_camera_node}
+# При активном seal ВСЕ рёбра ИЗ этой вент-камеры удаляются из графа.
+VENT_SEALS: dict[str, int] = {
+    "SEAL_TOP_RIGHT":  8,  # UPPER VENT — все исходящие рёбра блокируются
+    "SEAL_CENTER":     9,  # LEFT VENT
+    "SEAL_MID_RIGHT":  11, # RIGHT VENT
+    "SEAL_BOTTOM_LEFT": 10,# LEFT VENT LOW
 }
 
 SEAL_CAMERA_MAP: dict[int, str] = {
@@ -109,6 +109,14 @@ SEAL_CAMERA_MAP: dict[int, str] = {
 }
 
 SEAL_DURATION = 300  # 5 секунд при 60 FPS
+
+OFFICE_THREAT_TICKS_BY_NIGHT: dict[int, int] = {
+    1: 360,  # 6 сек
+    2: 300,  # 5 сек
+    3: 240,  # 4 сек
+    4: 180,  # 3 сек
+    5: 120,  # 2 сек
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -212,6 +220,7 @@ class GameModel:
             start_node = 1,
         )
         self.algem_in_office: bool = False   # вошёл, но не убил (планшет открыт)
+        self.office_threat_timer: int = 0
 
         # ── Аудио-приманка ───────────────────────────────────────────────
         self.bait_active:       bool            = False
@@ -498,7 +507,8 @@ class GameModel:
         состояние сервера и рекламы для шкалы внимания.
         """
         if self.algem_in_office:
-            return   # Алгем уже в офисе, ждём закрытия планшета
+            self._update_office_threat()
+            return
 
         # Строим граф с учётом сломанных вентов
         current_graph = self._build_current_graph()
@@ -521,17 +531,55 @@ class GameModel:
         reached_office = self._ai.tick(self.hour)
 
         if reached_office:
-            if self.tablet_open and not self.tablet_animating:
-                # Алгем вошёл пока открыт планшет — «прячется»
-                self.algem_in_office = True
-            else:
-                # Планшет закрыт — мгновенный game over
-                self.game_over = True
+            self.algem_in_office = True
+            self.office_threat_timer = OFFICE_THREAT_TICKS_BY_NIGHT.get(
+                self.night,
+                OFFICE_THREAT_TICKS_BY_NIGHT[5],
+            )
 
     def _bfs_dist(self, start: int, goal: int) -> int:
         """BFS-расстояние между узлами (для расчёта перегрузки сервера)."""
         path = bfs_path(start, goal, BASE_GRAPH)
         return (len(path) - 1) if path else 99
+
+    def _can_algem_lose_interest(self) -> bool:
+        """Проверить, выключил ли игрок всё шумное и заметное."""
+        return (
+            self.server_state == "OFF"
+            and not self.tablet_open
+            and not self.tablet_animating
+            and not self.laptop_open
+            and not self.ad_active
+            and not self.server_rebooting
+        )
+
+    def _repel_algem_from_office(self) -> None:
+        """Сбросить давление после того, как игрок выключил всё вовремя."""
+        self.algem_in_office = False
+        self.office_threat_timer = 0
+        self._ai.location = 5
+        self._ai.prev_location = 0
+        self._ai.trigger_timer = 30
+        self._ai._entry_timer = 0
+        self._ai._move_timer = 120
+        self._ai.state = AIState.IDLE
+        self._ai._idle_ticks_left = 120
+        self._ai.attention = 0.0
+        self._ai.hack_attraction = 0.0
+        self._ai.cancel_audio_lure()
+        self._hack_attraction = 0.0
+        self.hack_active = False
+        self.hack_progress = 0.0
+
+    def _update_office_threat(self) -> None:
+        """Отсчёт времени, пока Алгем в офисе и ждёт, выключит ли игрок всё."""
+        if self._can_algem_lose_interest():
+            self._repel_algem_from_office()
+            return
+
+        self.office_threat_timer -= 1
+        if self.office_threat_timer <= 0:
+            self.game_over = True
 
     def _schedule_next_overload(self) -> None:
         """Запланировать следующую перегрузку сервера в зависимости от близости Алгема."""
@@ -828,21 +876,20 @@ class GameModel:
     # ──────────────────────────────────────────────────────────────────────
 
     def _build_current_graph(self) -> dict[int, list[int]]:
-        """
-        Собрать актуальный граф движения.
-
-        Базовый граф + рёбра сломанных вентов - рёбра заблокированных seal'ов.
-        """
         g: dict[int, list[int]] = copy.deepcopy(BASE_GRAPH)
+
         for vid, (src, dst) in VENT_CONNECTIONS.items():
             if self.vents[vid] == VentState.ERROR:
                 if dst not in g[src]:
                     g[src] = g[src] + [dst]
-        for sid, (src, dst) in VENT_SEALS.items():
-            # Блокируем проход если seal в процессе закрывания ИЛИ уже закрыт
+
+        for sid, vent_node in VENT_SEALS.items():
             if self.seals[sid] in (SealState.SEALING, SealState.CLOSED):
-                if dst in g.get(src, []):
-                    g[src] = [n for n in g[src] if n != dst]
+                g[vent_node] = []
+                for other in list(g):
+                    if other != vent_node:
+                        g[other] = [n for n in g[other] if n != vent_node]
+
         return g
 
     def _vent_break_interval(self) -> int:

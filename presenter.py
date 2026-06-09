@@ -42,6 +42,8 @@ class MenuPresenter:
             self.model.hovered_button = "new_game"
         elif self.model.continue_available and self.view.btn_continue_rect.collidepoint(mouse_pos):
             self.model.hovered_button = "continue"
+        elif self.view.btn_settings_rect.collidepoint(mouse_pos):
+            self.model.hovered_button = "settings"
         elif self.view.btn_exit_rect.collidepoint(mouse_pos):
             self.model.hovered_button = "exit"
         else:
@@ -60,9 +62,6 @@ class MenuPresenter:
                 pygame.quit()
                 sys.exit()
 
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
-                return "TOGGLE_FULLSCREEN"
-                    
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.model.hovered_button == "new_game":
                     pygame.mixer.music.stop()
@@ -71,8 +70,39 @@ class MenuPresenter:
                 elif self.model.hovered_button == "continue":
                     pygame.mixer.music.stop()
                     return "START_CONTINUE"
+                elif self.model.hovered_button == "settings":
+                    return "SETTINGS"
                 elif self.model.hovered_button == "exit":
                     pygame.quit()
                     sys.exit()
                     
         return "MENU"
+
+    def handle_settings_events(self, is_fullscreen: bool):
+        mouse_pos = pygame.mouse.get_pos()
+        hovered = None
+
+        if self.view.btn_fullscreen_rect.collidepoint(mouse_pos):
+            hovered = "fullscreen"
+        elif self.view.btn_back_rect.collidepoint(mouse_pos):
+            hovered = "back"
+
+        if hovered != self._prev_hover and hovered is not None:
+            blip = self.blip_sound
+            if blip:
+                blip.play()
+        self._prev_hover = hovered
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                return "BACK", is_fullscreen, hovered
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if hovered == "fullscreen":
+                    return "TOGGLE_FS", is_fullscreen, hovered
+                elif hovered == "back":
+                    return "BACK", is_fullscreen, hovered
+
+        return None, is_fullscreen, hovered

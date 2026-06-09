@@ -78,6 +78,34 @@ def main():
     else:
         screen = pygame.display.set_mode(WINDOWED_SIZE)
         is_fullscreen = False
+    pygame.display.set_caption("Five Nights At RTF")
+    try:
+        icon = pygame.image.load("assets/logo/icon.ico")
+        pygame.display.set_icon(icon)
+    except pygame.error:
+        try:
+            icon = pygame.image.load("assets/logo/logo_32_rgb.png")
+            pygame.display.set_icon(icon)
+        except pygame.error:
+            pass
+    # Принудительно ставим иконку на панель задач (Windows 10+)
+    try:
+        import ctypes
+        hwnd = pygame.display.get_wm_info()["window"]
+        ICON_small = 1
+        ICON_big = 0
+        IMAGE_ICON = 1
+        LR_LOADFROMFILE = 0x0010
+        GCLP_HICONSM = -34
+        GCLP_HICON = -14
+        icon_path = os.path.abspath("assets/logo/icon.ico")
+        user32 = ctypes.windll.user32
+        hicon = user32.LoadImageW(None, icon_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE)
+        if hicon:
+            user32.SetClassLongPtrW(hwnd, GCLP_HICONSM, hicon)
+            user32.SetClassLongPtrW(hwnd, GCLP_HICON, hicon)
+    except Exception:
+        pass
     clock = pygame.time.Clock()
 
     _snd_cache: dict[str, pygame.mixer.Sound] = {}
@@ -126,6 +154,7 @@ def main():
     def _preload_night_transfer():
         nonlocal _nt_video_frames, _nt_video_fps
         try:
+            _nt_video_frames = []
             cap = cv2.VideoCapture("assets/night_transfer/night_transfer.mp4")
             _nt_video_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
             while True:
@@ -164,11 +193,6 @@ def main():
     while True:
         if state == "MENU":
             state = menu_p.handle_events()
-            if state == "TOGGLE_FULLSCREEN":
-                screen, is_fullscreen = toggle_fullscreen(screen, is_fullscreen)
-                menu_v = MenuView(screen)
-                menu_p = MenuPresenter(menu_m, menu_v)
-                state = "MENU"
             menu_m.update()
             menu_v.draw_menu(menu_m)
             clock.tick(60)
@@ -176,6 +200,15 @@ def main():
             load_start = pygame.time.get_ticks()
             state = "LOADING"
             _continue_night = 1
+        elif state == "SETTINGS":
+            result, is_fullscreen, settings_hovered = menu_p.handle_settings_events(is_fullscreen)
+            if result == "BACK":
+                state = "MENU"
+            elif result == "TOGGLE_FS":
+                screen, is_fullscreen = toggle_fullscreen(screen, is_fullscreen)
+                menu_v.update_screen(screen)
+            menu_v.draw_settings(is_fullscreen, settings_hovered, menu_m)
+            clock.tick(60)
         elif state == "START_CONTINUE":
             load_start = pygame.time.get_ticks()
             _continue_night = load_save()
@@ -192,9 +225,6 @@ def main():
                 if e.type == pygame.QUIT:
                     pygame.mixer.stop()
                     return
-                if e.type == pygame.KEYDOWN and e.key == pygame.K_F11:
-                    screen, is_fullscreen = toggle_fullscreen(screen, is_fullscreen)
-                    continue
                 game_p.handle_event(_scale_event(e, screen))
 
             game_m.update()

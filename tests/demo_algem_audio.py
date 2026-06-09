@@ -25,6 +25,14 @@ import pygame
 pygame.init()
 pygame.mixer.set_num_channels(16)
 screen = pygame.display.set_mode((1280, 720))
+pygame.display.set_caption("Five Nights At RTF")
+_icon_path = Path(__file__).resolve().parent.parent / "assets" / "logo" / "logo_32_rgb.png"
+if _icon_path.exists():
+    try:
+        _icon = pygame.image.load(str(_icon_path))
+        pygame.display.set_icon(_icon)
+    except pygame.error:
+        pass
 clock = pygame.time.Clock()
 
 from gameplay_model import GameModel

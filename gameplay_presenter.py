@@ -287,14 +287,6 @@ class GamePresenter:
         elif key == pygame.K_TAB and not self.model.laptop_open:
             self._toggle_tablet()
 
-        # DEBUG: F1 → принудительный game_over для теста скримера
-        elif key == pygame.K_F1:
-            self.model.game_over = True
-
-        # F2 → toggle реального экрана ноутбука
-        elif key == pygame.K_F2:
-            self.model.show_real_screen = not self.model.show_real_screen
-
         # Цифровые клавиши 1–7 — переключение камер
         key_to_cam: dict[int, int] = {
             pygame.K_1: 1,
@@ -616,9 +608,6 @@ class GamePresenter:
                 self.model.tablet_anim_frame = 9  # полностью открыт
             else:
                 self.model.tablet_open = False
-                # Если Алгем был в офисе и игрок закрыл планшет — game over
-                if self.model.algem_in_office:
-                    self.model.game_over = True
         else:
             self._anim_timer = 2
 

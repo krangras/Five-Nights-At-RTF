@@ -6,6 +6,7 @@ import pytest
 from gameplay_model import (
     BASE_GRAPH,
     GameModel,
+    OFFICE_THREAT_TICKS_BY_NIGHT,
     SEAL_CAMERA_MAP,
     SealState,
     VentState,
@@ -292,6 +293,57 @@ class TestIntegration:
         watch_before = m.camera_watch_ticks[1]
         m._update_camera_watch()
         assert m.camera_watch_ticks[1] == watch_before
+
+    def test_reaching_office_starts_threat_timer(self):
+        m = GameModel(night=2)
+        m._ai.location = 7
+        m._ai.state = m._ai.state.ATTACK
+        m._ai._move_timer = 0
+        m._ai._entry_timer = 1
+
+        m._update_ai()
+
+        assert m.algem_in_office == True
+        assert m.office_threat_timer == OFFICE_THREAT_TICKS_BY_NIGHT[2]
+
+    def test_office_threat_does_not_kill_on_tablet_close(self):
+        m = GameModel(night=2)
+        m.algem_in_office = True
+        m.office_threat_timer = 10
+        m.tablet_open = True
+        m.tablet_animating = False
+
+        m.tablet_open = False
+        m._update_office_threat()
+
+        assert m.game_over == False
+
+    def test_office_threat_clears_when_everything_is_off(self):
+        m = GameModel(night=3)
+        m.algem_in_office = True
+        m.office_threat_timer = 30
+        m.server_state = "OFF"
+        m.tablet_open = False
+        m.tablet_animating = False
+        m.laptop_open = False
+        m.ad_active = False
+        m.server_rebooting = False
+
+        m._update_office_threat()
+
+        assert m.algem_in_office == False
+        assert m.office_threat_timer == 0
+        assert m._ai.location == 5
+
+    def test_office_threat_times_out_into_game_over(self):
+        m = GameModel(night=5)
+        m.algem_in_office = True
+        m.office_threat_timer = 1
+        m.server_state = "ON"
+
+        m._update_office_threat()
+
+        assert m.game_over == True
 
 
 class TestVentAudio:

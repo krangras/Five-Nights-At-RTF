@@ -26,7 +26,7 @@ pygame.init()
 pygame.mixer.set_num_channels(16)
 SCREEN = pygame.display.set_mode((1280, 720))
 
-from gameplay_model import GameModel, SEAL_CAMERA_MAP, SealState
+from gameplay_model import GameModel, SEAL_CAMERA_MAP, SealState, VENT_SEALS
 from gameplay_presenter import GamePresenter
 from gameplay_view import GameView
 
@@ -189,6 +189,43 @@ def test_full_vent_seal_autoplay_flow(game):
         previous_cam = target_cam
 
     assert closed_once == set(SEAL_ORDER)
+
+
+def test_reroute_from_trap(game):
+    model, view, presenter = game
+    frame_idx = 0
+
+    _press_key(presenter, pygame.K_TAB)
+    frame_idx = _advance_frames(model, view, presenter, 30, frame_idx)
+    assert model.tablet_open
+
+    view.draw(model)
+    _click(presenter, _rect_center(view._map_btn_rect))
+    frame_idx = _advance_frames(model, view, presenter, 2, frame_idx)
+    assert view.vent_map_mode
+
+    for seal_id in SEAL_ORDER:
+        target_cam = CAMERA_BY_SEAL[seal_id]
+
+        presenter._switch_camera(target_cam)
+        frame_idx = _advance_frames(model, view, presenter, 2, frame_idx)
+
+        _click(presenter, _rect_center(view._seal_rects[seal_id]))
+        assert model.seals[seal_id] == SealState.SEALING
+
+        model._ai.location = target_cam
+        model._ai._idle_ticks_left = 0
+        model._ai._move_timer = 0
+        for _ in range(305):
+            model.update()
+            presenter.update()
+            view.draw(model)
+            frame_idx += 1
+
+        assert model.seals[seal_id] == SealState.CLOSED
+        assert model._ai.location != target_cam
+
+    assert not model.game_over
 
 
 if __name__ == "__main__":

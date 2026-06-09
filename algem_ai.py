@@ -191,11 +191,11 @@ class AlgemAI:
 
     # Конфиг скоростей для каждой ночи: (мин. интервал, макс. интервал) в тиках
     _NIGHT_SPEED: dict[int, tuple[int, int]] = {
-        1: (1200, 1800),  # 20-30 сек
-        2: (900, 1200),   # 15-20 сек
-        3: (600, 900),    # 10-15 сек
-        4: (420, 600),    # 7-10 сек
-        5: (300, 420),    # 5-7 сек
+        1: (600, 900),    # 10-15 сек
+        2: (420, 720),    # 7-12 сек
+        3: (300, 540),    # 5-9 сек
+        4: (210, 420),    # 3.5-7 сек
+        5: (150, 300),    # 2.5-5 сек
     }
 
     # Детерминированные параметры баланса по ночам.
@@ -494,6 +494,10 @@ class AlgemAI:
                 safe = [n for n in neighbors if n != self.OFFICE_NODE]
                 if safe:
                     self._move_to(safe[0])
+            elif not neighbors:
+                # Тупик (vent seal) — рероутим
+                target = self._reroute_from_trap()
+                self._move_to(target)
             self._idle_ticks_left = 60
             return False
 
@@ -516,10 +520,6 @@ class AlgemAI:
         Состояние PATROL: блуждание с весами.
         Решения детерминированы на основе шкалы внимания.
         """
-        # На последней камере не двигается без приманки
-        if self.location == 5 and self._lure_node < 0:
-            return False
-
         next_node = self._choose_patrol_node()
 
         if next_node == self.OFFICE_NODE:
@@ -604,13 +604,15 @@ class AlgemAI:
 
         На последней камере (node 7) стоит на месте без приманки.
         """
-        # На последней камере (5) без приманки — никуда не идёт самоубиться
-        if self.location == 5 and self._lure_node < 0:
-            return self.location
-
         neighbors = self._graph.get(self.location, [])
         if not neighbors:
-            return self.location
+            return self._reroute_from_trap()
+
+        # У последней камеры не идём в офис вслепую, но и не замираем на месте.
+        if self.location == 5 and self._lure_node < 0:
+            safe_neighbors = [n for n in neighbors if n != self.OFFICE_NODE]
+            if safe_neighbors:
+                neighbors = safe_neighbors
 
         # Аудио-приманка: идём к источнику звука
         if self._lure_node >= 0:
@@ -655,6 +657,35 @@ class AlgemAI:
                 return node
 
         return neighbors[-1]   # fallback
+
+    # ------------------------------------------------------------------
+    # Рероутинг из тупика (vent seal)
+    # ------------------------------------------------------------------
+
+    # Варианты: {(night_threshold, target_node): weight}
+    # night <= threshold → safe, night > threshold → aggressive
+    _TRAP_SAFE: dict[int, list[tuple[int, float]]] = {
+        11: [(1, 1.0)],
+        8:  [(1, 1.0)],
+        10: [(4, 1.0)],
+        9:  [(10, 0.6), (7, 0.3), (5, 0.1)],
+    }
+    _TRAP_AGGRESSIVE: dict[int, list[tuple[int, float]]] = {
+        11: [(1, 1.0)],
+        8:  [(3, 0.7), (1, 0.3)],
+        10: [(4, 1.0)],
+        9:  [(5, 0.5), (7, 0.4), (10, 0.1)],
+    }
+
+    def _reroute_from_trap(self) -> int:
+        """Выбрать позицию для выхода из тупика после закрытия vent-seal'а."""
+        loc = self.location
+        table = self._TRAP_AGGRESSIVE if self._night >= 3 else self._TRAP_SAFE
+        options = table.get(loc)
+        if options is None:
+            return 1
+        targets, weights = zip(*options)
+        return random.choices(targets, weights=weights, k=1)[0]
 
     def _edge_weight(self, u: int, v: int) -> float:
         """
@@ -705,10 +736,10 @@ class AlgemAI:
     def _initial_delay(self) -> int:
         """Начальная задержка перед первым ходом (зависит от номера ночи)."""
         if self._night <= 3:
-            base = random.randint(1800, 3000)  # 30–50 секунд на ранних ночах
+            base = random.randint(240, 540)  # 4–9 секунд на ранних ночах
         else:
-            base = max(60, 300 - self._night * 40)
-            base = random.randint(base, base + 120)
+            base = max(60, 180 - self._night * 20)
+            base = random.randint(base, base + 90)
         return base
 
     def _compute_interval(self, hour: int) -> int:

@@ -1,5 +1,5 @@
 """
-demo_vent_seal_flow.py - ручной demo-прогон seal-механики.
+demo_vent_seal_flow.py — ручной demo-прогон seal-механики.
 
 Запуск:
     python tests/demo_vent_seal_flow.py
@@ -24,91 +24,158 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pygame
 
-from gameplay_model import GameModel, SEAL_CAMERA_MAP
-from gameplay_presenter import GamePresenter
-from gameplay_view import GameView
-
 pygame.init()
 pygame.mixer.set_num_channels(16)
-screen = pygame.display.set_mode(
-    pygame.display.list_modes()[0],
-    pygame.FULLSCREEN,
-)
+screen = pygame.display.set_mode((1280, 720))
+pygame.display.set_caption("Five Nights At RTF")
+_icon_path = Path(__file__).resolve().parent.parent / "assets" / "logo" / "logo_32_rgb.png"
+if _icon_path.exists():
+    try:
+        _icon = pygame.image.load(str(_icon_path))
+        pygame.display.set_icon(_icon)
+    except pygame.error:
+        pass
 clock = pygame.time.Clock()
 
-model = GameModel(night=2)
-model.night_start_ticks = 0
-view = GameView(screen)
-presenter = GamePresenter(model, view)
+from gameplay_model import GameModel, SEAL_CAMERA_MAP, SealState, BASE_GRAPH
+from gameplay_view import GameView
+from gameplay_presenter import GamePresenter
+from algem_ai import bfs_path
 
-font = pygame.font.Font(None, 30)
-small_font = pygame.font.Font(None, 24)
+m = GameModel(night=2)
+v = GameView(screen)
+p = GamePresenter(m, v)
 
-CAMERA_BY_SEAL = {seal_id: cam_idx for cam_idx, seal_id in SEAL_CAMERA_MAP.items()}
+CAMERA_BY_SEAL: dict[str, int] = {
+    seal_id: cam_idx for cam_idx, seal_id in SEAL_CAMERA_MAP.items()
+}
 
-OPEN_TABLET_DELAY = 45
-OPEN_MAP_DELAY = 20
-CLOSED_VIEW_DELAY = 120
+SEAL_ORDER = [
+    "SEAL_TOP_RIGHT",
+    "SEAL_CENTER",
+    "SEAL_BOTTOM_LEFT",
+    "SEAL_MID_RIGHT",
+]
 
-phase = "BOOT"
+BOOT = "BOOT"
+OPENING_TABLET = "OPENING_TABLET"
+OPENING_MAP = "OPENING_MAP"
+WAIT_FOR_USER = "WAIT_FOR_USER"
+SEALING_CAMERA = "SEALING_CAMERA"
+SHOW_CLOSED_CAMERA = "SHOW_CLOSED_CAMERA"
+
+phase = BOOT
 phase_timer = 0
+prev_currently_sealing: str | None = None
 active_seal: str | None = None
 active_cam: int | None = None
-prev_currently_sealing: str | None = None
+
+font = pygame.font.Font(None, 30)
+
+KNOCK_SOUND_PATH = r"c:\Users\ko4ki\Downloads\FNaF 1 Audio\FNaF 1 Audio\knock2.wav"
+_knock_sound: pygame.mixer.Sound | None = None
+_knock_channel: pygame.mixer.Channel | None = None
+
+DIST_VOLUME: dict[int, float] = {
+    0: 1.0,
+    1: 0.6,
+    2: 0.35,
+    3: 0.22,
+    4: 0.15,
+}
+
+OFFICE_VOLUME = 0.1
+VENT_MAP_VOLUME = 0.35
 
 
-def post_key(key: int) -> None:
-    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=key))
+def _calc_knock_volume() -> float:
+    if active_cam is None:
+        return 0.0
+    if not m.tablet_open or m.tablet_animating:
+        return OFFICE_VOLUME
+    if v.vent_map_mode:
+        return VENT_MAP_VOLUME
+    if m.camera_idx == active_cam:
+        return 1.0
+    path = bfs_path(m.camera_idx, active_cam, BASE_GRAPH)
+    dist = len(path) - 1 if path else 99
+    for d in sorted(DIST_VOLUME, reverse=True):
+        if dist >= d:
+            return DIST_VOLUME[d]
+    return 0.0
 
 
-def click_at(pos: tuple[int, int]) -> None:
-    pygame.event.post(
-        pygame.event.Event(
-            pygame.MOUSEBUTTONDOWN,
-            button=1,
-            pos=pos,
-        )
-    )
+def _play_knock() -> None:
+    global _knock_sound, _knock_channel
+    if _knock_sound is None:
+        try:
+            _knock_sound = pygame.mixer.Sound(KNOCK_SOUND_PATH)
+        except Exception:
+            _knock_sound = False
+            return
+    vol = _calc_knock_volume()
+    if vol <= 0.0:
+        return
+    _knock_channel = pygame.mixer.find_channel()
+    if _knock_channel is not None:
+        _knock_channel.set_volume(vol)
+        _knock_channel.play(_knock_sound)
 
 
-def rect_center(rect: pygame.Rect) -> tuple[int, int]:
+def _rect_center(rect: pygame.Rect) -> tuple[int, int]:
     return (rect.centerx, rect.centery)
 
 
-def teleport_algem_to_camera(cam_idx: int) -> None:
-    prev = model._ai.location
-    model._ai.prev_location = prev
-    model._ai.location = cam_idx
-    model._ai.trigger_timer = 0
+def _click(pos: tuple[int, int]) -> None:
+    ev = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=pos)
+    pygame.event.post(ev)
 
 
-def move_algem_offscreen() -> None:
-    prev = model._ai.location
-    model._ai.prev_location = prev
-    model._ai.location = 1
-    model._ai.trigger_timer = 0
+def _press_key(key: int) -> None:
+    ev = pygame.event.Event(pygame.KEYDOWN, key=key)
+    pygame.event.post(ev)
 
 
-def draw_debug() -> None:
+def _pin_algem(node: int) -> None:
+    """Жёстко зафиксировать позицию Алгема (AI не сможет его двигать)."""
+    if m._ai.location != node:
+        m._ai.prev_location = m._ai.location
+    m._ai.location = node
+    m._ai.trigger_timer = 0
+
+
+def _draw_debug() -> None:
     lines = [
-        f"Phase: {phase}",
-        "Click any seal on the vent map",
-        f"Current camera: {model.camera_idx}",
+        f"Phase: {phase} ({phase_timer})",
+        f"Algem: node {m.algem_location}",
+        f"Camera: {m.camera_idx}",
+        f"vent_map_mode: {v.vent_map_mode}",
+        f"tablet_open: {m.tablet_open}",
         f"Active seal: {active_seal or '-'}",
-        f"Algem node: {model.algem_location}",
+        f"currently_sealing_id: {m.currently_sealing_id}",
+        "",
         "Seal states:",
     ]
-    for seal_id, state in model.seals.items():
-        lines.append(f"  {seal_id}: {state.name}")
+    for sid in SEAL_ORDER:
+        state = m.seals[sid]
+        marker = " <-- SEALING" if sid == m.currently_sealing_id else ""
+        if state == SealState.CLOSED:
+            marker = " [CLOSED]"
+        lines.append(f"  {sid}: {state.name}{marker}")
+
+    lines.append("")
+    knock_vol = _calc_knock_volume()
+    lines.append(f"Knock vol: {knock_vol:.2f}" if _knock_sound is not False else "Knock: not loaded")
+    lines.append("")
+    lines.append("Click any OPEN seal on the vent map to start")
 
     y = 12
-    for idx, line in enumerate(lines):
-        text_font = font if idx < 5 else small_font
-        shadow = text_font.render(line, True, (0, 0, 0))
-        text = text_font.render(line, True, (255, 240, 120))
-        screen.blit(shadow, (13, y + 1))
-        screen.blit(text, (12, y))
-        y += 28 if idx < 5 else 22
+    for line in lines:
+        surf = font.render(line, True, (0, 255, 0))
+        bg = font.render(line, True, (0, 0, 0))
+        screen.blit(bg, (12, y + 1))
+        screen.blit(surf, (10, y))
+        y += 28
 
 
 running = True
@@ -118,60 +185,75 @@ while running:
             running = False
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             running = False
-        presenter.handle_event(event)
+        p.handle_event(event)
 
     phase_timer += 1
 
-    if phase == "BOOT" and phase_timer >= OPEN_TABLET_DELAY:
-        post_key(pygame.K_TAB)
-        phase = "OPENING_TABLET"
-        phase_timer = 0
-
-    elif phase == "OPENING_TABLET" and model.tablet_open and not model.tablet_animating:
-        view.draw(model)
-        click_at(rect_center(view._map_btn_rect))
-        phase = "OPENING_MAP"
-        phase_timer = 0
-
-    elif phase == "OPENING_MAP" and view.vent_map_mode and phase_timer >= OPEN_MAP_DELAY:
-        move_algem_offscreen()
-        phase = "WAIT_FOR_USER"
-        phase_timer = 0
-
-    model.update()
-    presenter.update()
-
-    current_sealing = model.currently_sealing_id
-    if prev_currently_sealing is None and current_sealing is not None:
-        active_seal = current_sealing
-        active_cam = CAMERA_BY_SEAL.get(current_sealing)
-        if active_cam is not None:
-            teleport_algem_to_camera(active_cam)
-            presenter._switch_camera(active_cam)
-            view.vent_map_mode = False
-            phase = "SEALING_CAMERA"
+    # ─── BOOT → открываем планшет ───────────────────────────────
+    if phase == BOOT:
+        if phase_timer >= 60:
+            _press_key(pygame.K_TAB)
+            phase = OPENING_TABLET
             phase_timer = 0
 
-    elif phase == "SEALING_CAMERA" and active_seal is not None:
-        if model.currently_sealing_id is None and model.seals[active_seal].name == "CLOSED":
-            phase = "SHOW_CLOSED_CAMERA"
+    # ─── OPENING_TABLET → ждём открытия → клик map btn ──────────
+    elif phase == OPENING_TABLET:
+        if m.tablet_open and not m.tablet_animating:
+            v.draw(m)
+            _click(_rect_center(v._map_btn_rect))
+            phase = OPENING_MAP
             phase_timer = 0
 
-    elif phase == "SHOW_CLOSED_CAMERA" and phase_timer >= CLOSED_VIEW_DELAY:
-        if not view.vent_map_mode:
-            view.vent_map_mode = True
+    # ─── OPENING_MAP → ждём vent_map_mode → пользователь ────────
+    elif phase == OPENING_MAP:
+        if v.vent_map_mode and phase_timer >= 20:
+            _pin_algem(1)
+            phase = WAIT_FOR_USER
+            phase_timer = 0
+
+    # ─── WAIT_FOR_USER → ждём клик по seal на vent map ──────────
+    elif phase == WAIT_FOR_USER:
+        _pin_algem(1)
+        cur = m.currently_sealing_id
+        if prev_currently_sealing is None and cur is not None:
+            active_seal = cur
+            active_cam = CAMERA_BY_SEAL.get(cur)
             if active_cam is not None:
-                presenter._switch_camera(active_cam)
-        move_algem_offscreen()
-        active_seal = None
-        active_cam = None
-        phase = "WAIT_FOR_USER"
-        phase_timer = 0
+                _pin_algem(active_cam)
+                p._switch_camera(active_cam)
+                v.vent_map_mode = False
+                phase = SEALING_CAMERA
+                phase_timer = 0
 
-    prev_currently_sealing = model.currently_sealing_id
+    # ─── SEALING_CAMERA → показываем камеру с закрытием вента ──
+    elif phase == SEALING_CAMERA:
+        if active_seal is not None:
+            _pin_algem(active_cam or 8)
+        if active_seal is not None and m.seals[active_seal] == SealState.CLOSED:
+            phase = SHOW_CLOSED_CAMERA
+            phase_timer = 0
 
-    view.draw(model)
-    draw_debug()
+    # ─── SHOW_CLOSED_CAMERA → 3 сек → knock → ещё 2 сек → vent map ──
+    elif phase == SHOW_CLOSED_CAMERA:
+        if phase_timer == 180:
+            _play_knock()
+        if phase_timer >= 300:
+            _pin_algem(1)
+            v.vent_map_mode = True
+            if active_cam is not None:
+                p._switch_camera(active_cam)
+            active_seal = None
+            active_cam = None
+            phase = WAIT_FOR_USER
+            phase_timer = 0
+
+    # ─── тик модели / presenter ─────────────────────────────────
+    prev_currently_sealing = m.currently_sealing_id
+
+    m.update()
+    p.update()
+    v.draw(m)
+    _draw_debug()
     pygame.display.flip()
     clock.tick(60)
 

@@ -208,6 +208,16 @@ class TestWeightedRandomWalk:
         assert counts[7] > counts[1]
         assert counts[7] > counts[3]
 
+    def test_last_camera_patrol_does_not_freeze(self):
+        ai = AlgemAI(copy.deepcopy(GRAPH), night=3, start_node=5)
+        ai.state = AIState.PATROL
+        ai._lure_node = -1
+        random.seed(42)
+        node = ai._choose_patrol_node()
+        assert node in GRAPH[5]
+        assert node != 0
+        assert node != 5
+
 # ══════════════════════════════════════════════════════════════════
 # 4. FSM
 # ══════════════════════════════════════════════════════════════════
@@ -313,6 +323,10 @@ class TestProgression:
         ip = ai_patrol._compute_interval(2)
         ia = ai_attack._compute_interval(2)
         assert ia <= ip
+
+    def test_initial_delay_is_short_enough_to_start_pressure_early(self):
+        ai = AlgemAI(copy.deepcopy(GRAPH), night=1, start_node=2)
+        assert 240 <= ai._initial_delay() <= 540
 
 
 class TestInterest:
