@@ -54,6 +54,13 @@ def _scale_event(event, screen):
 
 _monitor_size = None
 _settings = None
+_native_size = None
+
+def _blit_or_scale(src, dst):
+    if _native_size and dst.get_size() == _native_size:
+        dst.blit(src, (0, 0))
+    else:
+        pygame.transform.smoothscale(src, dst.get_size(), dst)
 
 def toggle_fullscreen(screen, is_fullscreen):
     global _settings
@@ -110,8 +117,8 @@ def main():
 
     _snd_cache: dict[str, pygame.mixer.Sound] = {}
     _snd_paths = [
-        ("screamer", "sounds/screamer.mp3"),
-        ("night_ends", "sounds/night_ends.wav"),
+        ("screamer", "sounds/screamer/screamer.mp3"),
+        ("night_ends", "sounds/ui/night_ends.wav"),
     ]
     for _key, _path in _snd_paths:
         try:
@@ -182,6 +189,7 @@ def main():
     final_scene_speech_chan = None
 
     game_surface = pygame.Surface(GAME_SIZE)
+    _native_size = GAME_SIZE
 
     def start_game(night=1):
         m = GameModel(night=night)
@@ -231,7 +239,7 @@ def main():
             game_p.update()
 
             game_v.draw(game_m)
-            pygame.transform.smoothscale(game_surface, screen.get_size(), screen)
+            _blit_or_scale(game_surface, screen)
             pygame.display.flip()
 
             if game_m.game_over:
@@ -272,7 +280,7 @@ def main():
 
             screamer.update(dt)
             screamer.draw(game_surface)
-            pygame.transform.smoothscale(game_surface, screen.get_size(), screen)
+            _blit_or_scale(game_surface, screen)
             pygame.display.flip()
 
             if screamer.done:
@@ -318,7 +326,7 @@ def main():
             time_text = font_small.render(time_str, True, (100, 100, 100))
             game_surface.blit(time_text, (640 - time_text.get_width() // 2, 360 + 30))
 
-            pygame.transform.smoothscale(game_surface, screen.get_size(), screen)
+            _blit_or_scale(game_surface, screen)
             pygame.display.flip()
             clock.tick(60)
         elif state == "NIGHT_COMPLETE":
@@ -382,7 +390,7 @@ def main():
                     game_m, game_v, game_p = start_game(completed_night + 1)
                     state = "GAME"
 
-            pygame.transform.smoothscale(game_surface, screen.get_size(), screen)
+            _blit_or_scale(game_surface, screen)
             pygame.display.flip()
             clock.tick(60)
         elif state == "FINAL_SCENE":
@@ -433,7 +441,7 @@ def main():
                     menu_m.continue_available = menu_m.saved_night > 1
                     state = "MENU"
 
-            pygame.transform.smoothscale(game_surface, screen.get_size(), screen)
+            _blit_or_scale(game_surface, screen)
             pygame.display.flip()
             clock.tick(60)
 

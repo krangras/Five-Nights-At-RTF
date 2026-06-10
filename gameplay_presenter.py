@@ -31,13 +31,12 @@ from gameplay_model import (
 )
 
 HACK_TICKS_BY_NIGHT: dict[int, int] = {
-    1: 1800,  # ~30 сек
-    2: 2160,  # ~36 сек
-    3: 2520,  # ~42 сек
-    4: 2880,  # ~48 сек
-    5: 3240,  # ~54 сек
+    1: 3600,  # ~60 сек
+    2: 5100,  # ~85 сек
+    3: 6000,  # ~100 сек
+    4: 6900,  # ~115 сек
+    5: 9000,  # ~150 сек
 }
-
 SOUND_BASE_VOLUMES: dict[str, float] = {
     "snd_on": 0.42,
     "snd_work": 0.24,
@@ -113,20 +112,20 @@ class GamePresenter:
         # ── Загрузка всех звуков сразу ───────────────────────────────────
         self._keys_held: set[int] = set()
         _sound_defs: dict[str, str] = {
-            "snd_on": "sounds/night1/server_turning_on.mp3",
-            "snd_work": "sounds/night1/server_is_working.mp3",
-            "snd_off": "sounds/night1/server_turning_off.mp3",
-            "snd_tablet": "sounds/blip3.mp3",
-            "snd_cam_switch": "sounds/camera_switch.wav",
-            "snd_cam_init": "sounds/camera_init.wav",
-            "snd_ambience": "sounds/ambience.wav",
-            "snd_algem_leave": "sounds/alegem_is_leaving.wav",
-            "snd_phone_call": "sounds/night1/callnight1.mp3",
-            "snd_startnight": "sounds/night_starts.wav",
-            "snd_endnight": "sounds/night_ends.wav",
-            "snd_wait": "sounds/wait.wav",
+            "snd_on": "sounds/server/server_turning_on.mp3",
+            "snd_work": "sounds/server/server_is_working.mp3",
+            "snd_off": "sounds/server/server_turning_off.mp3",
+            "snd_tablet": "sounds/ui/blip3.mp3",
+            "snd_cam_switch": "sounds/cameras/camera_switch.wav",
+            "snd_cam_init": "sounds/cameras/camera_init.wav",
+            "snd_ambience": "sounds/ambience/ambience.wav",
+            "snd_algem_leave": "sounds/threats/alegem_is_leaving.wav",
+            "snd_phone_call": "sounds/ui/callnight1.mp3",
+            "snd_startnight": "sounds/ui/night_starts.wav",
+            "snd_endnight": "sounds/ui/night_ends.wav",
+            "snd_wait": "sounds/ui/wait.wav",
             "snd_vent_close": "sounds/vents/vent_close.wav",
-            "snd_danger2b": "sounds/danger2b.wav",
+            "snd_danger2b": "sounds/threats/danger2b.wav",
         }
         for attr, path in _sound_defs.items():
             try:
@@ -135,12 +134,12 @@ class GamePresenter:
                 setattr(self, attr, snd)
             except pygame.error:
                 setattr(self, attr, None)
-        self._ad_path: str = "sounds/laptop/ad.mp3"
+        self._ad_path: str = "sounds/laptop/ad.wav"
         self._snd_off_length: int = 60
         self.__gadget_cache: list[pygame.mixer.Sound] = []
         for i in range(1, 5):
             try:
-                snd = pygame.mixer.Sound(f"sounds/gadget{i}.mp3")
+                snd = pygame.mixer.Sound(f"sounds/ui/gadget{i}.mp3")
                 snd.set_volume(0.30)
                 self.__gadget_cache.append(snd)
             except pygame.error:
@@ -148,7 +147,7 @@ class GamePresenter:
         self.__algem_talk_cache: list[pygame.mixer.Sound] = []
         for i in (1, 2, 4, 5, 6, 7, 8, 9, 10):
             try:
-                snd = pygame.mixer.Sound(f"sounds/algemistalking/ambience{i}.mp3")
+                snd = pygame.mixer.Sound(f"sounds/ambience/ambience{i}.mp3")
                 snd.set_volume(0.82)
                 self.__algem_talk_cache.append(snd)
             except pygame.error:
@@ -199,6 +198,24 @@ class GamePresenter:
         # ── Стартовый экран ночи ─────────────────────────────────────────
         self.model.night_start_ticks = 300  # 5 секунд
         self._start_played: bool = False  # продублирует звук при старте
+
+        # ── Предзагрузка muffled-вариантов звуков Алгема ──────────────────
+        self._build_talk_variants()
+
+        # ── Предзагрузка ad-звука в Sound-объект (вместо mixer.music.load) ─
+        self._ad_sound: pygame.mixer.Sound | None = None
+        try:
+            self._ad_sound = pygame.mixer.Sound(self._ad_path)
+            self._ad_sound.set_volume(0.0)
+        except pygame.error:
+            pass
+
+        # ── Глитч-звуки ────────────────────────────────────────────────
+        self._glitch_sounds: list[pygame.mixer.Sound] = []
+        snd = self._load_sound("sounds/glitches/robotvoice.wav")
+        if snd:
+            self._glitch_sounds.append(snd)
+        self._glitch_channel: pygame.mixer.Channel | None = None
 
     # ──────────────────────────────────────────────────────────────────────
     # Ленивая загрузка звуков
@@ -260,6 +277,10 @@ class GamePresenter:
         Вся обработка ввода сосредоточена здесь — Presenter «переводит»
         пользовательские действия в вызовы модели.
         """
+        # Блокировка ввода во время глитча
+        if self.model._glitch_active:
+            return
+
         if event.type == pygame.KEYDOWN:
             self._keys_held.add(event.key)
             self._handle_keydown(event)
@@ -433,6 +454,7 @@ class GamePresenter:
                 self.model.server_rebooting = True
                 self.model.server_reboot_timer = 300
                 self.model.server_overload_warn = 0
+                self.model.hack_active = False
                 self.model.hack_logs.append(f"[{self.model.hour}:00] > Rebooting server...")
             return
 
@@ -544,6 +566,7 @@ class GamePresenter:
         self._update_ad()
         self._update_laptop()
         self._update_sound_mix()
+        self._update_glitch()
 
     # ──────────────────────────────────────────────────────────────────────
     # Внутренние методы обновления подсистем
@@ -875,10 +898,11 @@ class GamePresenter:
     def _update_hack(self) -> None:
         """Прогресс взлома через ноутбук (Claude Mythos)."""
         # Взлом начинается когда Claude Mythos открыт и сервер включён,
-        # но затем продолжается даже после закрытия ноутбука или выключения сервера
+        # но затем продолжается даже после закрытия ноутбука или выключения сервера.
+        # Во время ребута — взлом на паузе.
         if self.model.laptop_app == "claude_mythos" and self.model.server_state == "ON" and not self.model.server_rebooting:
             self.model.hack_active = True
-        if self.model.hack_active:
+        if self.model.hack_active and not self.model.server_rebooting and self.model.server_state == "ON":
             hack_ticks = HACK_TICKS_BY_NIGHT.get(self.model.night, HACK_TICKS_BY_NIGHT[5])
             hack_rate = 1.0 / hack_ticks
             self.model.hack_progress = min(1.0, self.model.hack_progress + hack_rate)
@@ -975,16 +999,16 @@ class GamePresenter:
             self._on_node5_grace = 0
 
     def _update_ad(self) -> None:
-        """Управление рекламой: запуск звука. Шум от рекламы теперь в attention scale."""
         if self.model.ad_active:
             if not self._ad_playing:
-                pygame.mixer.music.load(self._ad_path)
-                pygame.mixer.music.set_volume(CHANNEL_MASTERS["ad"])
-                pygame.mixer.music.play(-1)
+                if self._ad_sound:
+                    self._ad_sound.set_volume(CHANNEL_MASTERS["ad"])
+                    self._ad_sound.play(-1)
                 self._ad_playing = True
         else:
             if self._ad_playing:
-                pygame.mixer.music.stop()
+                if self._ad_sound:
+                    self._ad_sound.stop()
                 self._ad_playing = False
 
     def _update_sound_mix(self) -> None:
@@ -1019,6 +1043,46 @@ class GamePresenter:
                 wait_target *= 0.92
             self.snd_wait.set_volume(max(0.08, min(1.0, wait_target)))
 
+    def _update_glitch(self) -> None:
+        """Случайный визуальный глитч раз за ночь (~10% шанс)."""
+        m = self.model
+        if m.game_over or m.night_complete:
+            return
+
+        if not m._glitch_triggered:
+            m._glitch_delay -= 1
+            if m._glitch_delay <= 0:
+                m._glitch_triggered = True
+                if random.random() < 0.001:
+                    m._glitch_active = True
+                    m._glitch_timer = 90
+                    m._glitch_frame = 0
+                    m._glitch_frame_timer = 0
+                    if self._glitch_sounds:
+                        snd = self._glitch_sounds[0]
+                        chan = pygame.mixer.find_channel(True)
+                        if chan:
+                            chan.set_volume(0.7)
+                            chan.play(snd)
+                            self._glitch_channel = chan
+            return
+
+        if not m._glitch_active:
+            return
+
+        m._glitch_timer -= 1
+        if m._glitch_timer <= 0:
+            m._glitch_active = False
+            if self._glitch_channel:
+                self._glitch_channel.stop()
+                self._glitch_channel = None
+            return
+
+        m._glitch_frame_timer -= 1
+        if m._glitch_frame_timer <= 0:
+            m._glitch_frame = 1 - m._glitch_frame
+            m._glitch_frame_timer = 0
+
     def _close_ad(self) -> None:
         """Закрыть рекламу и остановить звук."""
         if self.model.ad_active:
@@ -1026,7 +1090,8 @@ class GamePresenter:
             self.model.ad_image_key = None
             self.model.ad_timer = 0
             if self._ad_playing:
-                pygame.mixer.music.stop()
+                if self._ad_sound:
+                    self._ad_sound.stop()
                 self._ad_playing = False
 
     def _start_ambience(self) -> None:
@@ -1053,7 +1118,8 @@ class GamePresenter:
         self._cam_init_channel.stop()
         self._camera_inited = False
         if self._ad_playing:
-            pygame.mixer.music.stop()
+            if self._ad_sound:
+                self._ad_sound.stop()
             self._ad_playing = False
         self._algem_talk_timer = random.randint(1800, 3600)
 

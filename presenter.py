@@ -8,24 +8,31 @@ class MenuPresenter:
         self._prev_hover = None
         self._blip_sound = None
         try:
-            self._blip_sound = pygame.mixer.Sound("sounds/blip3.mp3")
+                self._blip_sound = pygame.mixer.Sound("sounds/ui/blip3.mp3")
         except pygame.error:
             pass
+        self._menu_music_loaded = False
 
     def _ensure_music(self):
         if pygame.mixer.music.get_busy():
             return
+        if not self._menu_music_loaded:
+            try:
+                pygame.mixer.music.load("sounds/menu/Faulty_Ventilation.mp3")
+                self._menu_music_loaded = True
+            except pygame.error:
+                print("sounds/menu/Faulty_Ventilation.mp3 not found")
+                return
         try:
-            pygame.mixer.music.load("sounds/Faulty Ventilation.mp3")
             pygame.mixer.music.play(-1)
         except pygame.error:
-            print("sounds/Faulty Ventilation.mp3 не найден")
+            pass
 
     @property
     def blip_sound(self):
         if self._blip_sound is None:
             try:
-                self._blip_sound = pygame.mixer.Sound("sounds/blip3.mp3")
+                self._blip_sound = pygame.mixer.Sound("sounds/ui/blip3.mp3")
             except pygame.error:
                 pass
         return self._blip_sound

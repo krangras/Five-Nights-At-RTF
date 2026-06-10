@@ -349,6 +349,76 @@ class GameView:
             except pygame.error:
                 return None
 
+        def _cache_laptop_gradients():
+            sw, sh = self.screen_w, self.screen_h
+            tb_h = 40
+            tb_top = sh - tb_h
+
+            tb_surf = pygame.Surface((sw, tb_h))
+            for y in range(tb_h):
+                t = y / tb_h
+                r = int(20 + t * 20)
+                g = int(60 + t * 40)
+                b = int(180 + t * 40)
+                pygame.draw.line(tb_surf, (r, g, b), (0, y), (sw, y))
+            self._tb_surf = tb_surf
+            self._tb_top = tb_top
+
+            start_w, start_h = 86, tb_h - 4
+            start_surf = pygame.Surface((start_w, start_h))
+            for y in range(start_h):
+                t = y / start_h
+                r = int(40 + t * 30)
+                g = int(160 - t * 20)
+                b = int(40 + t * 20)
+                pygame.draw.line(start_surf, (r, g, b), (0, y), (start_w, y))
+            self._start_btn_surf = start_surf
+
+            menu_w, menu_h = 220, 260
+            menu_surf = pygame.Surface((menu_w, menu_h), pygame.SRCALPHA)
+            for y in range(menu_h):
+                t = y / menu_h
+                r = int(30 + t * 20)
+                g = int(60 + t * 30)
+                b = int(180 + t * 40)
+                pygame.draw.line(menu_surf, (r, g, b, 240), (0, y), (menu_w, y))
+            self._menu_bg_surf = menu_surf
+
+            title_w = 620
+            title_h = 26
+            title_surf = pygame.Surface((title_w, title_h))
+            for y in range(title_h):
+                t = y / title_h
+                r = int(0 + t * 30)
+                g = int(80 + t * 40)
+                b = int(180 + t * 40)
+                pygame.draw.line(title_surf, (r, g, b), (0, y), (title_w, y))
+            self._title_bar_surf = title_surf
+
+            shadow_w, shadow_h = 624, 444
+            shadow = pygame.Surface((shadow_w, shadow_h), pygame.SRCALPHA)
+            for i in range(4, 0, -1):
+                inner = pygame.Surface((shadow_w, shadow_h), pygame.SRCALPHA)
+                inner.fill((0, 0, 0, 15 * i))
+                shadow.blit(inner, (i, i))
+            self._shadow_surface = shadow
+
+            self._sel_highlight = pygame.Surface((52, 52), pygame.SRCALPHA)
+            self._sel_highlight.fill((80, 120, 200, 80))
+
+            self._rec_glow = pygame.Surface((24, 24), pygame.SRCALPHA)
+            pygame.draw.circle(self._rec_glow, (255, 0, 0, 50), (12, 12), 12)
+
+            self._dark_overlay = pygame.Surface((sw, sh), pygame.SRCALPHA)
+
+            self._text_cache = {}
+
+            self._minimap_tint_cache = {}
+            self._seal_bg_cache = {}
+            self._cam_dark_cache = {}
+
+        _cache_laptop_gradients()
+
         # Алгем-спрайты для каждой камеры
         self._algem_surfaces: dict[int, pygame.Surface] = {}
         self._algem_main_hall_surf = _load_cam(
@@ -494,6 +564,17 @@ class GameView:
             ).convert_alpha()
             self._audio_icons.append(pygame.transform.scale(img, (60, 50)))
 
+        # ── Глитч-картинки ─────────────────────────────────────────────
+        self._glitch_surfs = []
+        for fname in ("glitch1.png", "glitch2.png"):
+            try:
+                raw = pygame.image.load(f"assets/glithces/{fname}").convert()
+                self._glitch_surfs.append(
+                    pygame.transform.smoothscale(raw, (screen_w, screen_h))
+                )
+            except pygame.error:
+                pass
+
     def _build_status_button(
         self,
         lines: list[str],
@@ -514,6 +595,14 @@ class GameView:
             surf.blit(text_surf, (x, y))
             y += text_surf.get_height() + 1
         return surf
+
+    def _ctext(self, font, text, color):
+        key = (id(font), text, color)
+        cached = self._text_cache.get(key)
+        if cached is None:
+            cached = font.render(text, True, color)
+            self._text_cache[key] = cached
+        return cached
 
     def is_server_clicked(self, mouse_pos, offset):
         img_x = (mouse_pos[0] + offset) / self.scale
@@ -603,7 +692,7 @@ class GameView:
             pygame.draw.rect(self.screen, color, (x, y, fill_w, bar_h))
         pygame.draw.rect(self.screen, (180, 180, 200), (x, y, bar_w, bar_h), 2)
 
-        label = self.font.render("HACK", True, (200, 200, 200))
+        label = self._ctext(self.font, "HACK", (200, 200, 200))
         self.screen.blit(
             label,
             (
@@ -612,9 +701,7 @@ class GameView:
             ),
         )
 
-        pct = self.font.render(
-            f"{int(model.hack_progress * 100)}%", True, (200, 200, 200)
-        )
+        pct = self._ctext(self.font, f"{int(model.hack_progress * 100)}%", (200, 200, 200))
         self.screen.blit(
             pct, (x + bar_w + 10, y + bar_h // 2 - pct.get_height() // 2)
         )
@@ -735,7 +822,7 @@ class GameView:
         if isinstance(lines, str):
             lines = [lines]
         for j, line in enumerate(lines):
-            rendered = self._ui_font_sm.render(line, True, (0, 0, 0))
+            rendered = self._ctext(self._ui_font_sm, line, (0, 0, 0))
             self.screen.blit(
                 rendered,
                 (
@@ -743,7 +830,7 @@ class GameView:
                     iy + icon_s + 4 + j * 16 + 1,
                 ),
             )
-            rendered = self._ui_font_sm.render(line, True, (255, 255, 255))
+            rendered = self._ctext(self._ui_font_sm, line, (255, 255, 255))
             self.screen.blit(
                 rendered,
                 (
@@ -761,38 +848,22 @@ class GameView:
 
         # ── Taskbar ──────────────────────────────────────────────────
         tb_h = 40
-        tb_top = sh - tb_h
-
-        for y in range(tb_top, sh):
-            t = (y - tb_top) / tb_h
-            r = int(20 + t * 20)
-            g = int(60 + t * 40)
-            b = int(180 + t * 40)
-            pygame.draw.line(self.screen, (r, g, b), (0, y), (sw, y))
+        tb_top = self._tb_top
+        self.screen.blit(self._tb_surf, (0, tb_top))
 
         pygame.draw.line(
             self.screen, (100, 160, 255), (0, tb_top), (sw, tb_top)
         )
 
         # Кнопка Start — зелёный градиент как в XP
-        start_rect = pygame.Rect(2, tb_top + 2, 86, tb_h - 4)
-        for y in range(start_rect.y, start_rect.bottom):
-            t = (y - start_rect.y) / start_rect.h
-            r = int(40 + t * 30)
-            g = int(160 - t * 20)
-            b = int(40 + t * 20)
-            pygame.draw.line(
-                self.screen,
-                (r, g, b),
-                (start_rect.x, y),
-                (start_rect.right, y),
-            )
+        start_rect = pygame.Rect(2, tb_top + 2, 86, 36)
+        self.screen.blit(self._start_btn_surf, (start_rect.x, start_rect.y))
         pygame.draw.rect(
             self.screen, (20, 100, 20), start_rect, 1, border_radius=4
         )
 
         # Текст Start
-        start_label = self._ui_font_bold.render("start", True, (255, 255, 255))
+        start_label = self._ctext(self._ui_font_bold, "start", (255, 255, 255))
         self.screen.blit(start_label, (start_rect.x + 12, start_rect.y + 11))
         self._laptop_start_rect = start_rect
 
@@ -818,9 +889,7 @@ class GameView:
         display_h = 12 if model.hour == 0 else model.hour
         display_m = model.timer // 60
         clock_str = f"{display_h}:{display_m:02d}"
-        clock_label = self._ui_font_bold.render(
-            clock_str, True, (255, 255, 255)
-        )
+        clock_label = self._ctext(self._ui_font_bold, clock_str, (255, 255, 255))
         self.screen.blit(
             clock_label, (sw - clock_label.get_width() - 10, sh - tb_h + 11)
         )
@@ -847,16 +916,7 @@ class GameView:
             menu_y = tb_top - menu_h
 
             # Фон меню — с градиентом
-            menu_surf = pygame.Surface((menu_w, menu_h), pygame.SRCALPHA)
-            for y in range(menu_h):
-                t = y / menu_h
-                r = int(30 + t * 20)
-                g = int(60 + t * 30)
-                b = int(180 + t * 40)
-                pygame.draw.line(
-                    menu_surf, (r, g, b, 240), (0, y), (menu_w, y)
-                )
-            self.screen.blit(menu_surf, (menu_x, menu_y))
+            self.screen.blit(self._menu_bg_surf, (menu_x, menu_y))
             pygame.draw.rect(
                 self.screen,
                 (80, 140, 255),
@@ -888,9 +948,7 @@ class GameView:
             pygame.draw.ellipse(
                 self.screen, (60, 60, 60), (menu_x + 14, menu_y + 28, 20, 14)
             )
-            user_label = self._ui_font_bold.render(
-                "Admin", True, (255, 255, 255)
-            )
+            user_label = self._ctext(self._ui_font_bold, "Admin", (255, 255, 255))
             self.screen.blit(user_label, (menu_x + 48, menu_y + 18))
 
             # Сепаратор
@@ -931,9 +989,7 @@ class GameView:
                     continue
 
                 if item_label:
-                    txt = self._ui_font.render(
-                        item_label, True, (255, 255, 255)
-                    )
+                    txt = self._ctext(self._ui_font, item_label, (255, 255, 255))
                     self.screen.blit(txt, (menu_x + 12, iy + 7))
                 self._laptop_menu_items.append((item_rect, item_key))
 
@@ -944,34 +1000,19 @@ class GameView:
             win_y = sh // 2 - win_h // 2 - 20
             win_rect = pygame.Rect(win_x, win_y, win_w, win_h)
 
-            # Тень
-            shadow = pygame.Surface((win_w + 4, win_h + 4), pygame.SRCALPHA)
-            for i in range(4, 0, -1):
-                shadow.fill((0, 0, 0, 15 * i))
-                self.screen.blit(shadow, (win_x + i, win_y + i))
+            # Тень — предзаготовленная
+            self.screen.blit(self._shadow_surface, (win_x, win_y))
 
             # Фон окна
             pygame.draw.rect(self.screen, (236, 233, 216), win_rect)
 
-            # Title bar — XP-градиент
+            # Title bar — предзаготовленный градиент
             title_h = 26
             title_rect = pygame.Rect(win_x, win_y, win_w, title_h)
-            for y in range(title_h):
-                t = y / title_h
-                r = int(0 + t * 30)
-                g = int(80 + t * 40)
-                b = int(180 + t * 40)
-                pygame.draw.line(
-                    self.screen,
-                    (r, g, b),
-                    (win_x, win_y + y),
-                    (win_x + win_w, win_y + y),
-                )
+            self.screen.blit(self._title_bar_surf, (win_x, win_y))
             pygame.draw.rect(self.screen, (0, 0, 100), title_rect, 1)
 
-            title_txt = self._ui_font_bold.render(
-                model.night_app["title"], True, (255, 255, 255)
-            )
+            title_txt = self._ctext(self._ui_font_bold, model.night_app["title"], (255, 255, 255))
             self.screen.blit(title_txt, (win_x + 8, win_y + 5))
 
             # Кнопки управления — XP стиль
@@ -1017,7 +1058,7 @@ class GameView:
             pygame.draw.rect(
                 self.screen, (120, 30, 20), close_btn, 1, border_radius=2
             )
-            close_x = self._ui_font_bold.render("X", True, (255, 255, 255))
+            close_x = self._ctext(self._ui_font_bold, "X", (255, 255, 255))
             self.screen.blit(close_x, (close_btn.x + 4, close_btn.y + 2))
             self._laptop_close_btn = close_btn
 
@@ -1050,9 +1091,7 @@ class GameView:
                 status_txt = "SERVER: OFFLINE"
                 status_clr = (160, 40, 40)
 
-            lbl_server = self._ui_font_bold.render(
-                status_txt, True, status_clr
-            )
+            lbl_server = self._ctext(self._ui_font_bold, status_txt, status_clr)
             self.screen.blit(lbl_server, (win_x + 15, content_y))
 
             # ── Кнопки сервера ─────────────────────────────────────────
@@ -1078,9 +1117,7 @@ class GameView:
             pygame.draw.rect(
                 self.screen, (30, 30, 30), srv_btn, 1, border_radius=3
             )
-            srv_txt = self._ui_font_bold.render(
-                srv_label, True, (255, 255, 255)
-            )
+            srv_txt = self._ctext(self._ui_font_bold, srv_label, (255, 255, 255))
             self.screen.blit(
                 srv_txt,
                 (
@@ -1098,9 +1135,9 @@ class GameView:
             pygame.draw.rect(
                 self.screen, (30, 30, 30), rebtn, 1, border_radius=3
             )
-            re_txt = self._ui_font_bold.render(
+            re_txt = self._ctext(
+                self._ui_font_bold,
                 "REBOOT",
-                True,
                 (255, 255, 255) if re_enabled else (120, 120, 120),
             )
             self.screen.blit(
@@ -1131,9 +1168,7 @@ class GameView:
                     clr,
                     (bar_x + 1, bar_y + 1, fill - 2, bar_h - 2),
                 )
-            pct = self._ui_font_sm.render(
-                f"{int(model.hack_progress * 100)}%", True, (30, 30, 30)
-            )
+            pct = self._ctext(self._ui_font_sm, f"{int(model.hack_progress * 100)}%", (30, 30, 30))
             self.screen.blit(
                 pct, (bar_x + bar_w - pct.get_width() - 4, bar_y + 1)
             )
@@ -1156,9 +1191,7 @@ class GameView:
             pygame.draw.rect(
                 self.screen, (30, 30, 30), (term_x, term_y, term_w, 18)
             )
-            term_hdr = self._ui_font_sm.render(
-                model.night_app["header"], True, (120, 200, 120)
-            )
+            term_hdr = self._ctext(self._ui_font_sm, model.night_app["header"], (120, 200, 120))
             self.screen.blit(term_hdr, (term_x + 6, term_y + 2))
 
             # Логи
@@ -1177,7 +1210,7 @@ class GameView:
                     clr = (220, 80, 60)
                 elif "COMPLETE" in log_line or "SUCCESS" in log_line:
                     clr = (80, 220, 80)
-                rendered = self._ui_font_sm.render(log_line, True, clr)
+                rendered = self._ctext(self._ui_font_sm, log_line, clr)
                 self.screen.blit(
                     rendered, (term_x + 6, term_y + 20 + i * line_h)
                 )
@@ -1285,19 +1318,18 @@ class GameView:
             pygame.draw.circle(
                 self.screen, (255, 0, 0), (self.screen_w - 78, 28), 5
             )
-            glow = pygame.Surface((24, 24), pygame.SRCALPHA)
-            pygame.draw.circle(glow, (255, 0, 0, 50), (12, 12), 12)
+            glow = self._rec_glow
             self.screen.blit(
                 glow, (self.screen_w - 90, 16), special_flags=pygame.BLEND_ADD
             )
 
         # REC text
-        rec_surf = self.font.render("REC", True, (200, 30, 30))
+        rec_surf = self._ctext(self.font, "REC", (200, 30, 30))
         self.screen.blit(rec_surf, (self.screen_w - 70, 36))
 
         # Camera label — левый нижний угол
         label = f"CAM {display_id}  {cam_name}"
-        label_surf = self.font.render(label, True, (180, 180, 190))
+        label_surf = self._ctext(self.font, label, (180, 180, 190))
         self.screen.blit(
             label_surf,
             (self.screen_rect.x + 15, self.screen_rect.bottom - 35),
@@ -1341,8 +1373,12 @@ class GameView:
                 color = (40, 220, 40) if blink_green else (100, 100, 100)
             else:
                 color = (80, 80, 80)
-            tint = pygame.Surface(icon.get_size(), pygame.SRCALPHA)
-            tint.fill((*color, 140))
+            tint_key = (color, 140)
+            tint = self._minimap_tint_cache.get(tint_key)
+            if tint is None:
+                tint = pygame.Surface(icon.get_size(), pygame.SRCALPHA)
+                tint.fill((*color, 140))
+                self._minimap_tint_cache[tint_key] = tint
             self.screen.blit(tint, (ix, iy))
 
             if (
@@ -1390,14 +1426,21 @@ class GameView:
                 border_color = (140, 140, 140)
 
             # Фон иконки (полупрозрачный тёмный)
-            bg = pygame.Surface((iw, ih), pygame.SRCALPHA)
-            bg.fill((10, 10, 10, 180))
+            bg = self._minimap_tint_cache.get("vent_bg")
+            if bg is None:
+                bg = pygame.Surface((iw, ih), pygame.SRCALPHA)
+                bg.fill((10, 10, 10, 180))
+                self._minimap_tint_cache["vent_bg"] = bg
             self.screen.blit(bg, (ix, iy))
 
             # Tint поверх иконки
             self.screen.blit(icon, (ix, iy))
-            tint = pygame.Surface((iw, ih), pygame.SRCALPHA)
-            tint.fill((*tint_color, 150))
+            tint_key = (tint_color, 150)
+            tint = self._minimap_tint_cache.get(tint_key)
+            if tint is None:
+                tint = pygame.Surface((iw, ih), pygame.SRCALPHA)
+                tint.fill((*tint_color, 150))
+                self._minimap_tint_cache[tint_key] = tint
             self.screen.blit(tint, (ix, iy))
 
             # Рамка
@@ -1434,8 +1477,12 @@ class GameView:
             self._seal_rects[sid] = click_rect
 
             # Тёмный фон-подложка для читаемости
-            bg_surf = pygame.Surface((BAR_W + 2, BAR_H + 2), pygame.SRCALPHA)
-            bg_surf.fill((0, 0, 0, 120))
+            seal_bg_key = (BAR_W, BAR_H)
+            bg_surf = self._seal_bg_cache.get(seal_bg_key)
+            if bg_surf is None:
+                bg_surf = pygame.Surface((BAR_W + 2, BAR_H + 2), pygame.SRCALPHA)
+                bg_surf.fill((0, 0, 0, 120))
+                self._seal_bg_cache[seal_bg_key] = bg_surf
             self.screen.blit(bg_surf, (rx - 1, ry - 1))
 
             # Основная полоска
@@ -1515,6 +1562,8 @@ class GameView:
                 self.screen.blit(
                     self._ad_office_images[model.ad_image_key], (-offset, 0)
                 )
+            elif model.server_rebooting:
+                self.screen.blit(self.bg_blinks.get("red", self.bg_off), (-offset, 0))
             elif model.laptop_app is not None or model.hack_active:
                 self.screen.blit(self.bg_hack, (-offset, 0))
             elif model.server_state == "OFF":
@@ -1583,6 +1632,12 @@ class GameView:
                     self.screen, (100, 100, 100), (zx, zy, zw, zh), 2
                 )
 
+            # Глитч: мерцание — офис, картинка, офис, картинка...
+            if model._glitch_active and self._glitch_surfs:
+                if model._glitch_frame == 1:
+                    idx = (model._glitch_timer // 2) % len(self._glitch_surfs)
+                    self.screen.blit(self._glitch_surfs[idx], (0, 0))
+
             pygame.display.flip()
             return
 
@@ -1590,6 +1645,8 @@ class GameView:
             self.screen.blit(
                 self._ad_office_images[model.ad_image_key], (-offset, 0)
             )
+        elif model.server_rebooting:
+            self.screen.blit(self.bg_blinks.get("red", self.bg_off), (-offset, 0))
         elif model.laptop_app is not None or model.hack_active:
             self.screen.blit(self.bg_hack, (-offset, 0))
         elif model.server_state == "OFF":
@@ -1762,10 +1819,10 @@ class GameView:
         time_str = f"{display_hour} AM"
         night_str = f"Night {model.night}"
         self.screen.blit(
-            self.font.render(time_str, True, (255, 255, 255)), (20, 22)
+            self._ctext(self.font, time_str, (255, 255, 255)), (20, 22)
         )
         self.screen.blit(
-            self.font.render(night_str, True, (200, 200, 200)), (20, 54)
+            self._ctext(self.font, night_str, (200, 200, 200)), (20, 54)
         )
 
         # ── Стартовый экран ночи ─────────────────────────────────
@@ -1774,10 +1831,10 @@ class GameView:
             overlay.fill((0, 0, 0))
             self.screen.blit(overlay, (0, 0))
             display_hour = 12 if model.hour == 0 else model.hour
-            title = self.font.render(
-                f"Night {model.night}", True, (200, 200, 200)
+            title = self._ctext(
+                self.font, f"Night {model.night}", (200, 200, 200)
             )
-            sub = self.font.render(f"{display_hour} AM", True, (180, 180, 190))
+            sub = self._ctext(self.font, f"{display_hour} AM", (180, 180, 190))
             self.screen.blit(
                 title,
                 (
@@ -1809,12 +1866,13 @@ class GameView:
                 overlay.fill((255, 0, 0, 20))
                 self.screen.blit(overlay, (0, 0))
             if model.server_overload:
-                txt = self.font.render(
-                    "OVERLOAD! OPEN LAPTOP TO REBOOT", True, color
+                txt = self._ctext(
+                    self.font,
+                    "OVERLOAD! OPEN LAPTOP TO REBOOT", color
                 )
             else:
                 dots = "." * ((pygame.time.get_ticks() // 600) % 4)
-                txt = self.font.render(f"REBOOTING{dots}", True, color)
+                txt = self._ctext(self.font, f"REBOOTING{dots}", color)
             self.screen.blit(
                 txt,
                 (
@@ -1824,3 +1882,9 @@ class GameView:
             )
 
         self.screen.blit(self._brightness_overlay, (0, 0))
+
+        # ── Глитч: мерцание — офис, картинка, офис, картинка... ────────
+        if model._glitch_active and self._glitch_surfs:
+            if model._glitch_frame == 1:
+                idx = (model._glitch_timer // 2) % len(self._glitch_surfs)
+                self.screen.blit(self._glitch_surfs[idx], (0, 0))
