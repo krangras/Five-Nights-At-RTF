@@ -23,12 +23,14 @@ from typing import Any
 import numpy as np
 import pygame
 
+from audio_mix import AudioCalibrationOverlay, effective_volume, ensure_audio_settings
 from algem_ai import bfs_path
 from gameplay_model import (
     BASE_GRAPH, CAMERA_COUNT, VENT_CAMERAS,
     GameModel, SealState, SEAL_CAMERA_MAP, VENT_SEALS,
     find_nearest_vent_camera,
 )
+from settings import save_settings
 
 HACK_TICKS_BY_NIGHT: dict[int, int] = {
     1: 3600,  # ~60 сек
@@ -76,6 +78,12 @@ CHANNEL_MASTERS: dict[str, float] = {
     "ad": 0.38,
 }
 
+CHANNEL_SOUND_IDS: dict[str, str] = {
+    "algem_talk": "algem_talk",
+    "vent": "vent_presence",
+    "ad": "ad_loop",
+}
+
 
 class GamePresenter:
     """
@@ -86,9 +94,14 @@ class GamePresenter:
         view   : GameView  — знает только как рисовать; у него нет данных.
     """
 
-    def __init__(self, model: GameModel, view) -> None:
+    def __init__(self, model: GameModel, view, settings_data: dict | None = None) -> None:
         self.model: GameModel = model
         self.view = view
+        self.settings_data = ensure_audio_settings(settings_data)
+        self.audio_overlay = AudioCalibrationOverlay(
+            self.settings_data,
+            on_change=self._save_audio_settings,
+        )
 
         # ── Анимация сервера ─────────────────────────────────────────────
         self._transition_frames: int = 0  # TURNING_OFF: кадров до конца
@@ -111,6 +124,24 @@ class GamePresenter:
 
         # ── Загрузка всех звуков сразу ───────────────────────────────────
         self._keys_held: set[int] = set()
+        self._sound_meta: dict[str, tuple[str, float]] = {
+            "snd_on": ("server_on", SOUND_BASE_VOLUMES["snd_on"]),
+            "snd_work": ("server_loop", SOUND_BASE_VOLUMES["snd_work"]),
+            "snd_off": ("server_off", SOUND_BASE_VOLUMES["snd_off"]),
+            "snd_tablet": ("tablet_toggle", SOUND_BASE_VOLUMES["snd_tablet"]),
+            "snd_cam_switch": ("camera_switch", SOUND_BASE_VOLUMES["snd_cam_switch"]),
+            "snd_cam_init": ("camera_init", SOUND_BASE_VOLUMES["snd_cam_init"]),
+            "snd_ambience": ("office_ambience", SOUND_BASE_VOLUMES["snd_ambience"]),
+            "snd_algem_leave": ("algem_leave", SOUND_BASE_VOLUMES["snd_algem_leave"]),
+            "snd_phone_call": ("phone_call", SOUND_BASE_VOLUMES["snd_phone_call"]),
+            "snd_startnight": ("night_start", SOUND_BASE_VOLUMES["snd_startnight"]),
+            "snd_endnight": ("night_end", SOUND_BASE_VOLUMES["snd_endnight"]),
+            "snd_wait": ("reboot_loop", SOUND_BASE_VOLUMES["snd_wait"]),
+            "snd_vent_close": ("vent_close", SOUND_BASE_VOLUMES["snd_vent_close"]),
+            "snd_danger2b": ("danger_loop", SOUND_BASE_VOLUMES["snd_danger2b"]),
+            "snd_laptop_on": ("sounds/laptop/laptop_turning_on.mp3", 0.60),
+            "snd_laptop_off": ("sounds/laptop/laptop_turning_off.mp3", 0.60),
+        }
         _sound_defs: dict[str, str] = {
             "snd_on": "sounds/server/server_turning_on.mp3",
             "snd_work": "sounds/server/server_is_working.mp3",
@@ -126,11 +157,14 @@ class GamePresenter:
             "snd_wait": "sounds/ui/wait.wav",
             "snd_vent_close": "sounds/vents/vent_close.wav",
             "snd_danger2b": "sounds/threats/danger2b.wav",
+            "snd_laptop_on": "sounds/laptop/laptop_turning_on.mp3",
+            "snd_laptop_off": "sounds/laptop/laptop_turning_off.mp3",
         }
         for attr, path in _sound_defs.items():
             try:
                 snd = pygame.mixer.Sound(path)
-                snd.set_volume(SOUND_BASE_VOLUMES.get(attr, 0.5))
+                sound_id, base_volume = self._sound_meta.get(attr, (path, 0.5))
+                snd.set_volume(self._mix_volume(sound_id, base_volume))
                 setattr(self, attr, snd)
             except pygame.error:
                 setattr(self, attr, None)
@@ -140,7 +174,7 @@ class GamePresenter:
         for i in range(1, 5):
             try:
                 snd = pygame.mixer.Sound(f"sounds/ui/gadget{i}.mp3")
-                snd.set_volume(0.30)
+                snd.set_volume(self._mix_volume("gadget_audio", 0.30))
                 self.__gadget_cache.append(snd)
             except pygame.error:
                 pass
@@ -148,7 +182,7 @@ class GamePresenter:
         for i in (1, 2, 4, 5, 6, 7, 8, 9, 10):
             try:
                 snd = pygame.mixer.Sound(f"sounds/ambience/ambience{i}.mp3")
-                snd.set_volume(0.82)
+                snd.set_volume(self._mix_volume("algem_talk", 0.82))
                 self.__algem_talk_cache.append(snd)
             except pygame.error:
                 pass
@@ -156,7 +190,7 @@ class GamePresenter:
         for f in ("vent_closer1.wav", "vent_louder2.wav", "vent_quiet1.wav", "vent_quiet2.wav"):
             try:
                 snd = pygame.mixer.Sound(f"sounds/vents/{f}")
-                snd.set_volume(0.78)
+                snd.set_volume(self._mix_volume("vent_presence", 0.78))
                 self.__vent_sounds_cache.append(snd)
             except pygame.error:
                 pass
@@ -206,7 +240,7 @@ class GamePresenter:
         self._ad_sound: pygame.mixer.Sound | None = None
         try:
             self._ad_sound = pygame.mixer.Sound(self._ad_path)
-            self._ad_sound.set_volume(0.0)
+            self._ad_sound.set_volume(self._mix_volume("ad_loop", 0.0))
         except pygame.error:
             pass
 
@@ -277,6 +311,9 @@ class GamePresenter:
         Вся обработка ввода сосредоточена здесь — Presenter «переводит»
         пользовательские действия в вызовы модели.
         """
+        if self.audio_overlay.handle_event(event):
+            return
+
         # Блокировка ввода во время глитча
         if self.model._glitch_active:
             return
@@ -301,8 +338,6 @@ class GamePresenter:
         if key == pygame.K_ESCAPE:
             if self.model.laptop_open and not self.model.server_rebooting:
                 self._close_laptop()
-            else:
-                pygame.mouse.set_visible(not pygame.mouse.get_visible())
 
         # Переключение планшета по TAB — блокировано при ноутбуке
         elif key == pygame.K_TAB and not self.model.laptop_open:
@@ -381,6 +416,8 @@ class GamePresenter:
 
             # MAP TOGGLE — переключение между камерами и вентиляцией
             if self.view.is_map_clicked(pos):
+                if any(state == SealState.SEALING for state in self.model.seals.values()):
+                    return
                 going_vent = not self.view.vent_map_mode
                 self.view.vent_map_mode = going_vent
                 if going_vent:
@@ -434,6 +471,17 @@ class GamePresenter:
                 self._close_ad()
             return
 
+        if self.view.is_laptop_power_clicked(pos):
+            if self.model.laptop_power_state == "OFF":
+                self._start_laptop_boot()
+            elif self.model.laptop_power_state == "ON":
+                self._start_laptop_shutdown()
+            return
+
+        if self.model.laptop_power_state != "ON":
+            self.model.laptop_start_menu = False
+            return
+
         # Клик по кнопке закрытия окна
         if self.model.laptop_app and self.view.is_laptop_close_clicked(pos) and not self.model.server_rebooting:
             self.model.laptop_app = None
@@ -469,10 +517,8 @@ class GamePresenter:
             if item == "claude":
                 self.model.laptop_app = "claude_mythos"
                 self.model.laptop_start_menu = False
-            elif item == "mycomputer":
-                pass  # TODO: My Computer
             elif item == "shutdown" and not self.model.server_rebooting:
-                self._close_laptop()
+                self._start_laptop_shutdown()
             elif item is not None:
                 self.model.laptop_start_menu = False
             return
@@ -481,8 +527,6 @@ class GamePresenter:
         icon = self.view.is_laptop_icon_clicked(pos)
         if icon == "claude":
             self.model.laptop_app = "claude_mythos"
-        elif icon == "mycomputer":
-            pass  # TODO: My Computer
 
         # Закрыть меню если кликнул мимо
         self.model.laptop_start_menu = False
@@ -492,7 +536,6 @@ class GamePresenter:
         self._laptop_saved_app = self.model.laptop_app
         self._laptop_saved_menu = self.model.laptop_start_menu
         self.model.laptop_open = False
-        self.model.laptop_zoom = 0.0
         self.model.laptop_start_menu = False
 
     def _handle_mouse_motion(self, pos: tuple[int, int]) -> None:
@@ -763,8 +806,8 @@ class GamePresenter:
 
         self._vent_sound_channel.set_volume(volume)
 
-    @staticmethod
     def _distance_volume(
+        self,
         params: dict[int, float] | dict[int, tuple[int, float]],
         dist: int,
         channel_key: str | None = None,
@@ -774,7 +817,11 @@ class GamePresenter:
         volume = raw[1] if isinstance(raw, tuple) else raw
         if channel_key is None:
             return volume
-        return max(0.0, min(1.0, volume * CHANNEL_MASTERS.get(channel_key, 1.0)))
+        mixed = volume * CHANNEL_MASTERS.get(channel_key, 1.0)
+        sound_id = CHANNEL_SOUND_IDS.get(channel_key)
+        if sound_id is None:
+            return max(0.0, min(1.0, mixed))
+        return self._mix_volume(sound_id, mixed)
 
     @staticmethod
     def _vent_listen_distance(
@@ -881,6 +928,8 @@ class GamePresenter:
             if self.snd_off:
                 self.snd_off.play()
         elif self.model.server_state == "OFF":
+            if self.model.laptop_power_state != "ON":
+                return
             self.model.server_state = "TURNING_ON"
             self.model.server_blink = "red"
             self._on_phase = 0
@@ -889,20 +938,40 @@ class GamePresenter:
                 self.snd_on.play()
 
     def _update_laptop(self) -> None:
-        """Мгновенное переключение ноутбука."""
-        if self.model.laptop_open:
-            self.model.laptop_zoom = 1.0
-        else:
-            self.model.laptop_zoom = 0.0
+        """Плавное открытие ноутбука и состояния питания."""
+        target_zoom = 1.0 if self.model.laptop_open else 0.0
+        self.model.laptop_zoom += (target_zoom - self.model.laptop_zoom) * 0.35
+        if abs(self.model.laptop_zoom - target_zoom) < 0.01:
+            self.model.laptop_zoom = target_zoom
+
+        if self.model.laptop_power_state == "BOOTING":
+            if self.model.laptop_power_timer > 0:
+                self.model.laptop_power_timer -= 1
+            if self.model.laptop_power_timer > 90:
+                self.model.laptop_boot_stage = "boot_black"
+            elif self.model.laptop_power_timer > 0:
+                self.model.laptop_boot_stage = "initializing"
+            else:
+                self.model.laptop_power_state = "ON"
+                self.model.laptop_boot_stage = "desktop"
+                if self.snd_laptop_on:
+                    self.snd_laptop_on.play()
+
+        elif self.model.laptop_power_state == "SHUTTING_DOWN":
+            if self.model.laptop_power_timer > 0:
+                self.model.laptop_power_timer -= 1
+            else:
+                self.model.laptop_power_state = "OFF"
+                self.model.laptop_boot_stage = "boot_black"
 
     def _update_hack(self) -> None:
         """Прогресс взлома через ноутбук (Claude Mythos)."""
         # Взлом начинается когда Claude Mythos открыт и сервер включён,
         # но затем продолжается даже после закрытия ноутбука или выключения сервера.
         # Во время ребута — взлом на паузе.
-        if self.model.laptop_app == "claude_mythos" and self.model.server_state == "ON" and not self.model.server_rebooting:
+        if self.model.laptop_app == "claude_mythos" and self.model.server_state == "ON" and not self.model.server_rebooting and not self.model.server_overload:
             self.model.hack_active = True
-        if self.model.hack_active and not self.model.server_rebooting and self.model.server_state == "ON":
+        if self.model.hack_active and not self.model.server_rebooting and not self.model.server_overload and self.model.server_state == "ON":
             hack_ticks = HACK_TICKS_BY_NIGHT.get(self.model.night, HACK_TICKS_BY_NIGHT[5])
             hack_rate = 1.0 / hack_ticks
             self.model.hack_progress = min(1.0, self.model.hack_progress + hack_rate)
@@ -1002,7 +1071,7 @@ class GamePresenter:
         if self.model.ad_active:
             if not self._ad_playing:
                 if self._ad_sound:
-                    self._ad_sound.set_volume(CHANNEL_MASTERS["ad"])
+                    self._ad_sound.set_volume(self._mix_volume("ad_loop", CHANNEL_MASTERS["ad"]))
                     self._ad_sound.play(-1)
                 self._ad_playing = True
         else:
@@ -1013,6 +1082,7 @@ class GamePresenter:
 
     def _update_sound_mix(self) -> None:
         """Лёгкий runtime-микс, чтобы важные сигналы не тонули в фоне."""
+        self._refresh_cached_sound_levels()
         ambience_target = SOUND_BASE_VOLUMES["snd_ambience"]
         if self.model.tablet_open or self.model.laptop_open:
             ambience_target *= 0.82
@@ -1021,7 +1091,7 @@ class GamePresenter:
         if self._wait_playing or self._seal_playing:
             ambience_target *= 0.78
         if self.snd_ambience:
-            self.snd_ambience.set_volume(max(0.06, min(1.0, ambience_target)))
+            self.snd_ambience.set_volume(self._mix_volume("office_ambience", max(0.06, min(1.0, ambience_target))))
 
         if self.snd_work and self.model.server_state == "ON":
             work_target = SOUND_BASE_VOLUMES["snd_work"]
@@ -1029,19 +1099,19 @@ class GamePresenter:
                 work_target *= 1.12
             if self._danger_playing:
                 work_target *= 0.88
-            self.snd_work.set_volume(max(0.08, min(1.0, work_target)))
+            self.snd_work.set_volume(self._mix_volume("server_loop", max(0.08, min(1.0, work_target))))
 
         if self.snd_phone_call:
             phone_target = SOUND_BASE_VOLUMES["snd_phone_call"]
             if self.model.tablet_open:
                 phone_target *= 0.92
-            self.snd_phone_call.set_volume(max(0.10, min(1.0, phone_target)))
+            self.snd_phone_call.set_volume(self._mix_volume("phone_call", max(0.10, min(1.0, phone_target))))
 
         if self.snd_wait:
             wait_target = SOUND_BASE_VOLUMES["snd_wait"]
             if self._seal_playing:
                 wait_target *= 0.92
-            self.snd_wait.set_volume(max(0.08, min(1.0, wait_target)))
+            self.snd_wait.set_volume(self._mix_volume("reboot_loop", max(0.08, min(1.0, wait_target))))
 
     def _update_glitch(self) -> None:
         """Случайный визуальный глитч раз за ночь (~10% шанс)."""
@@ -1146,6 +1216,74 @@ class GamePresenter:
             self._phone_channel = None
 
         self._close_laptop()
+
+    def draw_overlays(self, surface: pygame.Surface) -> None:
+        self.audio_overlay.draw(surface)
+
+    def _start_laptop_boot(self) -> None:
+        if self.model.laptop_power_state != "OFF":
+            return
+        self.model.laptop_power_state = "BOOTING"
+        self.model.laptop_power_timer = 180
+        self.model.laptop_boot_stage = "boot_black"
+        self.model.laptop_start_menu = False
+        self.model.laptop_app = None
+        self._laptop_saved_app = None
+        self._laptop_saved_menu = False
+        self.model.ad_active = False
+        self.model.ad_image_key = None
+
+    def _start_laptop_shutdown(self) -> None:
+        if self.model.laptop_power_state != "ON":
+            return
+        self._sync_server_with_laptop_shutdown()
+        self.model.laptop_power_state = "SHUTTING_DOWN"
+        self.model.laptop_power_timer = 150
+        self.model.laptop_start_menu = False
+        self.model.laptop_app = None
+        self._laptop_saved_app = None
+        self._laptop_saved_menu = False
+        self.model.ad_active = False
+        self.model.ad_image_key = None
+        if self.snd_laptop_off:
+            self.snd_laptop_off.play()
+
+    def _sync_server_with_laptop_shutdown(self) -> None:
+        self.model.server_overload = False
+        self.model.server_overload_warn = 0
+        self.model.server_rebooting = False
+        self.model.server_reboot_timer = 0
+        self.model.hack_active = False
+        if self.model.server_state in ("ON", "TURNING_ON", "TURNING_OFF"):
+            self.model.server_state = "OFF"
+            self._transition_frames = 0
+            self.model.server_blink = None
+            if self.snd_work:
+                self.snd_work.stop()
+            if self.snd_off:
+                self.snd_off.play()
+
+    def _mix_volume(self, sound_id: str, base: float) -> float:
+        return effective_volume(self.settings_data, sound_id, base)
+
+    def _save_audio_settings(self) -> None:
+        save_settings(self.settings_data)
+
+    def _refresh_cached_sound_levels(self) -> None:
+        for attr, (sound_id, base_volume) in self._sound_meta.items():
+            snd = getattr(self, attr, None)
+            if snd is None or attr in {"snd_ambience", "snd_work", "snd_phone_call", "snd_wait"}:
+                continue
+            snd.set_volume(self._mix_volume(sound_id, base_volume))
+
+        for snd in self.__gadget_cache:
+            snd.set_volume(self._mix_volume("gadget_audio", 0.30))
+        for snd in self.__algem_talk_cache:
+            snd.set_volume(self._mix_volume("algem_talk", 0.82))
+        for snd in self.__vent_sounds_cache:
+            snd.set_volume(self._mix_volume("vent_presence", 0.78))
+        if self._ad_sound:
+            self._ad_sound.set_volume(self._mix_volume("ad_loop", CHANNEL_MASTERS["ad"]))
 
     # ──────────────────────────────────────────────────────────────────────
     # Утилиты

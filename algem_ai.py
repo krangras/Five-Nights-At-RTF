@@ -165,6 +165,28 @@ def astar_path(
     return None
 
 
+def dfs_path(
+    start: int,
+    goal: int,
+    graph: dict[int, list[int]],
+) -> list[int] | None:
+    """Return one physical patrol route found with depth-first search."""
+    stack: list[tuple[int, list[int]]] = [(start, [start])]
+    visited: set[int] = set()
+
+    while stack:
+        current, path = stack.pop()
+        if current in visited:
+            continue
+        if current == goal:
+            return path
+        visited.add(current)
+        for neighbor in reversed(graph.get(current, [])):
+            if neighbor not in visited:
+                stack.append((neighbor, path + [neighbor]))
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Главный класс ИИ
 # ---------------------------------------------------------------------------
@@ -191,11 +213,11 @@ class AlgemAI:
 
     # Конфиг скоростей для каждой ночи: (мин. интервал, макс. интервал) в тиках
     _NIGHT_SPEED: dict[int, tuple[int, int]] = {
-        1: (600, 900),    # 10-15 сек
-        2: (420, 720),    # 7-12 сек
-        3: (300, 540),    # 5-9 сек
-        4: (210, 420),    # 3.5-7 сек
-        5: (150, 300),    # 2.5-5 сек
+        1: (600, 900),    # Алгема нет
+        2: (630, 1080),   # 10.5-18 сек
+        3: (450, 810),    # 7.5-13.5 сек
+        4: (315, 630),    # 5.25-10.5 сек
+        5: (225, 450),    # 3.75-7.5 сек
     }
 
     # Детерминированные параметры баланса по ночам.
@@ -217,11 +239,11 @@ class AlgemAI:
 
     # Зоны патруля по ночам (какие узлы доступны для случайного блуждания)
     _PATROL_ZONES: dict[int, set[int]] = {
-        1: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
-        2: {1, 2, 3, 4, 8, 9, 10, 11},
-        3: {1, 2, 3, 4, 5, 7, 8, 9, 10, 11},
-        4: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
-        5: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+        1: {1, 2, 3, 4, 5, 6},
+        2: {1, 2, 3, 4, 5, 6},
+        3: {1, 2, 3, 4, 5, 6},
+        4: {1, 2, 3, 4, 5, 6},
+        5: {1, 2, 3, 4, 5, 6},
     }
 
     def __init__(
@@ -229,6 +251,7 @@ class AlgemAI:
         graph:      dict[int, list[int]],
         night:      int,
         start_node: int = 1,
+        patrol_graph: dict[int, list[int]] | None = None,
     ) -> None:
         """
         Args:
@@ -237,6 +260,7 @@ class AlgemAI:
             start_node : начальная позиция (по умолчанию — комната Алгема, узел 1).
         """
         self._graph:  dict[int, list[int]] = graph
+        self._patrol_graph: dict[int, list[int]] = patrol_graph or graph
         self._night:  int                  = night
 
         # ── Позиция ──────────────────────────────────────────────────────
@@ -279,6 +303,8 @@ class AlgemAI:
         # ── Вспомогательные ─────────────────────────────────────────────
         self.main_hall_sprite: int  = 0   # вариант спрайта в Главном коридоре
         self._camera_watch:    dict[int, int] = {}  # передаётся из GameModel
+        self._patrol_stack:    list[int] = [start_node]
+        self._patrol_visited:  set[int] = {start_node}
 
         # Предподсчёт BFS-эвристики до офиса (неизменна для базового графа)
         self._base_heuristic: dict[int, int] = self._precompute_heuristic(
@@ -289,7 +315,11 @@ class AlgemAI:
     # Публичный API — вызывается из GameModel
     # ──────────────────────────────────────────────────────────────────────
 
-    def update_graph(self, graph: dict[int, list[int]]) -> None:
+    def update_graph(
+        self,
+        graph: dict[int, list[int]],
+        patrol_graph: dict[int, list[int]] | None = None,
+    ) -> None:
         """
         Обновить граф движения (например, при поломке вентиляции).
 
@@ -297,6 +327,8 @@ class AlgemAI:
         текущего состояния вентов.
         """
         self._graph = graph
+        if patrol_graph is not None:
+            self._patrol_graph = patrol_graph
         # Эвристика пересчитывается только если граф изменился
         self._base_heuristic = self._precompute_heuristic(self._graph, self.OFFICE_NODE)
 
@@ -486,7 +518,9 @@ class AlgemAI:
         # Сервер выключен и шкала на нуле — Алгем отступает
         if not self._server_on and self.attention <= 0 and self.location != 1:
             # Отступаем на одну камеру назад (к предыдущей позиции)
-            neighbors = self._graph.get(self.location, [])
+            neighbors = self._patrol_graph.get(self.location, [])
+            if not neighbors:
+                neighbors = self._graph.get(self.location, [])
             if self.prev_location in neighbors and self.prev_location != self.OFFICE_NODE:
                 self._move_to(self.prev_location)
             elif neighbors:
@@ -494,10 +528,6 @@ class AlgemAI:
                 safe = [n for n in neighbors if n != self.OFFICE_NODE]
                 if safe:
                     self._move_to(safe[0])
-            elif not neighbors:
-                # Тупик (vent seal) — рероутим
-                target = self._reroute_from_trap()
-                self._move_to(target)
             self._idle_ticks_left = 60
             return False
 
@@ -577,8 +607,8 @@ class AlgemAI:
         )
 
         if path is None or len(path) < 2:
-            # Путь не найден — откатываемся в PATROL
-            self.state = AIState.PATROL
+            # A closed seal may temporarily cut the route. Keep ATTACK active:
+            # the next movement tick will run A* again against the new graph.
             return False
 
         next_node = path[1]
@@ -604,9 +634,9 @@ class AlgemAI:
 
         На последней камере (node 7) стоит на месте без приманки.
         """
-        neighbors = self._graph.get(self.location, [])
+        neighbors = self._patrol_graph.get(self.location, [])
         if not neighbors:
-            return self._reroute_from_trap()
+            return self.location
 
         # У последней камеры не идём в офис вслепую, но и не замираем на месте.
         if self.location == 5 and self._lure_node < 0:
@@ -616,7 +646,7 @@ class AlgemAI:
 
         # Аудио-приманка: идём к источнику звука
         if self._lure_node >= 0:
-            path = bfs_path(self.location, self._lure_node, self._graph)
+            path = dfs_path(self.location, self._lure_node, self._patrol_graph)
             if path and len(path) > 1:
                 candidate = path[1]
                 if candidate != self.OFFICE_NODE or self._lure_node == self.OFFICE_NODE:
@@ -627,7 +657,20 @@ class AlgemAI:
         if patrol_zone is not None and self.location in patrol_zone:
             neighbors = [n for n in neighbors if n in patrol_zone]
             if not neighbors:
-                neighbors = self._graph.get(self.location, [])
+                neighbors = self._patrol_graph.get(self.location, [])
+
+        # Online DFS: unseen branches first, then physical backtracking.
+        if not self._patrol_stack or self._patrol_stack[-1] != self.location:
+            self._patrol_stack = [self.location]
+            self._patrol_visited = {self.location}
+        unvisited = [n for n in neighbors if n not in self._patrol_visited]
+        if unvisited:
+            neighbors = unvisited
+        elif len(self._patrol_stack) > 1:
+            self._patrol_stack.pop()
+            return self._patrol_stack[-1]
+        else:
+            self._patrol_visited = {self.location}
 
         # Взвешенный случайный выбор
         weights: list[float] = []
@@ -654,38 +697,14 @@ class AlgemAI:
         for node, w in zip(neighbors, weights):
             accum += w
             if r <= accum:
+                self._patrol_visited.add(node)
+                self._patrol_stack.append(node)
                 return node
 
-        return neighbors[-1]   # fallback
-
-    # ------------------------------------------------------------------
-    # Рероутинг из тупика (vent seal)
-    # ------------------------------------------------------------------
-
-    # Варианты: {(night_threshold, target_node): weight}
-    # night <= threshold → safe, night > threshold → aggressive
-    _TRAP_SAFE: dict[int, list[tuple[int, float]]] = {
-        11: [(1, 1.0)],
-        8:  [(1, 1.0)],
-        10: [(4, 1.0)],
-        9:  [(10, 0.6), (7, 0.3), (5, 0.1)],
-    }
-    _TRAP_AGGRESSIVE: dict[int, list[tuple[int, float]]] = {
-        11: [(1, 1.0)],
-        8:  [(3, 0.7), (1, 0.3)],
-        10: [(4, 1.0)],
-        9:  [(5, 0.5), (7, 0.4), (10, 0.1)],
-    }
-
-    def _reroute_from_trap(self) -> int:
-        """Выбрать позицию для выхода из тупика после закрытия vent-seal'а."""
-        loc = self.location
-        table = self._TRAP_AGGRESSIVE if self._night >= 3 else self._TRAP_SAFE
-        options = table.get(loc)
-        if options is None:
-            return 1
-        targets, weights = zip(*options)
-        return random.choices(targets, weights=weights, k=1)[0]
+        node = neighbors[-1]
+        self._patrol_visited.add(node)
+        self._patrol_stack.append(node)
+        return node
 
     def _edge_weight(self, u: int, v: int) -> float:
         """
@@ -703,10 +722,15 @@ class AlgemAI:
 
     def _move_to(self, node: int) -> None:
         """Переместить Алгема и взвести анимационный триггер."""
+        active_graph = self._patrol_graph if self.state is AIState.PATROL else self._graph
+        if node not in active_graph.get(self.location, []):
+            return
         if node != self.location:
             self.prev_location = self.location
             self.location      = node
             self.trigger_timer = 30
+            if node in {8, 9, 10, 11}:
+                self._move_timer = max(self._move_timer, 420)
 
             # В Главном коридоре — случайный вариант спрайта
             if node == 1:
@@ -763,6 +787,10 @@ class AlgemAI:
         # Ускорение от hack_attraction
         hack_mult = 1.0 - self.hack_attraction * 0.5
         interval = max(60, int(interval * hack_mult))
+
+        # Closing a seal takes 300 ticks; vents always leave a reaction window.
+        if self.location in {8, 9, 10, 11}:
+            interval = max(interval, 420)
 
         return interval
 

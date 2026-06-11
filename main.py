@@ -119,6 +119,7 @@ def main():
     _snd_paths = [
         ("screamer", "sounds/screamer/screamer.mp3"),
         ("night_ends", "sounds/ui/night_ends.wav"),
+        ("server_not_hacked", "sounds/screamer/server_is_not_hacked.mp3"),
     ]
     for _key, _path in _snd_paths:
         try:
@@ -146,12 +147,13 @@ def main():
             pass
 
     menu_m, menu_v = MenuModel(), MenuView(screen)
-    menu_p = MenuPresenter(menu_m, menu_v)
+    menu_p = MenuPresenter(menu_m, menu_v, _settings)
 
     game_m, game_v, game_p = None, None, None
     load_start = 0
     lecture_sound = None
     game_over_tick = 0
+    hack_timeout_sound = None
     night_complete_tick = 0
     night_end_sound = None
     screamer = None
@@ -194,7 +196,7 @@ def main():
     def start_game(night=1):
         m = GameModel(night=night)
         v = GameView(game_surface)
-        p = GamePresenter(m, v)
+        p = GamePresenter(m, v, _settings)
         return m, v, p
 
     state = "MENU"
@@ -239,19 +241,31 @@ def main():
             game_p.update()
 
             game_v.draw(game_m)
+            game_p.draw_overlays(game_surface)
             _blit_or_scale(game_surface, screen)
             pygame.display.flip()
 
             if game_m.game_over:
                 pygame.mixer.stop()
                 save_progress(game_m.night)
-                screamer.reset()
-                try:
-                    _snd_cache["screamer"].play()
-                except (pygame.error, KeyError):
-                    pass
-                state = "SCREAMER"
-                game_over_tick = 0
+                if game_m.hour >= 6 and game_m.hack_progress < 1.0:
+                    game_over_tick = 0
+                    hack_timeout_sound = _snd_cache.get("server_not_hacked")
+                    if hack_timeout_sound is not None:
+                        try:
+                            hack_timeout_sound.set_volume(0.7)
+                            hack_timeout_sound.play()
+                        except pygame.error:
+                            pass
+                    state = "HACK_TIMEOUT"
+                else:
+                    screamer.reset()
+                    try:
+                        _snd_cache["screamer"].play()
+                    except (pygame.error, KeyError):
+                        pass
+                    state = "SCREAMER"
+                    game_over_tick = 0
                 continue
             elif game_m.night_complete:
                 save_progress(min(game_m.night + 1, 5))
@@ -325,6 +339,39 @@ def main():
             time_str = f"{display_minutes}:{display_seconds:02d}"
             time_text = font_small.render(time_str, True, (100, 100, 100))
             game_surface.blit(time_text, (640 - time_text.get_width() // 2, 360 + 30))
+
+            _blit_or_scale(game_surface, screen)
+            pygame.display.flip()
+            clock.tick(60)
+        elif state == "HACK_TIMEOUT":
+            for e in pygame.event.get():
+                if e.type == pygame.QUIT:
+                    pygame.mixer.stop()
+                    return
+                if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                    pygame.mixer.stop()
+                    hack_timeout_sound = None
+                    menu_m.saved_night = load_save()
+                    menu_m.continue_available = menu_m.saved_night > 1
+                    state = "MENU"
+
+            game_surface.fill((0, 0, 0))
+            font_big = _get_loading_font(42)
+            font_small = _get_loading_font(24)
+            game_over_tick += 1
+
+            msg = "You didn't hack the server in time"
+            msg_surf = font_big.render(msg, True, (210, 210, 210))
+            game_surface.blit(
+                msg_surf,
+                (640 - msg_surf.get_width() // 2, 320 - msg_surf.get_height() // 2),
+            )
+
+            hint_surf = font_small.render("Press ESC to return to menu", True, (110, 110, 110))
+            game_surface.blit(
+                hint_surf,
+                (640 - hint_surf.get_width() // 2, 395 - hint_surf.get_height() // 2),
+            )
 
             _blit_or_scale(game_surface, screen)
             pygame.display.flip()

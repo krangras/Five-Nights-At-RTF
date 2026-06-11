@@ -69,27 +69,42 @@ def find_nearest_vent_camera(
     return 8  # fallback
 
 
-# Базовый граф: {узел: [соседи]}
-# Узел 0 — офис (цель), узлы 1–7 — камеры.
+# Базовый граф атаки: учитывает реальные переходы по камерам и вентиляции.
 BASE_GRAPH: dict[int, list[int]] = {
-    0: [],             # OFFICE
-    1: [4],            # ALGEM'S ROOM — тупик
-    2: [6, 7, 9],      # CANTEEN → WEST HALL, COWORKING, LEFT VENT
-    3: [4, 6, 8],      # TOILETS → MAIN HALL, WEST HALL, UPPER VENT
-    4: [1, 3, 6, 9],   # MAIN HALL → ALGEM'S ROOM, TOILETS, WEST HALL, LEFT VENT
-    5: [7, 6, 0],      # SERVICE ROOM — последняя перед офисом
-    6: [4, 3, 2, 5],   # WEST HALL — хаб
-    7: [2, 5, 8],      # COWORKING → CANTEEN, SERVICE ROOM, UPPER VENT
-    8: [3, 7, 11],     # UPPER VENT — между TOILETS, COWORKING и RIGHT VENT
-    9: [2, 4, 10],     # LEFT VENT — между CANTEEN, MAIN HALL и LEFT VENT LOW
-    10: [9, 5],        # LEFT VENT LOW → LEFT VENT, SERVICE ROOM
-    11: [8, 5],        # RIGHT VENT → UPPER VENT, SERVICE ROOM
+    0: [],
+    1: [4, 3, 2, 11],
+    2: [1, 3, 8],
+    3: [1, 2, 4, 5],
+    4: [3, 2, 5, 10],
+    5: [3, 4, 6, 7],
+    6: [5],
+    7: [5, 10, 0],
+    8: [9, 11],
+    9: [8, 10],
+    10: [9, 7],
+    11: [8],
+}
+
+# Граф патруля: когда игрок тихий, Алгем физически ходит только по обычным камерам 1–6.
+PATROL_GRAPH: dict[int, list[int]] = {
+    0: [],
+    1: [2, 3, 4],
+    2: [1, 3],
+    3: [1, 2, 4, 5],
+    4: [1, 3, 5],
+    5: [3, 4, 6],
+    6: [5],
+    7: [],
+    8: [],
+    9: [],
+    10: [],
+    11: [],
 }
 
 # Вентиляционные короткие пути: {id: (из, в)}
 VENT_CONNECTIONS: dict[str, tuple[int, int]] = {
-    "VENT_A": (7, 3),  # COWORKING → TOILETS
-    "VENT_B": (2, 4),  # CANTEEN → MAIN HALL
+    "VENT_A": (2, 8),
+    "VENT_B": (4, 10),
 }
 
 # Точки блокировки вентов (SEAL) — {id: vent_camera_node}
@@ -193,6 +208,9 @@ class GameModel:
         self.laptop_start_menu: bool = False      # открыто ли меню Start
         self.laptop_app:    str | None = None     # запущенное приложение
         self.show_real_screen: bool = True        # показывать реальный экран на ноутбуке (F2)
+        self.laptop_power_state: str = "OFF"      # OFF | BOOTING | ON | SHUTTING_DOWN
+        self.laptop_power_timer: int = 0          # тики до конца boot/shutdown
+        self.laptop_boot_stage: str = "boot_black"   # boot_black | initializing | desktop
 
         # ── Реклама на ноутбуке ─────────────────────────────────────────
         self.ad_active:      bool = False         # показывается ли реклама
@@ -218,6 +236,7 @@ class GameModel:
             graph      = copy.deepcopy(BASE_GRAPH),
             night      = night,
             start_node = 1,
+            patrol_graph=copy.deepcopy(PATROL_GRAPH),
         )
         self.algem_in_office: bool = False   # вошёл, но не убил (планшет открыт)
         self.office_threat_timer: int = 0
@@ -556,7 +575,10 @@ class GameModel:
             self.server_state == "OFF"
             and not self.tablet_open
             and not self.tablet_animating
-            and not self.laptop_open
+            and (
+                not self.laptop_open
+                or self.laptop_power_state == "OFF"
+            )
             and not self.ad_active
             and not self.server_rebooting
         )
@@ -1065,6 +1087,12 @@ class GameModel:
 
     def _update_ad(self) -> None:
         """Случайный спавн рекламы на ноутбуке."""
+        if self.laptop_power_state != "ON" or not self.hack_active:
+            self.ad_active = False
+            self.ad_image_key = None
+            self.ad_timer = 0
+            self.ad_spawn_timer = max(self.ad_spawn_timer, random.randint(2400, 9600))
+            return
         if self.ad_active:
             self.ad_timer += 1
             return
@@ -1089,7 +1117,6 @@ class GameModel:
 
         for sid, vent_node in VENT_SEALS.items():
             if self.seals[sid] in (SealState.SEALING, SealState.CLOSED):
-                g[vent_node] = []
                 for other in list(g):
                     if other != vent_node:
                         g[other] = [n for n in g[other] if n != vent_node]

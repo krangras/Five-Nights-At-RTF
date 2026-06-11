@@ -1,10 +1,12 @@
 import sys
 import pygame
+from audio_mix import apply_music_volume, effective_volume, ensure_audio_settings
 
 class MenuPresenter:
-    def __init__(self, model, view):
+    def __init__(self, model, view, settings_data=None):
         self.model = model
         self.view = view
+        self.settings_data = ensure_audio_settings(settings_data)
         self._prev_hover = None
         self._blip_sound = None
         try:
@@ -25,6 +27,7 @@ class MenuPresenter:
                 return
         try:
             pygame.mixer.music.play(-1)
+            apply_music_volume(self.settings_data, "menu_music", 0.42)
         except pygame.error:
             pass
 
@@ -37,10 +40,12 @@ class MenuPresenter:
                 pass
         return self._blip_sound
 
-    def handle_events(self):
+    def handle_events(self, global_event_handler=None):
         self._ensure_music()
         if not pygame.mixer.music.get_busy():
             self._ensure_music()
+        else:
+            apply_music_volume(self.settings_data, "menu_music", 0.42)
 
         mouse_pos = pygame.mouse.get_pos()
         
@@ -60,11 +65,14 @@ class MenuPresenter:
         if self.model.hovered_button != self._prev_hover and self.model.hovered_button is not None:
             blip = self.blip_sound
             if blip:
+                blip.set_volume(effective_volume(self.settings_data, "menu_hover", 0.30))
                 blip.play()
         self._prev_hover = self.model.hovered_button
 
         # Обработка кликов
         for event in pygame.event.get():
+            if global_event_handler is not None and global_event_handler(event):
+                continue
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
@@ -85,7 +93,7 @@ class MenuPresenter:
                     
         return "MENU"
 
-    def handle_settings_events(self, is_fullscreen: bool):
+    def handle_settings_events(self, is_fullscreen: bool, global_event_handler=None):
         mouse_pos = pygame.mouse.get_pos()
         hovered = None
 
@@ -101,6 +109,8 @@ class MenuPresenter:
         self._prev_hover = hovered
 
         for event in pygame.event.get():
+            if global_event_handler is not None and global_event_handler(event):
+                continue
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()

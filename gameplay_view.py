@@ -135,10 +135,10 @@ class GameView:
 
         _CORNERS = np.float32(
             [
-                [420, 495],
-                [569, 475],
-                [592, 578],
-                [443, 608],
+                [417, 492],
+                [573, 472],
+                [596, 581],
+                [440, 611],
             ]
         )
         dst = _CORNERS * scale
@@ -680,6 +680,11 @@ class GameView:
             self, "_laptop_reboot_btn"
         ) and self._laptop_reboot_btn.collidepoint(mouse_pos)
 
+    def is_laptop_power_clicked(self, mouse_pos):
+        return hasattr(
+            self, "_laptop_power_btn"
+        ) and self._laptop_power_btn.collidepoint(mouse_pos)
+
     def _draw_hack_bar(self, model) -> None:
         bar_w, bar_h = 300, 20
         x = (self.screen_w - bar_w) // 2
@@ -843,6 +848,65 @@ class GameView:
         sw, sh = self.screen_w, self.screen_h
         mx, my = model.laptop_cursor
 
+        power_btn = pygame.Rect(sw - 112, sh - 78, 84, 34)
+        self._laptop_power_btn = power_btn
+        if model.laptop_power_state != "ON":
+            self.screen.fill((0, 0, 0))
+            vignette = pygame.Surface((sw, sh), pygame.SRCALPHA)
+            vignette.fill((0, 0, 0, 0))
+            pygame.draw.rect(vignette, (0, 0, 0, 28), (0, 0, sw, sh), 40)
+            self.screen.blit(vignette, (0, 0))
+
+            power_btn = pygame.Rect(sw // 2 - 23, int(sh * 0.73), 46, 22)
+            self._laptop_power_btn = power_btn
+            fill = (
+                (36, 98, 198)
+                if model.laptop_power_state == "OFF"
+                else (70, 96, 138)
+            )
+            pygame.draw.rect(self.screen, fill, power_btn, border_radius=4)
+            pygame.draw.rect(
+                self.screen,
+                (185, 210, 240),
+                power_btn,
+                1,
+                border_radius=4,
+            )
+            btn_txt = self._ctext(self._ui_font_sm, "ON", (255, 255, 255))
+            self.screen.blit(
+                btn_txt,
+                (
+                    power_btn.centerx - btn_txt.get_width() // 2,
+                    power_btn.centery - btn_txt.get_height() // 2,
+                ),
+            )
+
+            if model.laptop_power_state == "BOOTING":
+                lines = ["Windows XP", "", "Initializing system..."]
+                if model.laptop_boot_stage == "boot_black":
+                    lines = ["Windows XP"]
+            elif model.laptop_power_state == "SHUTTING_DOWN":
+                lines = ["Windows XP", "", "Windows is shutting down..."]
+            else:
+                lines = ["It is now safe to turn on your computer"]
+
+            total_h = len(lines) * 18
+            y = sh // 2 - total_h // 2 - 8
+            for line in lines:
+                if not line:
+                    y += 18
+                    continue
+                clr = (190, 205, 225) if "safe" in line.lower() else (215, 215, 215)
+                font = self._ui_font_sm if len(line) > 18 else self._ui_font
+                txt = self._ctext(font, line, clr)
+                self.screen.blit(txt, (sw // 2 - txt.get_width() // 2, y))
+                y += 18
+
+            self._laptop_icons = []
+            self._laptop_menu_items = []
+            self._laptop_start_rect = pygame.Rect(0, 0, 0, 0)
+            return
+
         # ── Фон — обои ─────────────────────────────────────────────
         self.screen.blit(self.laptop_wallpaper, (0, 0))
 
@@ -895,11 +959,8 @@ class GameView:
         )
 
         # ── Иконки на рабочем столе ──────────────────────────────────
-        app_name = model.night_app["name"]
         icon_defs = [
-            ("My Computer", 30, 30, "mycomputer"),
-            (app_name, 30, 130, "claude"),
-            ("Recycle Bin", 30, 240, "recycle"),
+            ("Claude Mythos", 30, 120, "claude"),
         ]
         self._laptop_icons = []
         icon_s = 48
@@ -961,9 +1022,7 @@ class GameView:
             )
 
             menu_items = [
-                (app_name, "claude"),
-                ("My Computer", "mycomputer"),
-                ("", None),
+                ("Claude Mythos", "claude"),
                 ("Shutdown", "shutdown"),
             ]
             self._laptop_menu_items = []
@@ -994,7 +1053,7 @@ class GameView:
                 self._laptop_menu_items.append((item_rect, item_key))
 
         # ── Claude Mythos — окно ─────────────────────────────────────
-        if model.laptop_app == "claude_mythos":
+        if model.laptop_power_state == "ON" and model.laptop_app == "claude_mythos":
             win_w, win_h = 620, 440
             win_x = sw // 2 - win_w // 2
             win_y = sh // 2 - win_h // 2 - 20
@@ -1551,94 +1610,6 @@ class GameView:
         # ── Зум на ноутбук ──────────────────────────────────────────
         if model.laptop_zoom >= 0.95:
             self._draw_laptop_screen(model)
-            return
-
-        if model.laptop_zoom > 0:
-            # Рисуем офис с затемнением
-            if (
-                model.ad_active
-                and model.ad_image_key in self._ad_office_images
-            ):
-                self.screen.blit(
-                    self._ad_office_images[model.ad_image_key], (-offset, 0)
-                )
-            elif model.server_rebooting:
-                self.screen.blit(self.bg_blinks.get("red", self.bg_off), (-offset, 0))
-            elif model.laptop_app is not None or model.hack_active:
-                self.screen.blit(self.bg_hack, (-offset, 0))
-            elif model.server_state == "OFF":
-                self.screen.blit(self.bg_off, (-offset, 0))
-            elif model.server_state == "TURNING_ON":
-                img = self.bg_blinks.get(model.server_blink, self.bg_off)
-                self.screen.blit(img, (-offset, 0))
-            elif model.server_state == "TURNING_OFF":
-                self.screen.blit(self.bg_off, (-offset, 0))
-            elif model.server_state == "ON":
-                self.screen.blit(
-                    self.bg_frames[self.current_idx], (-offset, 0)
-                )
-
-            # Затемнение пропорционально зуму
-            dark_alpha = int(model.laptop_zoom * 180)
-            dark = pygame.Surface(
-                (self.screen_w, self.screen_h), pygame.SRCALPHA
-            )
-            dark.fill((0, 0, 0, dark_alpha))
-            self.screen.blit(dark, (0, 0))
-
-            # Зуммированная область ноутбука
-            lx = int(self.laptop_hotspot.x * self.scale) - offset
-            ly = int(self.laptop_hotspot.y * self.scale)
-            lw = int(self.laptop_hotspot.w * self.scale)
-            lh = int(self.laptop_hotspot.h * self.scale)
-
-            zoom = 1.0 + model.laptop_zoom * 2.0
-            zw = int(lw * zoom)
-            zh = int(lh * zoom)
-            zx = self.screen_w // 2 - zw // 2
-            zy = self.screen_h // 2 - zh // 2
-
-            # Клипаем область ноутбука из офиса
-            src_rect = pygame.Rect(
-                max(0, lx),
-                max(0, ly),
-                min(lw, self.bg_off.get_width() - max(0, lx)),
-                min(lh, self.bg_off.get_height() - max(0, ly)),
-            )
-            if src_rect.w > 0 and src_rect.h > 0:
-                if (
-                    model.ad_active
-                    and model.ad_image_key in self._ad_office_images
-                ):
-                    src = self._ad_office_images[
-                        model.ad_image_key
-                    ].subsurface(src_rect)
-                elif model.laptop_app is not None or model.hack_active:
-                    src = self.bg_hack.subsurface(src_rect)
-                elif model.server_state == "OFF":
-                    src = self.bg_off.subsurface(src_rect)
-                elif model.server_state == "TURNING_ON":
-                    img = self.bg_blinks.get(model.server_blink, self.bg_off)
-                    src = img.subsurface(src_rect)
-                elif model.server_state == "TURNING_OFF":
-                    src = self.bg_off.subsurface(src_rect)
-                elif model.server_state == "ON":
-                    src = self.bg_frames[self.current_idx].subsurface(src_rect)
-                else:
-                    src = self.bg_off.subsurface(src_rect)
-                zoomed = pygame.transform.smoothscale(src, (zw, zh))
-                self.screen.blit(zoomed, (zx, zy))
-                pygame.draw.rect(
-                    self.screen, (100, 100, 100), (zx, zy, zw, zh), 2
-                )
-
-            # Глитч: мерцание — офис, картинка, офис, картинка...
-            if model._glitch_active and self._glitch_surfs:
-                if model._glitch_frame == 1:
-                    idx = (model._glitch_timer // 2) % len(self._glitch_surfs)
-                    self.screen.blit(self._glitch_surfs[idx], (0, 0))
-
-            pygame.display.flip()
             return
 
         if model.ad_active and model.ad_image_key in self._ad_office_images:

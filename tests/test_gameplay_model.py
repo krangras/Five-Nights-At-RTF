@@ -152,7 +152,7 @@ class TestVents:
         src, dst = VENT_CONNECTIONS["VENT_A"]
         assert dst in g[src]
 
-    def test_vent_removes_edge_after_reset(self):
+    def test_vent_reset_keeps_physical_route(self):
         m = GameModel(night=1)
         m.vents["VENT_A"] = VentState.ERROR
         m.start_vent_reset("VENT_A")
@@ -160,7 +160,7 @@ class TestVents:
             m.update()
         g = m._build_current_graph()
         src, dst = VENT_CONNECTIONS["VENT_A"]
-        assert dst not in g[src]
+        assert dst in g[src]
 
 # ══════════════════════════════════════════════════════════════════
 # 4. Server
