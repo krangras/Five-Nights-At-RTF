@@ -1087,7 +1087,12 @@ class GameModel:
 
     def _update_ad(self) -> None:
         """Случайный спавн рекламы на ноутбуке."""
-        if self.laptop_power_state != "ON" or not self.hack_active:
+        if (
+            self.laptop_power_state != "ON"
+            or not self.hack_active
+            or self.server_state != "ON"
+            or self.hack_progress >= 1.0
+        ):
             self.ad_active = False
             self.ad_image_key = None
             self.ad_timer = 0

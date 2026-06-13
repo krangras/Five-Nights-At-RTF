@@ -1,4 +1,6 @@
 import os
+import json
+import os
 import random
 
 import cv2
@@ -6,6 +8,15 @@ import numpy as np
 import pygame
 
 from gameplay_model import SEAL_CAMERA_MAP
+
+
+DEFAULT_LAPTOP_PROJECTION_CORNERS = [
+    [419, 494],
+    [567, 474],
+    [593, 576],
+    [445, 610],
+]
+LAPTOP_PROJECTION_CONFIG_PATH = "laptop_projection.json"
 
 
 def _normalize_brightness(surfaces_with_paths, target=15):
@@ -126,38 +137,17 @@ class GameView:
         self._ui_font_title = pygame.font.SysFont("tahoma", 14, bold=True)
         self.scale = scale
         self.server_hotspot = pygame.Rect(1151, 163, 131, 244)
-        self.laptop_hotspot = pygame.Rect(380, 400, 280, 220)
+        self.laptop_hotspot = pygame.Rect(350, 390, 340, 255)
         self.switch_timer = random.randint(60, 180)
         self.current_idx = 0
 
         # ── Offscreen для рендеринга ноутбука + перспектива ─────────
         self._laptop_offscreen = pygame.Surface((screen_w, screen_h))
 
-        _CORNERS = np.float32(
-            [
-                [417, 492],
-                [573, 472],
-                [596, 581],
-                [440, 611],
-            ]
-        )
-        dst = _CORNERS * scale
-        x_min, y_min = dst.min(axis=0).astype(int)
-        x_max, y_max = dst.max(axis=0).astype(int)
-        self._lp_out_w = int(x_max - x_min)
-        self._lp_out_h = int(y_max - y_min)
-        self._lp_blit_origin = (int(x_min), int(y_min))
-
-        src_c = np.float32(
-            [
-                [0, 0],
-                [self._lp_out_w, 0],
-                [self._lp_out_w, self._lp_out_h],
-                [0, self._lp_out_h],
-            ]
-        )
-        dst_c = (dst - np.array([x_min, y_min])).astype(np.float32)
-        self._lp_M = cv2.getPerspectiveTransform(src_c, dst_c)
+        self._projection_config_path = LAPTOP_PROJECTION_CONFIG_PATH
+        self._lp_base_corners = np.float32(DEFAULT_LAPTOP_PROJECTION_CORNERS)
+        self.load_laptop_projection()
+        self._rebuild_laptop_projection()
 
         # Кнопка TAB в офисе (изображение на столе)
         raw_tab = pygame.image.load(
@@ -297,6 +287,7 @@ class GameView:
             6: (88, 213),  # WEST HALL
             7: (32, 116),  # COWORKING
         }
+        self._office_me_pos = (54, 150)
 
         # Камеры — каждая грузится, масштабируется под высоту screen_rect, затемняется и тонируется
         from gameplay_model import CAMERAS
@@ -575,6 +566,159 @@ class GameView:
             except pygame.error:
                 pass
 
+    def load_laptop_projection(self) -> None:
+        """Load laptop projection corners from a JSON config if it exists."""
+        if not os.path.exists(self._projection_config_path):
+            return
+        try:
+            with open(self._projection_config_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            corners = data.get("corners")
+            if not isinstance(corners, list) or len(corners) != 4:
+                return
+            parsed = []
+            for pair in corners:
+                if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                    return
+                parsed.append([float(pair[0]), float(pair[1])])
+            self._lp_base_corners = np.float32(parsed)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
+
+    def save_laptop_projection(self) -> None:
+        """Save current laptop projection corners to disk."""
+        data = {
+            "corners": [
+                [int(round(x)), int(round(y))]
+                for x, y in self._lp_base_corners.tolist()
+            ]
+        }
+        with open(self._projection_config_path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=True, indent=2)
+
+    def reset_laptop_projection(self) -> None:
+        """Reset the laptop projection to the default tuned trapezoid."""
+        self._lp_base_corners = np.float32(DEFAULT_LAPTOP_PROJECTION_CORNERS)
+        self._rebuild_laptop_projection()
+
+    def _rebuild_laptop_projection(self) -> None:
+        """Recompute the perspective transform after any corner edit."""
+        dst = self._lp_base_corners * self.scale
+        x_min, y_min = dst.min(axis=0).astype(int)
+        x_max, y_max = dst.max(axis=0).astype(int)
+        self._lp_out_w = max(1, int(x_max - x_min))
+        self._lp_out_h = max(1, int(y_max - y_min))
+        self._lp_blit_origin = (int(x_min), int(y_min))
+
+        src_c = np.float32(
+            [
+                [0, 0],
+                [self._lp_out_w, 0],
+                [self._lp_out_w, self._lp_out_h],
+                [0, self._lp_out_h],
+            ]
+        )
+        dst_c = (dst - np.array([x_min, y_min])).astype(np.float32)
+        self._lp_M = cv2.getPerspectiveTransform(src_c, dst_c)
+
+    def get_laptop_projection_corners_screen(
+        self, offset: int = 0
+    ) -> list[tuple[int, int]]:
+        """Return projection corners in active screen coordinates."""
+        return [
+            (int(round(x * self.scale)) - offset, int(round(y * self.scale)))
+            for x, y in self._lp_base_corners.tolist()
+        ]
+
+    def get_laptop_projection_corner_hit(
+        self, mouse_pos: tuple[int, int], offset: int = 0, radius: int = 18
+    ) -> int | None:
+        """Return the nearest projection corner index under the mouse."""
+        mx, my = mouse_pos
+        best_idx = None
+        best_dist_sq = radius * radius
+        for idx, (cx, cy) in enumerate(
+            self.get_laptop_projection_corners_screen(offset)
+        ):
+            dx = mx - cx
+            dy = my - cy
+            dist_sq = dx * dx + dy * dy
+            if dist_sq <= best_dist_sq:
+                best_idx = idx
+                best_dist_sq = dist_sq
+        return best_idx
+
+    def move_laptop_projection_corner(
+        self, corner_idx: int, mouse_pos: tuple[int, int], offset: int = 0
+    ) -> None:
+        """Move one projection corner using current screen coordinates."""
+        x = (mouse_pos[0] + offset) / self.scale
+        y = mouse_pos[1] / self.scale
+        self._lp_base_corners[corner_idx] = [x, y]
+        self._rebuild_laptop_projection()
+
+    def nudge_laptop_projection_corner(
+        self, corner_idx: int, dx: float, dy: float
+    ) -> None:
+        """Fine-tune one projection corner in source-image pixels."""
+        self._lp_base_corners[corner_idx][0] += dx
+        self._lp_base_corners[corner_idx][1] += dy
+        self._rebuild_laptop_projection()
+
+    def draw_laptop_projection_editor(
+        self,
+        surface: pygame.Surface,
+        offset: int,
+        active_corner: int | None,
+        dragging: bool,
+    ) -> None:
+        """Draw an in-game overlay for live laptop projection editing."""
+        corners = self.get_laptop_projection_corners_screen(offset)
+        if len(corners) == 4:
+            pygame.draw.lines(surface, (70, 220, 255), True, corners, 2)
+
+        labels = ["TL", "TR", "BR", "BL"]
+        for idx, (cx, cy) in enumerate(corners):
+            color = (255, 210, 60) if idx == active_corner else (255, 110, 110)
+            radius = 7 if idx == active_corner else 5
+            pygame.draw.circle(surface, color, (cx, cy), radius)
+            pygame.draw.circle(surface, (20, 20, 20), (cx, cy), radius, 2)
+            tag = self._ctext(self._ui_font_bold, labels[idx], (255, 255, 255))
+            surface.blit(tag, (cx + 12, cy - 10))
+
+        panel = pygame.Rect(18, 18, 355, 178)
+        panel_bg = pygame.Surface((panel.w, panel.h), pygame.SRCALPHA)
+        panel_bg.fill((8, 12, 18, 210))
+        surface.blit(panel_bg, panel.topleft)
+        pygame.draw.rect(surface, (70, 220, 255), panel, 2, border_radius=8)
+
+        title = self._ctext(
+            self._ui_font_bold, "Laptop Projection Editor [F8]", (255, 255, 255)
+        )
+        surface.blit(title, (panel.x + 12, panel.y + 10))
+
+        status = "Drag corners with mouse"
+        if dragging:
+            status = "Dragging selected corner"
+        status_surf = self._ctext(self._ui_font_sm, status, (180, 220, 235))
+        surface.blit(status_surf, (panel.x + 12, panel.y + 34))
+
+        hint = self._ctext(
+            self._ui_font_sm,
+            "1-4 select, arrows move, Shift=faster, S save, R reset",
+            (160, 185, 200),
+        )
+        surface.blit(hint, (panel.x + 12, panel.y + 54))
+
+        for idx, (x, y) in enumerate(self._lp_base_corners.tolist()):
+            line_color = (255, 225, 130) if idx == active_corner else (210, 210, 210)
+            text = self._ctext(
+                self._ui_font_sm,
+                f"{idx + 1}. {labels[idx]}  x={int(round(x))}  y={int(round(y))}",
+                line_color,
+            )
+            surface.blit(text, (panel.x + 12, panel.y + 82 + idx * 20))
+
     def _build_status_button(
         self,
         lines: list[str],
@@ -846,7 +990,7 @@ class GameView:
 
     def _draw_laptop_screen(self, model) -> None:
         sw, sh = self.screen_w, self.screen_h
-        mx, my = model.laptop_cursor
+        mx, my = (-100, -100)
 
         power_btn = pygame.Rect(sw - 112, sh - 78, 84, 34)
         self._laptop_power_btn = power_btn
@@ -960,7 +1104,7 @@ class GameView:
 
         # ── Иконки на рабочем столе ──────────────────────────────────
         icon_defs = [
-            ("Claude Mythos", 30, 120, "claude"),
+            ("Claude Mythos", 30, 30, "claude"),
         ]
         self._laptop_icons = []
         icon_s = 48
@@ -1209,32 +1353,45 @@ class GameView:
             self._laptop_reboot_btn = rebtn
 
             # ── Прогресс-бар ──────────────────────────────────────────
-            bar_x = win_x + 15
-            bar_y = btn_server_y + 32
-            bar_w = win_w - 30
-            bar_h = 18
-            pygame.draw.rect(
-                self.screen, (220, 220, 220), (bar_x, bar_y, bar_w, bar_h)
-            )
-            pygame.draw.rect(
-                self.screen, (160, 160, 160), (bar_x, bar_y, bar_w, bar_h), 1
-            )
-            fill = int(bar_w * model.hack_progress)
-            if fill > 0:
-                clr = (40, 200, 40) if model.hack_active else (40, 140, 40)
+            term_x = win_x + 15
+            if model.server_state == "ON":
+                bar_x = win_x + 15
+                bar_y = btn_server_y + 32
+                bar_w = win_w - 30
+                bar_h = 18
                 pygame.draw.rect(
-                    self.screen,
-                    clr,
-                    (bar_x + 1, bar_y + 1, fill - 2, bar_h - 2),
+                    self.screen, (220, 220, 220), (bar_x, bar_y, bar_w, bar_h)
                 )
-            pct = self._ctext(self._ui_font_sm, f"{int(model.hack_progress * 100)}%", (30, 30, 30))
-            self.screen.blit(
-                pct, (bar_x + bar_w - pct.get_width() - 4, bar_y + 1)
-            )
+                pygame.draw.rect(
+                    self.screen, (160, 160, 160), (bar_x, bar_y, bar_w, bar_h), 1
+                )
+                fill = int(bar_w * model.hack_progress)
+                if fill > 0:
+                    clr = (40, 200, 40) if model.hack_active else (40, 140, 40)
+                    pygame.draw.rect(
+                        self.screen,
+                        clr,
+                        (bar_x + 1, bar_y + 1, fill - 2, bar_h - 2),
+                    )
+                pct = self._ctext(
+                    self._ui_font_sm,
+                    f"{int(model.hack_progress * 100)}%",
+                    (30, 30, 30),
+                )
+                self.screen.blit(
+                    pct, (bar_x + bar_w - pct.get_width() - 4, bar_y + 1)
+                )
+                term_y = bar_y + bar_h + 8
+            else:
+                offline_note = self._ctext(
+                    self._ui_font_sm,
+                    f"HACK PROGRESS SAVED: {int(model.hack_progress * 100)}%",
+                    (150, 150, 150),
+                )
+                self.screen.blit(offline_note, (win_x + 15, btn_server_y + 35))
+                term_y = btn_server_y + 58
 
             # ── Терминал — логи ───────────────────────────────────────
-            term_x = win_x + 15
-            term_y = bar_y + bar_h + 8
             term_w = win_w - 30
             term_h = win_h - (term_y - win_y) - 12
 
@@ -1457,6 +1614,17 @@ class GameView:
                 1,
             )
 
+        me_x, me_y = self._office_me_pos
+        dot_x = mx + me_x
+        dot_y = my + me_y
+        pygame.draw.circle(self.screen, (255, 255, 255), (dot_x, dot_y), 5)
+        pygame.draw.circle(self.screen, (120, 120, 120), (dot_x, dot_y), 5, 1)
+        me_label = self._ctext(self.font_small, "ME", (230, 230, 230))
+        self.screen.blit(
+            me_label,
+            (dot_x - me_label.get_width() // 2, dot_y + 10),
+        )
+
     def _draw_vent_map(self, model, mx, my):
         """Карта вентиляции: camera_map + duct-линии + камеры + seal-точки."""
         from gameplay_model import SealState
@@ -1608,7 +1776,7 @@ class GameView:
         offset = int((model.current_look + 1) / 2 * self.max_offset)
 
         # ── Зум на ноутбук ──────────────────────────────────────────
-        if model.laptop_zoom >= 0.95:
+        if model.laptop_open:
             self._draw_laptop_screen(model)
             return
 
@@ -1618,7 +1786,7 @@ class GameView:
             )
         elif model.server_rebooting:
             self.screen.blit(self.bg_blinks.get("red", self.bg_off), (-offset, 0))
-        elif model.laptop_app is not None or model.hack_active:
+        elif model.hack_active and model.server_state == "ON":
             self.screen.blit(self.bg_hack, (-offset, 0))
         elif model.server_state == "OFF":
             self.screen.blit(self.bg_off, (-offset, 0))
@@ -1634,14 +1802,14 @@ class GameView:
                 self.switch_timer = random.randint(60, 180)
             self.screen.blit(self.bg_frames[self.current_idx], (-offset, 0))
 
-        if model.hack_active or model.hack_progress > 0:
+        if model.server_state == "ON" and (model.hack_active or model.hack_progress > 0):
             self._draw_hack_bar(model)
 
         if model.server_state != "OFF":
             pass  # двери нет
 
         # ── Экран ноутбука на столе (перспективный рендеринг) ───────
-        if model.show_real_screen and model.laptop_zoom == 0:
+        if model.show_real_screen and not model.laptop_open:
             old_screen = self.screen
             self.screen = self._laptop_offscreen
             self._laptop_offscreen.fill((0, 0, 0))
@@ -1651,16 +1819,18 @@ class GameView:
             small = pygame.transform.smoothscale(
                 self._laptop_offscreen, (self._lp_out_w, self._lp_out_h)
             )
-            arr = pygame.surfarray.array3d(small).transpose(1, 0, 2)
-            bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-            warped = cv2.warpPerspective(
+            rgb_src = pygame.surfarray.array3d(small).transpose(1, 0, 2)
+            alpha_src = np.full((self._lp_out_h, self._lp_out_w), 255, dtype=np.uint8)
+
+            bgr = cv2.cvtColor(rgb_src, cv2.COLOR_RGB2BGR)
+            warped_rgb = cv2.warpPerspective(
                 bgr, self._lp_M, (self._lp_out_w, self._lp_out_h)
             )
-            rgb = cv2.cvtColor(warped, cv2.COLOR_BGR2RGB)
-
-            gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
-            _, mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
-            rgba = np.dstack([rgb, mask])
+            warped_alpha = cv2.warpPerspective(
+                alpha_src, self._lp_M, (self._lp_out_w, self._lp_out_h)
+            )
+            rgb = cv2.cvtColor(warped_rgb, cv2.COLOR_BGR2RGB)
+            rgba = np.dstack([rgb, warped_alpha])
             surf = pygame.image.frombuffer(
                 rgba.tobytes(), (self._lp_out_w, self._lp_out_h), "RGBA"
             )

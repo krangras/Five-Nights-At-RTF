@@ -3,7 +3,7 @@
   "audio_mix": {
     "master": 1.0,
     "sounds": {
-      "sounds/ambience/ambience.wav": 0.9666666666666667,
+      "sounds/ambience/ambience.wav": 2.0,
       "sounds/ambience/ambience1.mp3": 1.0166666666666666,
       "sounds/ambience/ambience10.mp3": 0.5166666666666667,
       "sounds/ambience/ambience2.mp3": 1.0,
@@ -38,7 +38,7 @@
       "sounds/threats/danger2b.wav": 0.86,
       "sounds/ui/blip3.mp3": 1.0,
       "sounds/ui/callnight1.mp3": 2.0,
-      "sounds/ui/gadget1.mp3": 0.92,
+      "sounds/ui/gadget1.mp3": 0.9666666666666667,
       "sounds/ui/gadget2.mp3": 1.0,
       "sounds/ui/gadget3.mp3": 1.0,
       "sounds/ui/gadget4.mp3": 1.0,
@@ -47,8 +47,8 @@
       "sounds/ui/wait.wav": 1.0,
       "sounds/vents/vent_close.wav": 1.0,
       "sounds/vents/vent_closer1.wav": 1.0166666666666666,
-      "sounds/vents/vent_louder2.wav": 1.0,
-      "sounds/vents/vent_quiet1.wav": 1.0,
+      "sounds/vents/vent_louder2.wav": 1.0333333333333334,
+      "sounds/vents/vent_quiet1.wav": 0.9833333333333333,
       "sounds/vents/vent_quiet2.wav": 1.0
     }
   }

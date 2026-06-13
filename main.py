@@ -356,21 +356,23 @@ def main():
                     state = "MENU"
 
             game_surface.fill((0, 0, 0))
-            font_big = _get_loading_font(42)
-            font_small = _get_loading_font(24)
+            font_big = _get_loading_font(58)
+            font_small = _get_loading_font(28)
             game_over_tick += 1
 
-            msg = "You didn't hack the server in time"
-            msg_surf = font_big.render(msg, True, (210, 210, 210))
+            pulse = (math.sin(game_over_tick * 0.04) + 1) / 2
+            red = int(150 + pulse * 55)
+            title_surf = font_big.render("GAME OVER", True, (red, 0, 0))
             game_surface.blit(
-                msg_surf,
-                (640 - msg_surf.get_width() // 2, 320 - msg_surf.get_height() // 2),
+                title_surf,
+                (640 - title_surf.get_width() // 2, 300 - title_surf.get_height() // 2),
             )
 
-            hint_surf = font_small.render("Press ESC to return to menu", True, (110, 110, 110))
+            msg = "You didn't hack the server in time"
+            msg_surf = font_small.render(msg, True, (105, 105, 105))
             game_surface.blit(
-                hint_surf,
-                (640 - hint_surf.get_width() // 2, 395 - hint_surf.get_height() // 2),
+                msg_surf,
+                (640 - msg_surf.get_width() // 2, 400 - msg_surf.get_height() // 2),
             )
 
             _blit_or_scale(game_surface, screen)

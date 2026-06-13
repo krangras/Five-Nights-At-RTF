@@ -24,7 +24,7 @@ import numpy as np
 import pygame
 
 from audio_mix import AudioCalibrationOverlay, effective_volume, ensure_audio_settings
-from algem_ai import bfs_path
+from algem_ai import AIState, bfs_path
 from gameplay_model import (
     BASE_GRAPH, CAMERA_COUNT, VENT_CAMERAS,
     GameModel, SealState, SEAL_CAMERA_MAP, VENT_SEALS,
@@ -120,6 +120,9 @@ class GamePresenter:
         self._laptop_saved_menu = False
 
         # ── Запоминание камеры при переключении vent/map ──────────────────
+        self._projection_overlay_active = False
+        self._projection_corner_idx = 0
+        self._projection_dragging = False
         self._last_regular_cam: int = 1
 
         # ── Загрузка всех звуков сразу ───────────────────────────────────
@@ -311,7 +314,13 @@ class GamePresenter:
         Вся обработка ввода сосредоточена здесь — Presenter «переводит»
         пользовательские действия в вызовы модели.
         """
+        if self.model.night_start_ticks > 0:
+            return
+
         if self.audio_overlay.handle_event(event):
+            return
+
+        if self._handle_projection_overlay_event(event):
             return
 
         # Блокировка ввода во время глитча
@@ -327,6 +336,9 @@ class GamePresenter:
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self._handle_click(event.pos)
+
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self._projection_dragging = False
 
         elif event.type == pygame.MOUSEMOTION:
             self._handle_mouse_motion(event.pos)
@@ -374,11 +386,86 @@ class GamePresenter:
                     ((self.model.camera_idx - 2) % CAMERA_COUNT) + 1
                 )
 
+    def _handle_projection_overlay_event(self, event: pygame.event.Event) -> bool:
+        """Handle the live laptop projection editor when it is active."""
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_F8:
+            self._projection_overlay_active = not self._projection_overlay_active
+            self._projection_dragging = False
+            if not self._projection_overlay_active:
+                self.view.save_laptop_projection()
+            return True
+
+        if not self._projection_overlay_active:
+            return False
+
+        if event.type == pygame.KEYDOWN:
+            mods = pygame.key.get_mods()
+            step = 5 if mods & pygame.KMOD_SHIFT else 1
+            key_to_corner = {
+                pygame.K_1: 0,
+                pygame.K_2: 1,
+                pygame.K_3: 2,
+                pygame.K_4: 3,
+            }
+            if event.key in key_to_corner:
+                self._projection_corner_idx = key_to_corner[event.key]
+                return True
+            if event.key == pygame.K_s:
+                self.view.save_laptop_projection()
+                return True
+            if event.key == pygame.K_r:
+                self.view.reset_laptop_projection()
+                self._projection_corner_idx = 0
+                self.view.save_laptop_projection()
+                return True
+
+            dx = 0
+            dy = 0
+            if event.key == pygame.K_LEFT:
+                dx = -step
+            elif event.key == pygame.K_RIGHT:
+                dx = step
+            elif event.key == pygame.K_UP:
+                dy = -step
+            elif event.key == pygame.K_DOWN:
+                dy = step
+            if dx or dy:
+                self.view.nudge_laptop_projection_corner(
+                    self._projection_corner_idx, dx, dy
+                )
+                return True
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.model.laptop_open:
+                return True
+            offset = int((self.model.current_look + 1) / 2 * self.view.max_offset)
+            hit = self.view.get_laptop_projection_corner_hit(event.pos, offset)
+            if hit is not None:
+                self._projection_corner_idx = hit
+                self._projection_dragging = True
+            return True
+
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            if self._projection_dragging:
+                self._projection_dragging = False
+                self.view.save_laptop_projection()
+            return True
+
+        if event.type == pygame.MOUSEMOTION:
+            if self._projection_dragging and not self.model.laptop_open:
+                offset = int((self.model.current_look + 1) / 2 * self.view.max_offset)
+                self.view.move_laptop_projection_corner(
+                    self._projection_corner_idx, event.pos, offset
+                )
+            return True
+
+        return False
+
     def _handle_click(self, pos: tuple[int, int]) -> None:
         """Обработчик кликов мышью (левая кнопка)."""
 
         # 0. Ноутбук открыт — обработка кликов внутри
-        if self.model.laptop_zoom >= 0.95:
+        if self.model.laptop_open:
             self._handle_laptop_click(pos)
             return
 
@@ -543,7 +630,7 @@ class GamePresenter:
         w = self.view.screen_w
         self.model.target_look = max(-1.0, min(1.0, (pos[0] / w) * 2 - 1))
 
-        if self.model.laptop_open and self.model.laptop_zoom >= 0.95:
+        if self.model.laptop_open:
             self.model.laptop_cursor = pos
 
         if self.model.tablet_animating or self.model.laptop_open:
@@ -938,11 +1025,8 @@ class GamePresenter:
                 self.snd_on.play()
 
     def _update_laptop(self) -> None:
-        """Плавное открытие ноутбука и состояния питания."""
-        target_zoom = 1.0 if self.model.laptop_open else 0.0
-        self.model.laptop_zoom += (target_zoom - self.model.laptop_zoom) * 0.35
-        if abs(self.model.laptop_zoom - target_zoom) < 0.01:
-            self.model.laptop_zoom = target_zoom
+        """Состояния питания ноутбука без промежуточного zoom-режима."""
+        self.model.laptop_zoom = 1.0 if self.model.laptop_open else 0.0
 
         if self.model.laptop_power_state == "BOOTING":
             if self.model.laptop_power_timer > 0:
@@ -1219,6 +1303,14 @@ class GamePresenter:
 
     def draw_overlays(self, surface: pygame.Surface) -> None:
         self.audio_overlay.draw(surface)
+        if self._projection_overlay_active:
+            offset = int((self.model.current_look + 1) / 2 * self.view.max_offset)
+            self.view.draw_laptop_projection_editor(
+                surface,
+                offset,
+                self._projection_corner_idx,
+                self._projection_dragging,
+            )
 
     def _start_laptop_boot(self) -> None:
         if self.model.laptop_power_state != "OFF":
@@ -1230,12 +1322,19 @@ class GamePresenter:
         self.model.laptop_app = None
         self._laptop_saved_app = None
         self._laptop_saved_menu = False
+        self._projection_overlay_active = False
+        self._projection_corner_idx = 0
+        self._projection_dragging = False
+        self._projection_overlay_active = False
+        self._projection_corner_idx = 0
+        self._projection_dragging = False
         self.model.ad_active = False
         self.model.ad_image_key = None
 
     def _start_laptop_shutdown(self) -> None:
         if self.model.laptop_power_state != "ON":
             return
+        self._trigger_laptop_shutdown_noise()
         self._sync_server_with_laptop_shutdown()
         self.model.laptop_power_state = "SHUTTING_DOWN"
         self.model.laptop_power_timer = 150
@@ -1247,6 +1346,33 @@ class GamePresenter:
         self.model.ad_image_key = None
         if self.snd_laptop_off:
             self.snd_laptop_off.play()
+
+    def _trigger_laptop_shutdown_noise(self) -> None:
+        """Laptop shutdown is extremely noticeable when Algem is already nearby."""
+        if self.model.night <= 1:
+            return
+
+        ai = self.model._ai
+        dist_to_office = self.model._bfs_dist(ai.location, 0)
+
+        ai._server_interest = min(ai.SERVER_INTEREST_CAP, ai._server_interest + 28.0)
+        ai.attention = min(100.0, ai.attention + 38.0)
+        ai.state = AIState.ATTACK
+        ai._idle_ticks_left = 0
+        ai.cancel_audio_lure()
+        ai.hack_attraction = max(ai.hack_attraction, 1.0)
+
+        if dist_to_office <= 2:
+            ai._server_interest = ai.SERVER_INTEREST_CAP
+            ai.attention = min(100.0, ai.attention + 42.0)
+            ai._move_timer = min(ai._move_timer, 18 if dist_to_office <= 1 else 30)
+
+        if ai.location == 7:
+            self.model.algem_in_office = True
+            current = self.model.office_threat_timer or 9999
+            self.model.office_threat_timer = min(current, 90)
+        elif ai.location == 10:
+            ai._move_timer = min(ai._move_timer, 10)
 
     def _sync_server_with_laptop_shutdown(self) -> None:
         self.model.server_overload = False
