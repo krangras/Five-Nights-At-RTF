@@ -227,7 +227,22 @@ def main():
             draw_loading(screen, pygame.time.get_ticks() - load_start)
             clock.tick(60)
             game_m, game_v, game_p = start_game(_continue_night)
-            screamer = ScreamerPlayer(screen_size=GAME_SIZE)
+            screamer_office = ScreamerPlayer(
+                frames_dir="assets/screamer/office_screamer",
+                screen_size=GAME_SIZE,
+                scream_frame=20,
+                red_start=52,
+                red_duration=0.5,
+            )
+            screamer_vent = ScreamerPlayer(
+                frames_dir="assets/screamer/vent_screamer",
+                screen_size=GAME_SIZE,
+                scream_frame=40,
+                red_start=62,
+                red_duration=0.5,
+                hold_last=0.8,
+            )
+            screamer = None
             _preload_night_transfer()
             state = "GAME"
         elif state == "GAME":
@@ -254,16 +269,13 @@ def main():
                     if hack_timeout_sound is not None:
                         try:
                             hack_timeout_sound.set_volume(0.7)
-                            hack_timeout_sound.play()
+                            hack_timeout_sound.play(-1)
                         except pygame.error:
                             pass
                     state = "HACK_TIMEOUT"
                 else:
+                    screamer = screamer_vent if game_m.kill_from_vent else screamer_office
                     screamer.reset()
-                    try:
-                        _snd_cache["screamer"].play()
-                    except (pygame.error, KeyError):
-                        pass
                     state = "SCREAMER"
                     game_over_tick = 0
                 continue
@@ -287,12 +299,21 @@ def main():
                 if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                     pygame.mixer.stop()
                     screamer = None
+                    screamer_office = None
+                    screamer_vent = None
                     lecture_sound = None
                     menu_m.saved_night = load_save()
-                    menu_m.continue_available = menu_m.saved_night > 1
+                    menu_m.continue_available = menu_m.saved_night > 0
                     state = "MENU"
 
             screamer.update(dt)
+            if screamer.scream_triggered:
+                try:
+                    _snd_cache["screamer"].play()
+                except (pygame.error, KeyError):
+                    pass
+                screamer.scream_triggered = False
+                screamer.scream_frame = 999999
             screamer.draw(game_surface)
             _blit_or_scale(game_surface, screen)
             pygame.display.flip()
@@ -317,7 +338,7 @@ def main():
                     pygame.mixer.stop()
                     lecture_sound = None
                     menu_m.saved_night = load_save()
-                    menu_m.continue_available = menu_m.saved_night > 1
+                    menu_m.continue_available = menu_m.saved_night > 0
                     state = "MENU"
 
             game_surface.fill((0, 0, 0))
@@ -352,7 +373,7 @@ def main():
                     pygame.mixer.stop()
                     hack_timeout_sound = None
                     menu_m.saved_night = load_save()
-                    menu_m.continue_available = menu_m.saved_night > 1
+                    menu_m.continue_available = menu_m.saved_night > 0
                     state = "MENU"
 
             game_surface.fill((0, 0, 0))
@@ -388,7 +409,7 @@ def main():
                     _nt_video_frames = []
                     pygame.mixer.stop()
                     menu_m.saved_night = load_save()
-                    menu_m.continue_available = menu_m.saved_night > 1
+                    menu_m.continue_available = menu_m.saved_night > 0
                     state = "MENU"
                     continue
 
@@ -411,7 +432,7 @@ def main():
             if video_done and sound_done:
                 pygame.mixer.stop()
                 menu_m.saved_night = load_save()
-                menu_m.continue_available = menu_m.saved_night > 1
+                menu_m.continue_available = menu_m.saved_night > 0
                 if completed_night >= 5:
                     final_scene_tick = 0
                     final_scene_phase = "FADE_IN"
@@ -487,7 +508,7 @@ def main():
                     final_scene_music_chan = None
                     final_scene_speech_chan = None
                     menu_m.saved_night = load_save()
-                    menu_m.continue_available = menu_m.saved_night > 1
+                    menu_m.continue_available = menu_m.saved_night > 0
                     state = "MENU"
 
             _blit_or_scale(game_surface, screen)
