@@ -286,6 +286,7 @@ class GameModel:
         # ── Флаги завершения ─────────────────────────────────────────────
         self.game_over:      bool = False
         self.night_complete: bool = False
+        self.kill_from_vent: bool = False
 
     # ──────────────────────────────────────────────────────────────────────
     # Свойства-делегаты к AlgemAI (View обращается к модели, не к AI)
@@ -559,6 +560,7 @@ class GameModel:
 
         if reached_office:
             self.algem_in_office = True
+            self.kill_from_vent = self._ai.prev_location in VENT_CAMERAS
             self.office_threat_timer = OFFICE_THREAT_TICKS_BY_NIGHT.get(
                 self.night,
                 OFFICE_THREAT_TICKS_BY_NIGHT[5],

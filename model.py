@@ -6,7 +6,7 @@ class MenuModel:
         self.hovered_button = None
 
         self.saved_night = load_save()
-        self.continue_available = self.saved_night > 1
+        self.continue_available = self.saved_night > 0
         
         # Состояния анимации Кошмарного Алгема
         self.algem_state = "NORMAL"

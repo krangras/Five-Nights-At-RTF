@@ -1,6 +1,6 @@
+import math
 import os
 import json
-import os
 import random
 
 import cv2
@@ -218,7 +218,7 @@ class GameView:
         self._mm_scale = 500 / mm_map_w  # uniform scale ≈ 0.84
         mm_w, mm_h = 500, int(mm_map_h * self._mm_scale)
         self._minimap_bg = pygame.transform.smoothscale(raw_map, (mm_w, mm_h))
-        self._minimap_bg.set_alpha(150)
+        self._minimap_bg.set_alpha(220)
         self._minimap_pos = (
             self.screen_rect.right - mm_w - 5,
             self.screen_rect.bottom - mm_h - 5,
@@ -287,7 +287,7 @@ class GameView:
             6: (88, 213),  # WEST HALL
             7: (32, 116),  # COWORKING
         }
-        self._office_me_pos = (54, 150)
+        self._office_me_pos = (245, 76)
 
         # Камеры — каждая грузится, масштабируется под высоту screen_rect, затемняется и тонируется
         from gameplay_model import CAMERAS
@@ -1617,8 +1617,10 @@ class GameView:
         me_x, me_y = self._office_me_pos
         dot_x = mx + me_x
         dot_y = my + me_y
-        pygame.draw.circle(self.screen, (255, 255, 255), (dot_x, dot_y), 5)
-        pygame.draw.circle(self.screen, (120, 120, 120), (dot_x, dot_y), 5, 1)
+        pulse = (math.sin(pygame.time.get_ticks() * 0.004) + 1) / 2
+        r = 4 + pulse * 2
+        pygame.draw.circle(self.screen, (255, 255, 255), (dot_x, dot_y), int(r))
+        pygame.draw.circle(self.screen, (120, 120, 120), (dot_x, dot_y), int(r), 1)
         me_label = self._ctext(self.font_small, "ME", (230, 230, 230))
         self.screen.blit(
             me_label,
@@ -1734,6 +1736,19 @@ class GameView:
             glow = pygame.Surface((gw, gh), pygame.SRCALPHA)
             pygame.draw.rect(glow, (*bar_color, 35), (5, 5, BAR_W, BAR_H))
             self.screen.blit(glow, (rx - 5, ry - 5), special_flags=pygame.BLEND_ADD)
+
+        me_x, me_y = self._office_me_pos
+        dot_x = mx + me_x
+        dot_y = my + me_y
+        pulse = (math.sin(pygame.time.get_ticks() * 0.004) + 1) / 2
+        r = 4 + pulse * 2
+        pygame.draw.circle(self.screen, (255, 255, 255), (dot_x, dot_y), int(r))
+        pygame.draw.circle(self.screen, (120, 120, 120), (dot_x, dot_y), int(r), 1)
+        me_label = self._ctext(self.font_small, "ME", (230, 230, 230))
+        self.screen.blit(
+            me_label,
+            (dot_x - me_label.get_width() // 2, dot_y + 10),
+        )
 
     def get_seal_clicked(self, mouse_pos):
         """Возвращает seal_id, если клик попал на seal-точку, иначе None."""
