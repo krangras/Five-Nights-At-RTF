@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo/logo_32_rgb.png" width="80" alt="logo"/>
+  <img src="assets/logo/logo.png" width="128" alt="logo"/>
 </p>
 
 <h1 align="center">Five Nights At RTF</h1>
