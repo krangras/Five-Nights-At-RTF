@@ -379,12 +379,23 @@ class GamePresenter:
 
         # Стрелки — переключение камер по кругу
         if self.model.tablet_open and not self.model.laptop_open:
-            if key == pygame.K_RIGHT:
-                self._switch_camera((self.model.camera_idx % CAMERA_COUNT) + 1)
-            elif key == pygame.K_LEFT:
-                self._switch_camera(
-                    ((self.model.camera_idx - 2) % CAMERA_COUNT) + 1
-                )
+            if key in (pygame.K_RIGHT, pygame.K_LEFT):
+                if self.model.camera_idx in VENT_CAMERAS:
+                    vent_sorted = sorted(VENT_CAMERAS)
+                    cur_pos = vent_sorted.index(self.model.camera_idx)
+                    if key == pygame.K_RIGHT:
+                        new_pos = (cur_pos + 1) % len(vent_sorted)
+                    else:
+                        new_pos = (cur_pos - 1) % len(vent_sorted)
+                    self._switch_camera(vent_sorted[new_pos])
+                else:
+                    regular_count = CAMERA_COUNT - len(VENT_CAMERAS)
+                    if key == pygame.K_RIGHT:
+                        self._switch_camera((self.model.camera_idx % regular_count) + 1)
+                    else:
+                        self._switch_camera(
+                            ((self.model.camera_idx - 2) % regular_count) + 1
+                        )
 
     def _handle_projection_overlay_event(self, event: pygame.event.Event) -> bool:
         """Handle the live laptop projection editor when it is active."""

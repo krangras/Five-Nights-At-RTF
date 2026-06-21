@@ -1,5 +1,5 @@
 {
-  "fullscreen": false,
+  "fullscreen": true,
   "audio_mix": {
     "master": 1.0,
     "sounds": {
@@ -31,8 +31,6 @@
       "sounds/menu/Faulty_Ventilation.mp3": 0.4,
       "sounds/screamer/screamer.mp3": 0.25,
       "sounds/screamer/server_is_not_hacked.mp3": 1.0166666666666666,
-      "sounds/screamer/server_is_not_hacked.wav": 1.0,
-      "sounds/screamer/server_is_not_hacked_v2.mp3": 1.0,
       "sounds/server/server_is_working.mp3": 1.0,
       "sounds/server/server_turning_off.mp3": 1.0,
       "sounds/server/server_turning_on.mp3": 1.0,

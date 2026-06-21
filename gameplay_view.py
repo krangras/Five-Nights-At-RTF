@@ -477,7 +477,7 @@ class GameView:
             ):
                 img = pygame.image.load(f"assets/cctv/{fname}").convert()
                 s = pygame.transform.smoothscale(img, (screen_w, screen_h))
-                s.set_alpha(20)
+                s.set_alpha(35)
                 self._noise_frames.append(s)
         self._noise_idx = 0
         self._noise_timer = 0
@@ -1497,7 +1497,7 @@ class GameView:
         self._noise_timer -= 1
         if self._noise_timer <= 0:
             self._noise_idx = (self._noise_idx + 1) % len(self._noise_frames)
-            self._noise_timer = 2
+            self._noise_timer = 3
         self.screen.blit(self._noise_frames[self._noise_idx], (0, 0))
 
         # Всплеск помех на камере, где был и где сейчас Алгем
