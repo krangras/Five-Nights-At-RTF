@@ -13,7 +13,7 @@ Use the on-screen buttons to:
 
 This lets you verify by hand:
     - distance-based vent loudness
-    - crawl sound disappearing on direct vent view
+    - direct vent view mutes crawl loop because vent cameras are static
     - crawl sound only while Algem is moving
     - one-shot hit when a sealed vent blocks Algem
 """
@@ -34,7 +34,7 @@ from gameplay_view import GameView
 
 
 SCREEN_SIZE = (1280, 720)
-PANEL_BG = (0, 0, 0, 164)
+PANEL_BG = (0, 0, 0, 176)
 PANEL_BORDER = (180, 180, 180, 110)
 TEXT_MAIN = (236, 236, 236)
 TEXT_MUTED = (180, 180, 180)
@@ -136,7 +136,7 @@ def _make_buttons(
     buttons: list[Button] = []
 
     left_x = 20
-    top_y = 238
+    top_y = 254
     col_gap = 8
     row_gap = 8
     w = 94
@@ -241,6 +241,20 @@ def _draw_button(surface: pygame.Surface, font: pygame.font.Font, button: Button
     )
 
 
+def _safe_float_call(default: float, func, *args, **kwargs) -> float:
+    try:
+        return float(func(*args, **kwargs))
+    except Exception:
+        return default
+
+
+def _safe_int_call(default: int, func, *args, **kwargs) -> int:
+    try:
+        return int(func(*args, **kwargs))
+    except Exception:
+        return default
+
+
 def _draw_overlay(
     screen: pygame.Surface,
     title_font: pygame.font.Font,
@@ -255,13 +269,72 @@ def _draw_overlay(
     sandbox_camera: int,
     sandbox_moving: bool,
 ) -> None:
-    panel = pygame.Surface((620, 520), pygame.SRCALPHA)
+    panel = pygame.Surface((760, 570), pygame.SRCALPHA)
     panel.fill(PANEL_BG)
     pygame.draw.rect(panel, PANEL_BORDER, panel.get_rect(), 1)
     screen.blit(panel, (18, 16))
 
+    listener_node = _safe_int_call(
+        sandbox_camera,
+        presenter._listener_audio_node,
+        camera_idx=sandbox_camera,
+        tablet_open=model.tablet_open,
+        tablet_animating=model.tablet_animating,
+    )
+    talk_bucket = _safe_int_call(
+        4,
+        presenter._camera_audio_distance,
+        listener_node,
+        sandbox_algem_node,
+    )
+    talk_weight = _safe_float_call(
+        9999.0,
+        presenter._audio_weighted_distance,
+        listener_node,
+        sandbox_algem_node,
+    )
+    talk_target = _safe_float_call(
+        0.0,
+        presenter._current_audio_volume,
+        sandbox_algem_node,
+        "algem_talk",
+    )
+
+    vent_bucket = presenter._vent_listen_distance(
+        algem_node=sandbox_algem_node,
+        camera_idx=sandbox_camera,
+        last_regular_cam=getattr(presenter, "_last_regular_cam", sandbox_camera),
+        tablet_open=model.tablet_open,
+        tablet_animating=model.tablet_animating,
+    )
+    vent_weight = _safe_float_call(
+        9999.0,
+        presenter._vent_listen_weighted_distance,
+        algem_node=sandbox_algem_node,
+        camera_idx=sandbox_camera,
+        last_regular_cam=getattr(presenter, "_last_regular_cam", sandbox_camera),
+        tablet_open=model.tablet_open,
+        tablet_animating=model.tablet_animating,
+    )
+    vent_target = _safe_float_call(
+        0.0,
+        presenter._vent_listen_volume,
+        algem_node=sandbox_algem_node,
+        camera_idx=sandbox_camera,
+        last_regular_cam=getattr(presenter, "_last_regular_cam", sandbox_camera),
+        tablet_open=model.tablet_open,
+        tablet_animating=model.tablet_animating,
+    )
+    seal_gain = _safe_float_call(
+        1.0,
+        presenter._source_seal_audio_gain,
+        sandbox_algem_node,
+    )
+
     vent_busy = presenter._vent_sound_channel.get_busy()
-    vent_volume = presenter._vent_sound_channel.get_volume()
+    vent_volume = presenter._vent_sound_channel.get_volume() if vent_busy else 0.0
+    talk_busy = presenter._algem_talk_channel.get_busy()
+    talk_volume = presenter._algem_talk_channel.get_volume() if talk_busy else 0.0
     block_signature = presenter._vent_block_signature
 
     _draw_text(screen, title_font, "VENT AUDIO SANDBOX", (28, 24), TEXT_MAIN)
@@ -273,11 +346,29 @@ def _draw_overlay(
         TEXT_ACCENT,
     )
 
+    direct_vent_view = (
+        sandbox_algem_node in {8, 9, 10, 11}
+        and sandbox_camera == sandbox_algem_node
+        and model.tablet_open
+        and not model.tablet_animating
+        and not view.vent_map_mode
+    )
+    if sandbox_algem_node not in {8, 9, 10, 11}:
+        vent_note = "crawl N/A: Algem is not in a vent"
+    elif direct_vent_view:
+        vent_note = "direct vent view: crawl muted"
+    elif not sandbox_moving:
+        vent_note = "crawl idle: Algem is not moving"
+    else:
+        vent_note = "distance-based crawl"
+
     lines = [
         f"Viewed camera: {sandbox_camera:02d}  |  {camera_names.get(sandbox_camera, '?')}",
         f"Algem position: {sandbox_algem_node:02d}  |  {camera_names.get(sandbox_algem_node, '?')}",
-        f"Moving state: {'MOVING' if sandbox_moving else 'STILL'}    Vent map: {'ON' if view.vent_map_mode else 'OFF'}",
-        f"Vent loop: {'ON' if vent_busy else 'OFF'}    Volume: {vent_volume:.2f}",
+        f"Listener node: {listener_node:02d}    Moving: {'ON' if sandbox_moving else 'OFF'}    Vent map: {'ON' if view.vent_map_mode else 'OFF'}",
+        f"TALK target: {talk_target:.2f}    channel: {'ON' if talk_busy else 'OFF'} / {talk_volume:.2f}    bucket: {talk_bucket}    weight: {talk_weight:.2f}",
+        f"VENT target: {vent_target:.2f}    channel: {'ON' if vent_busy else 'OFF'} / {vent_volume:.2f}    bucket: {vent_bucket}    weight: {vent_weight:.2f}",
+        f"VENT note: {vent_note}    seal gain: {seal_gain:.2f}",
         f"Block signature: {block_signature}",
         f"Seal progress: current={model.currently_sealing_id}",
     ]
@@ -287,15 +378,15 @@ def _draw_overlay(
         _draw_text(screen, font, line, (28, y), TEXT_MAIN)
         y += 24
 
-    _draw_text(screen, small_font, "View camera", (28, 210), TEXT_MUTED)
-    _draw_text(screen, small_font, "Teleport Algem", (28, 332), TEXT_MUTED)
-    _draw_text(screen, small_font, "Utility / seals", (430, 210), TEXT_MUTED)
+    _draw_text(screen, small_font, "View camera", (28, 226), TEXT_MUTED)
+    _draw_text(screen, small_font, "Teleport Algem", (28, 348), TEXT_MUTED)
+    _draw_text(screen, small_font, "Utility / seals", (430, 226), TEXT_MUTED)
 
     for button in buttons:
         _draw_button(screen, small_font, button)
 
-    controls = "Mouse: click buttons  |  ESC: quit  |  R: reset seals  |  M: moving on/off  |  V: vent map"
-    _draw_text(screen, small_font, controls, (28, 500), TEXT_MUTED)
+    controls = "Mouse: click buttons  |  ESC: quit  |  R: reset seals  |  M: moving  |  V: vent map  |  T: force talk"
+    _draw_text(screen, small_font, controls, (28, 544), TEXT_MUTED)
 
 
 def _handle_button(
@@ -410,6 +501,10 @@ def main() -> None:
                     sandbox_state["moving"] = not bool(sandbox_state["moving"])
                 elif event.key == pygame.K_v:
                     view.vent_map_mode = not view.vent_map_mode
+                elif event.key == pygame.K_t:
+                    presenter._algem_talk_timer = 0
+                    if presenter._algem_talk_channel.get_busy():
+                        presenter._algem_talk_channel.stop()
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 for button in buttons:
                     if button.rect.collidepoint(event.pos):

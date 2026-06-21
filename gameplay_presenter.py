@@ -17,7 +17,6 @@ gameplay_presenter.py — Presenter (P в паттерне MVP).
 
 from __future__ import annotations
 
-import math
 import random
 from typing import Any
 
@@ -63,66 +62,153 @@ def _phone_call_sound_path(night: int) -> str:
     return f"sounds/ui/callnight{night_idx}.mp3"
 
 TALK_DIST_PARAMS: dict[int, tuple[int, float]] = {
-    0: (0, 0.88),
-    1: (5, 0.62),
-    2: (13, 0.40),
-    3: (24, 0.24),
-    4: (36, 0.13),
+    0: (0, 1.00),
+    1: (5, 0.72),
+    2: (13, 0.46),
+    3: (24, 0.27),
+    4: (36, 0.14),
 }
 
-# Физические координаты камер для расчёта взвешенных расстояний.
-_NODE_POSITIONS: dict[int, tuple[float, float]] = {
-    0: (245.0, 76.0),   # office
-    1: (447.0, 303.0),
-    2: (331.0, 120.0),
-    3: (270.0, 279.0),
-    4: (207.0, 334.0),
-    5: (148.0, 65.0),
-    6: (88.0, 213.0),
-    7: (32.0, 116.0),
-    8: (430.0, 238.0),  # lower right vent
-    9: (344.0, 17.0),   # upper right vent
-    10: (7.0, 56.0),    # upper left vent
-    11: (7.0, 288.0),   # lower left vent
+AUDIO_MAX_BUCKET = 4
+AUDIO_DIRECT_GAIN = 1.00
+AUDIO_MIN_GAIN = 0.10
+AUDIO_OFFICE_FLOOR = 0.16
+AUDIO_VENT_MAP_GAIN = 0.34
+AUDIO_SEALING_SOURCE_GAIN = 0.62
+AUDIO_CLOSED_SOURCE_GAIN = 0.48
+AUDIO_UNREACHABLE_DISTANCE = 9999.0
+
+AUDIO_DISTANCE_VOLUME_CURVE: tuple[tuple[float, float], ...] = (
+    (0.00, 1.00),
+    (0.70, 0.92),
+    (1.20, 0.78),
+    (1.85, 0.60),
+    (2.60, 0.42),
+    (3.50, 0.26),
+    (4.60, 0.14),
+    (6.20, 0.09),
+)
+
+AUDIO_BUCKET_THRESHOLDS: tuple[float, float, float, float] = (
+    0.05,
+    1.25,
+    2.35,
+    3.45,
+)
+
+AUDIO_EDGE_WEIGHTS: dict[tuple[int, int], float] = {
+    (0, 7): 0.80,
+    (0, 9): 1.25,
+    (0, 10): 2.40,
+    (1, 2): 2.55,
+    (1, 3): 1.35,
+    (1, 4): 1.15,
+    (1, 8): 1.35,
+    (2, 3): 1.40,
+    (2, 4): 2.35,
+    (2, 8): 1.25,
+    (2, 9): 1.45,
+    (3, 4): 0.75,
+    (3, 5): 1.55,
+    (3, 8): 0.90,
+    (4, 5): 1.25,
+    (4, 11): 1.70,
+    (5, 6): 1.05,
+    (5, 7): 1.35,
+    (5, 10): 1.45,
+    (5, 11): 1.10,
+    (6, 10): 0.85,
+    (6, 11): 1.75,
+    (7, 9): 1.65,
+    (7, 10): 1.65,
+    (8, 9): 2.10,
+    (8, 11): 4.05,
+    (9, 10): 3.80,
+    (10, 11): 3.10,
 }
 
-# Взвешенные расстояния (Dijkstra) между всеми парами камер.
-# Вес ребра = Евклидово расстояние между соседями → уникальные float-значения.
-def _precompute_weighted_distances() -> dict[tuple[int, int], float]:
+def _audio_edge_key(node: int, neighbor: int) -> tuple[int, int]:
+    return (node, neighbor) if node < neighbor else (neighbor, node)
+
+
+def _build_audio_graph() -> dict[int, list[int]]:
+    graph: dict[int, set[int]] = {node: set() for node in BASE_GRAPH}
+    for node_a, node_b in AUDIO_EDGE_WEIGHTS:
+        graph.setdefault(node_a, set()).add(node_b)
+        graph.setdefault(node_b, set()).add(node_a)
+    return {node: sorted(neighbors) for node, neighbors in graph.items()}
+
+
+BASE_AUDIO_GRAPH: dict[int, list[int]] = _build_audio_graph()
+
+
+def _edge_audio_weight(node: int, neighbor: int) -> float:
+    return AUDIO_EDGE_WEIGHTS.get(_audio_edge_key(node, neighbor), 6.40)
+
+
+def _weighted_audio_distance(
+    start: int,
+    goal: int,
+    graph: dict[int, list[int]],
+) -> float:
     import heapq
-    from gameplay_model import BASE_GRAPH
+
+    if start == goal:
+        return 0.0
+
+    dist_map: dict[int, float] = {start: 0.0}
+    heap = [(0.0, start)]
+    while heap:
+        dist, node = heapq.heappop(heap)
+        if node == goal:
+            return dist
+        if dist > dist_map.get(node, float("inf")):
+            continue
+        for neighbor in graph.get(node, []):
+            new_dist = dist + _edge_audio_weight(node, neighbor)
+            if new_dist < dist_map.get(neighbor, float("inf")):
+                dist_map[neighbor] = new_dist
+                heapq.heappush(heap, (new_dist, neighbor))
+    return AUDIO_UNREACHABLE_DISTANCE
+
+
+def _precompute_weighted_distances() -> dict[tuple[int, int], float]:
     result: dict[tuple[int, int], float] = {}
-    for start in BASE_GRAPH:
-        dist_map: dict[int, float] = {start: 0.0}
-        heap = [(0.0, start)]
-        while heap:
-            d, node = heapq.heappop(heap)
-            if d > dist_map.get(node, float("inf")):
-                continue
-            for neighbor in BASE_GRAPH.get(node, []):
-                pos_a = _NODE_POSITIONS.get(node)
-                pos_b = _NODE_POSITIONS.get(neighbor)
-                if pos_a and pos_b:
-                    w = math.dist(pos_a, pos_b)
-                else:
-                    w = 100.0
-                nd = d + w
-                if nd < dist_map.get(neighbor, float("inf")):
-                    dist_map[neighbor] = nd
-                    heapq.heappush(heap, (nd, neighbor))
-        for end, d in dist_map.items():
-            result[(start, end)] = d
+    for start in BASE_AUDIO_GRAPH:
+        for end in BASE_AUDIO_GRAPH:
+            result[(start, end)] = _weighted_audio_distance(start, end, BASE_AUDIO_GRAPH)
     return result
+
 
 WEIGHTED_DISTANCES: dict[tuple[int, int], float] = _precompute_weighted_distances()
 
-# Максимальное расстояние для нормализации → громкость по экспоненте.
-_MAX_DIST: float = max(WEIGHTED_DISTANCES.values()) if WEIGHTED_DISTANCES else 1.0
 
 def _volume_from_distance(dist: float) -> float:
-    """Непрерывная кривая громкости: 0.70 на расстоянии 0 → 0.10 на max."""
-    t = min(dist / _MAX_DIST, 1.0)
-    return 0.70 * (1.0 - t) + 0.10 * t
+    if dist <= 0.0:
+        return AUDIO_DIRECT_GAIN
+    if dist >= AUDIO_UNREACHABLE_DISTANCE:
+        return AUDIO_MIN_GAIN
+
+    points = AUDIO_DISTANCE_VOLUME_CURVE
+    if dist <= points[0][0]:
+        return points[0][1]
+    for (left_dist, left_vol), (right_dist, right_vol) in zip(points, points[1:]):
+        if dist <= right_dist:
+            t = (dist - left_dist) / max(0.001, right_dist - left_dist)
+            return left_vol + (right_vol - left_vol) * t
+    return max(AUDIO_MIN_GAIN, points[-1][1])
+
+
+def _bucket_from_weighted_distance(dist: float) -> int:
+    if dist <= AUDIO_BUCKET_THRESHOLDS[0]:
+        return 0
+    if dist <= AUDIO_BUCKET_THRESHOLDS[1]:
+        return 1
+    if dist <= AUDIO_BUCKET_THRESHOLDS[2]:
+        return 2
+    if dist <= AUDIO_BUCKET_THRESHOLDS[3]:
+        return 3
+    return AUDIO_MAX_BUCKET
 
 CHANNEL_MASTERS: dict[str, float] = {
     "algem_talk": 0.82,
@@ -848,9 +934,8 @@ class GamePresenter:
         self._algem_talk_timer -= 1
 
         if self._algem_talk_channel.get_busy():
-            dist = self._current_audio_distance(self.model.algem_location)
             self._algem_talk_channel.set_volume(
-                self._distance_volume(self._dist_params, dist, "algem_talk")
+                self._current_audio_volume(self.model.algem_location, "algem_talk")
             )
             return
 
@@ -860,42 +945,49 @@ class GamePresenter:
         if not self._algem_talk_sounds:
             return
 
-        dist = self._current_audio_distance(self.model.algem_location)
-        variants = self._talk_variants.get(dist, self._talk_variants[4])
+        bucket = self._current_audio_distance(self.model.algem_location)
+        variants = self._talk_variants.get(bucket, self._talk_variants[AUDIO_MAX_BUCKET])
         self._algem_talk_channel.set_volume(
-            self._distance_volume(self._dist_params, dist, "algem_talk")
+            self._current_audio_volume(self.model.algem_location, "algem_talk")
         )
         self._algem_talk_channel.play(random.choice(variants))
         self._algem_talk_timer = random.randint(3600, 5400)
 
     def _update_vent_sounds(self) -> None:
-        """Звуки вентиляции, привязанные к последней обычной камере игрока."""
+        """Distance-based crawl sound for Algem inside vents.
+
+        Важное разделение:
+        - голос/реплики Алгема на прямой камере звучат максимально громко;
+        - loop-звук ползания по вентиляции на прямой vent-камере глушится.
+
+        Причина: vent-камеры сейчас статичные картинки без crawl-анимации.
+        Если игрок уже смотрит прямо на vent-камеру с Алгемом, отдельный
+        loop ползания выглядел бы как звук без видимого движения.
+        """
         loc = self.model.algem_location
         in_vent = loc in VENT_CAMERAS
-        direct_vent_view = (
-            self.model.tablet_open
-            and not self.model.tablet_animating
-            and self.model.camera_idx == loc
-        )
         moving_in_vent = in_vent and self.model.algem_trigger > 0
+        direct_vent_view = self._is_direct_vent_camera_view(loc)
+
         if not in_vent or not moving_in_vent or direct_vent_view:
             if self._vent_sound_channel.get_busy():
                 self._vent_sound_channel.stop()
             self._vent_sound_timer = 0
             return
 
-        dist = self._vent_listen_distance(
+        volume = self._vent_listen_volume(
             algem_node=self.model.algem_location,
             camera_idx=self.model.camera_idx,
             last_regular_cam=self._last_regular_cam,
             tablet_open=self.model.tablet_open,
             tablet_animating=self.model.tablet_animating,
         )
-        raw = WEIGHTED_DISTANCES.get(
-            (self.model.camera_idx, self.model.algem_location), _MAX_DIST
-        )
-        base_volume = _volume_from_distance(raw)
-        volume = self._mix_volume("vent_presence", base_volume * CHANNEL_MASTERS["vent"])
+
+        if volume <= 0.0:
+            if self._vent_sound_channel.get_busy():
+                self._vent_sound_channel.stop()
+            self._vent_sound_timer = 0
+            return
 
         if not self._vent_sound_channel.get_busy():
             if not self._vent_sounds:
@@ -930,9 +1022,18 @@ class GamePresenter:
         dist: int,
         channel_key: str | None = None,
     ) -> float:
-        """Получить итоговую громкость по дистанции с optional master-уровнем канала."""
-        raw = params.get(dist, params.get(4, 0.12))
+        """Compatibility helper: bucketed distance -> mixed volume."""
+        bucket = max(0, min(AUDIO_MAX_BUCKET, int(dist)))
+        raw = params.get(bucket, params.get(AUDIO_MAX_BUCKET, 0.12))
         volume = raw[1] if isinstance(raw, tuple) else raw
+        return self._apply_channel_volume(volume, channel_key)
+
+    def _apply_channel_volume(
+        self,
+        base_volume: float,
+        channel_key: str | None,
+    ) -> float:
+        volume = max(0.0, min(1.0, base_volume))
         if channel_key is None:
             return volume
         mixed = volume * CHANNEL_MASTERS.get(channel_key, 1.0)
@@ -942,13 +1043,69 @@ class GamePresenter:
         return self._mix_volume(sound_id, mixed)
 
     def _current_audio_distance(self, source_node: int) -> int:
-        """Distance bucket from the active listening point to a source node."""
-        listener_node = self._listener_audio_node(
+        """Bucket 0..4 from the active listening point to a source node."""
+        listener_node = self._current_listener_audio_node()
+        return self._camera_audio_distance(listener_node, source_node)
+
+    def _current_audio_volume(self, source_node: int, channel_key: str) -> float:
+        """Continuous volume from the active listening point to a source node."""
+        listener_node = self._current_listener_audio_node()
+        dist = self._audio_weighted_distance(listener_node, source_node)
+        if listener_node == 0 and source_node != 0:
+            base = max(AUDIO_OFFICE_FLOOR, _volume_from_distance(dist))
+        elif self._is_vent_map_open():
+            base = min(AUDIO_VENT_MAP_GAIN, _volume_from_distance(dist))
+        else:
+            base = _volume_from_distance(dist)
+        if listener_node != source_node:
+            base *= self._source_seal_audio_gain(source_node)
+        return self._apply_channel_volume(base, channel_key)
+
+    def _current_listener_audio_node(self) -> int:
+        return self._listener_audio_node(
             camera_idx=self.model.camera_idx,
             tablet_open=self.model.tablet_open,
             tablet_animating=self.model.tablet_animating,
         )
-        return self._camera_audio_distance(listener_node, source_node)
+
+    def _current_audio_graph(self) -> dict[int, list[int]]:
+        return {node: list(neighbors) for node, neighbors in BASE_AUDIO_GRAPH.items()}
+
+    def _source_seal_audio_gain(self, source_node: int) -> float:
+        """Return muffling gain for a vent source behind an active seal.
+
+        The seal must not disconnect the source from the diagnostic audio map:
+        otherwise every listener gets the same unreachable distance and the
+        sandbox appears frozen. A closed/sealing vent should make Algem quieter,
+        but nearby cameras still have to be louder than distant cameras.
+        """
+        if source_node not in VENT_CAMERAS:
+            return 1.0
+        seal_id = SEAL_CAMERA_MAP.get(source_node)
+        if seal_id is None:
+            return 1.0
+        state = getattr(self.model, "seals", {}).get(seal_id)
+        if state == SealState.SEALING:
+            return AUDIO_SEALING_SOURCE_GAIN
+        if state == SealState.CLOSED:
+            return AUDIO_CLOSED_SOURCE_GAIN
+        return 1.0
+
+    def _is_vent_map_open(self) -> bool:
+        return bool(
+            self.model.tablet_open
+            and not self.model.tablet_animating
+            and getattr(self.view, "vent_map_mode", False)
+        )
+
+    def _is_direct_vent_camera_view(self, source_node: int) -> bool:
+        return bool(
+            source_node in VENT_CAMERAS
+            and self.model.tablet_open
+            and not self.model.tablet_animating
+            and not getattr(self.view, "vent_map_mode", False)
+            and self.model.camera_idx == source_node
+        )
 
     @staticmethod
     def _listener_audio_node(
@@ -962,8 +1119,11 @@ class GamePresenter:
 
     @staticmethod
     def _camera_audio_distance(listener_node: int, source_node: int) -> int:
-        """Взвешенное расстояние через граф комнат (нормализовано для совместимости)."""
-        return int(WEIGHTED_DISTANCES.get((listener_node, source_node), _MAX_DIST))
+        dist = _weighted_audio_distance(listener_node, source_node, BASE_AUDIO_GRAPH)
+        return _bucket_from_weighted_distance(dist)
+
+    def _audio_weighted_distance(self, listener_node: int, source_node: int) -> float:
+        return _weighted_audio_distance(listener_node, source_node, self._current_audio_graph())
 
     @staticmethod
     def _vent_listen_distance(
@@ -973,16 +1133,69 @@ class GamePresenter:
         tablet_open: bool,
         tablet_animating: bool,
     ) -> int:
-        """Расстояние для вент-звука по общей акустической карте камер."""
-        _ = last_regular_cam  # kept for compatibility with older call sites/tests
+        """Bucketed vent distance kept for demos/tests."""
+        _ = last_regular_cam
         if algem_node not in VENT_CAMERAS:
-            return 4
+            return AUDIO_MAX_BUCKET
         listener_node = GamePresenter._listener_audio_node(
             camera_idx=camera_idx,
             tablet_open=tablet_open,
             tablet_animating=tablet_animating,
         )
         return GamePresenter._camera_audio_distance(listener_node, algem_node)
+
+    def _vent_listen_weighted_distance(
+        self,
+        algem_node: int,
+        camera_idx: int,
+        last_regular_cam: int,
+        tablet_open: bool,
+        tablet_animating: bool,
+    ) -> float:
+        _ = last_regular_cam
+        if algem_node not in VENT_CAMERAS:
+            return AUDIO_UNREACHABLE_DISTANCE
+        listener_node = self._listener_audio_node(
+            camera_idx=camera_idx,
+            tablet_open=tablet_open,
+            tablet_animating=tablet_animating,
+        )
+        return self._audio_weighted_distance(listener_node, algem_node)
+
+    def _vent_listen_volume(
+        self,
+        algem_node: int,
+        camera_idx: int,
+        last_regular_cam: int,
+        tablet_open: bool,
+        tablet_animating: bool,
+    ) -> float:
+        """Continuous vent volume for the current listening mode."""
+        _ = last_regular_cam
+        if algem_node not in VENT_CAMERAS:
+            return 0.0
+        if (
+            tablet_open
+            and not tablet_animating
+            and not self._is_vent_map_open()
+            and camera_idx == algem_node
+        ):
+            return 0.0
+        listener_node = self._listener_audio_node(
+            camera_idx=camera_idx,
+            tablet_open=tablet_open,
+            tablet_animating=tablet_animating,
+        )
+        dist = self._audio_weighted_distance(listener_node, algem_node)
+        if not tablet_open or tablet_animating:
+            base = max(AUDIO_OFFICE_FLOOR, _volume_from_distance(dist))
+        elif self._is_vent_map_open():
+            base = min(AUDIO_VENT_MAP_GAIN, _volume_from_distance(dist))
+        else:
+            base = _volume_from_distance(dist)
+        if listener_node != algem_node:
+            base *= self._source_seal_audio_gain(algem_node)
+        return self._apply_channel_volume(base, "vent")
 
     def _current_vent_block_signature(self) -> tuple | None:
         """Detect a sealed vent near a moving Algem."""
