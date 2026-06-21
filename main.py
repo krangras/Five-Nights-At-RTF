@@ -1,9 +1,19 @@
 import os
+import sys
 import math
 import random
 import threading
 import pygame
 import cv2
+
+def _base_path():
+    if getattr(sys, 'frozen', False):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.abspath(__file__))
+
+BASE_DIR = _base_path()
+os.chdir(BASE_DIR)
+
 from model import MenuModel
 from presenter import MenuPresenter
 from view import MenuView
