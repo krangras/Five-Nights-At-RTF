@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import copy
 import random
-from collections import deque
 from enum import Enum, auto
 
 from algem_ai import AlgemAI, AIState, bfs_path   # noqa: F401
@@ -35,10 +34,10 @@ CAMERAS: list[tuple[int, str, str, str]] = [
     (5, "05", "SERVICE ROOM",  "service_room.png"),
     (6, "06", "WEST HALL",     "westhall.png"),
     (7, "07", "COWORKING",     "coworking.png"),
-    (8, "08", "UPPER VENT",    "cam8.png"),
-    (9, "09", "LEFT VENT",     "cam9.png"),
-    (10, "10", "LEFT VENT LOW", "cam_10.png"),
-    (11, "11", "RIGHT VENT",   "cam11.png"),
+    (8, "08", "LOWER RIGHT VENT", "cam11.png"),
+    (9, "09", "UPPER RIGHT VENT", "cam8.png"),
+    (10, "10", "UPPER LEFT VENT", "cam9.png"),
+    (11, "11", "LOWER LEFT VENT", "cam_10.png"),
 ]
 CAMERA_COUNT: int = len(CAMERAS)
 
@@ -46,43 +45,20 @@ CAMERA_COUNT: int = len(CAMERAS)
 VENT_CAMERAS: set[int] = {8, 9, 10, 11}
 
 
-def find_nearest_vent_camera(
-    current_cam: int,
-    graph: dict[int, list[int]],
-) -> int:
-    """BFS: найти ближайшую вент-камеру к current_cam."""
-    if current_cam in VENT_CAMERAS:
-        return current_cam
-    visited: set[int] = {current_cam}
-    queue: deque[list[int]] = deque([[current_cam]])
-    while queue:
-        path = queue.popleft()
-        node = path[-1]
-        for nb in graph.get(node, []):
-            if nb in visited:
-                continue
-            new_path = path + [nb]
-            if nb in VENT_CAMERAS:
-                return nb
-            visited.add(nb)
-            queue.append(new_path)
-    return 8  # fallback
-
-
 # Базовый граф атаки: учитывает реальные переходы по камерам и вентиляции.
 BASE_GRAPH: dict[int, list[int]] = {
     0: [],
-    1: [4, 3, 2, 11],
-    2: [1, 3, 8],
-    3: [1, 2, 4, 5],
-    4: [3, 2, 5, 10],
-    5: [3, 4, 6, 7],
-    6: [5],
-    7: [5, 10, 0],
-    8: [9, 11],
-    9: [8, 10],
-    10: [9, 7],
-    11: [8],
+    1: [2, 3, 4, 8],
+    2: [1, 3, 8, 9],
+    3: [1, 2, 4, 5, 8],
+    4: [1, 2, 3, 5, 11],
+    5: [3, 4, 6],
+    6: [5, 10],
+    7: [10, 11],
+    8: [1, 2, 3],
+    9: [2, 0],
+    10: [7, 11, 0],
+    11: [4, 10, 7],
 }
 
 # Граф патруля: когда игрок тихий, Алгем физически ходит только по обычным камерам 1–6.
@@ -91,7 +67,7 @@ PATROL_GRAPH: dict[int, list[int]] = {
     1: [2, 3, 4],
     2: [1, 3],
     3: [1, 2, 4, 5],
-    4: [1, 3, 5],
+    4: [1, 2, 3, 5],
     5: [3, 4, 6],
     6: [5],
     7: [],
@@ -102,25 +78,22 @@ PATROL_GRAPH: dict[int, list[int]] = {
 }
 
 # Вентиляционные короткие пути: {id: (из, в)}
-VENT_CONNECTIONS: dict[str, tuple[int, int]] = {
-    "VENT_A": (2, 8),
-    "VENT_B": (4, 10),
-}
+VENT_CONNECTIONS: dict[str, tuple[int, int]] = {}
 
 # Точки блокировки вентов (SEAL) — {id: vent_camera_node}
 # При активном seal ВСЕ рёбра ИЗ этой вент-камеры удаляются из графа.
 VENT_SEALS: dict[str, int] = {
-    "SEAL_TOP_RIGHT":  8,  # UPPER VENT — все исходящие рёбра блокируются
-    "SEAL_CENTER":     9,  # LEFT VENT
-    "SEAL_MID_RIGHT":  11, # RIGHT VENT
-    "SEAL_BOTTOM_LEFT": 10,# LEFT VENT LOW
+    "SEAL_TOP_RIGHT":  9,   # upper-right vent
+    "SEAL_CENTER":     10,  # upper-left vent
+    "SEAL_MID_RIGHT":  8,   # lower-right vent
+    "SEAL_BOTTOM_LEFT": 11, # lower-left vent
 }
 
 SEAL_CAMERA_MAP: dict[int, str] = {
-    8: "SEAL_TOP_RIGHT",
-    9: "SEAL_CENTER",
-    10: "SEAL_BOTTOM_LEFT",
-    11: "SEAL_MID_RIGHT",
+    8: "SEAL_MID_RIGHT",
+    9: "SEAL_TOP_RIGHT",
+    10: "SEAL_CENTER",
+    11: "SEAL_BOTTOM_LEFT",
 }
 
 SEAL_DURATION = 300  # 5 секунд при 60 FPS
@@ -137,12 +110,6 @@ OFFICE_THREAT_TICKS_BY_NIGHT: dict[int, int] = {
 # ─────────────────────────────────────────────────────────────────────────────
 # Перечисление состояний вентиляции
 # ─────────────────────────────────────────────────────────────────────────────
-
-class VentState(Enum):
-    OK        = auto()
-    ERROR     = auto()
-    RESETTING = auto()
-
 
 class SealState(Enum):
     OPEN    = auto()
@@ -161,8 +128,6 @@ class GameModel:
     Presenter вызывает:
       - update()               — каждый тик игрового цикла.
       - activate_bait(cam_idx) — при нажатии кнопки PLAY AUDIO.
-      - start_vent_reset(vid)  — при нажатии кнопки RESET VENT.
-
     View читает публичные атрибуты напрямую (без сеттеров — упрощение для
     учебного проекта; в продакшене использовались бы свойства + Observer).
     """
@@ -217,7 +182,7 @@ class GameModel:
         self.ad_image_key:   str | None = None    # ключ изображения рекламы
         self.ad_sound_channel = None              # канал для звука рекламы
         self.ad_timer:       int = 0              # тиков с момента показа
-        self.ad_spawn_timer: int = random.randint(1800, 7200)  # тиков до следующей рекламы
+        self.ad_spawn_timer: int = self._rand_ad_interval()     # тиков до следующей рекламы
 
         # ── Камера (текущая и панорамирование) ───────────────────────────
         self.camera_idx:        int   = 1
@@ -250,15 +215,6 @@ class GameModel:
         self.bait_cooldown:     dict[int, int]  = {}   # {camera_idx: тиков до перезарядки}
 
         # ── Вентиляция ───────────────────────────────────────────────────
-        self.vents:             dict[str, VentState] = {
-            vid: VentState.OK for vid in VENT_CONNECTIONS
-        }
-        self._vent_error_timers: dict[str, int] = {
-            vid: self._vent_break_interval() for vid in VENT_CONNECTIONS
-        }
-        self._vent_reset_timers: dict[str, int] = {
-            vid: 0 for vid in VENT_CONNECTIONS
-        }
 
         # ── Блокировка вентов (SEAL) ─────────────────────────────────────
         self.seals: dict[str, SealState] = {
@@ -350,10 +306,7 @@ class GameModel:
         Перезагрузка занимает 300 тиков (5 секунд). В это время
         Алгем всё ещё может использовать сломанный вент.
         """
-        if self.vents.get(vent_id) != VentState.ERROR:
-            return
-        self.vents[vent_id]              = VentState.RESETTING
-        self._vent_reset_timers[vent_id] = 300
+        return
 
     def start_seal(self, seal_id: str) -> None:
         """Начать блокировку вентиляционного прохода seal_id (~5 сек).
@@ -410,7 +363,7 @@ class GameModel:
         self._update_phone()
         self._update_camera_watch()
         self._update_bait()
-        self._update_vents()
+        # Legacy vent reset mechanic removed from the game.
         self._update_seals()
         self._update_server_load()
         self._update_hack_logs()
@@ -458,10 +411,9 @@ class GameModel:
                     self.night_complete = True
 
     def _update_phone(self) -> None:
-        """Телефонный звонок первой ночи."""
+        """Телефонный звонок текущей ночи."""
         if (
-            self.night == 1
-            and self.phone_call_ready
+            self.phone_call_ready
             and not self.phone_call_active
             and not self.phone_muted
         ):
@@ -498,6 +450,7 @@ class GameModel:
         Каждый вент со временем ломается случайно (зависит от ночи).
         Перезагрузка занимает фиксированное время.
         """
+        return
         for vid in VENT_CONNECTIONS:
             state = self.vents[vid]
 
@@ -553,6 +506,10 @@ class GameModel:
         self._ai.update_game_state(
             server_on=server_on,
             ad_active=self.ad_active,
+            tablet_open=self.tablet_open and not self.tablet_animating,
+            laptop_open=self.laptop_open and self.laptop_power_state == "ON",
+            camera_idx=self.camera_idx if self.tablet_open and not self.tablet_animating else None,
+            vent_error_count=0,
         )
 
         # Тик ИИ
@@ -1087,6 +1044,11 @@ class GameModel:
 
     _AD_IMAGES = ["ad_hhru", "ad_kontur", "ad_sber"]
 
+    def _rand_ad_interval(self) -> int:
+        """Случайный интервал до следующей рекламы, зависит от ночи."""
+        lo = max(600, 2400 - self.night * 300)
+        return random.randint(lo, lo * 2)
+
     def _update_ad(self) -> None:
         """Случайный спавн рекламы на ноутбуке."""
         if (
@@ -1098,7 +1060,7 @@ class GameModel:
             self.ad_active = False
             self.ad_image_key = None
             self.ad_timer = 0
-            self.ad_spawn_timer = max(self.ad_spawn_timer, random.randint(2400, 9600))
+            self.ad_spawn_timer = max(self.ad_spawn_timer, self._rand_ad_interval())
             return
         if self.ad_active:
             self.ad_timer += 1
@@ -1108,7 +1070,7 @@ class GameModel:
             self.ad_active = True
             self.ad_image_key = random.choice(self._AD_IMAGES)
             self.ad_timer = 0
-            self.ad_spawn_timer = random.randint(2400, 9600)
+            self.ad_spawn_timer = self._rand_ad_interval()
 
     # ──────────────────────────────────────────────────────────────────────
     # Утилиты
@@ -1116,11 +1078,6 @@ class GameModel:
 
     def _build_current_graph(self) -> dict[int, list[int]]:
         g: dict[int, list[int]] = copy.deepcopy(BASE_GRAPH)
-
-        for vid, (src, dst) in VENT_CONNECTIONS.items():
-            if self.vents[vid] == VentState.ERROR:
-                if dst not in g[src]:
-                    g[src] = g[src] + [dst]
 
         for sid, vent_node in VENT_SEALS.items():
             if self.seals[sid] in (SealState.SEALING, SealState.CLOSED):

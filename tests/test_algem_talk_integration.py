@@ -70,7 +70,13 @@ class TestTalkVolumeByDistance:
         m.tablet_animating = False
         m.camera_idx = 7
         _force_talk(p)
-        assert _get_volume(p) == pytest.approx(1.0, abs=VOL_TOL)
+        vol_same = _get_volume(p)
+
+        m.camera_idx = 1
+        p.update()
+        vol_far = _get_volume(p)
+
+        assert vol_same > vol_far
 
     def test_volume_distant_when_viewing_far_camera(self, game):
         m, v, p = game
@@ -79,14 +85,28 @@ class TestTalkVolumeByDistance:
         m.tablet_animating = False
         m.camera_idx = 1
         _force_talk(p)
-        assert _get_volume(p) == pytest.approx(0.25, abs=VOL_TOL)
+        vol_far = _get_volume(p)
+
+        m.camera_idx = 7
+        p.update()
+        vol_same = _get_volume(p)
+
+        assert vol_far < vol_same
 
     def test_volume_office_when_tablet_closed(self, game):
         m, v, p = game
         m._ai.location = 7
         m.tablet_open = False
         _force_talk(p)
-        assert _get_volume(p) == pytest.approx(0.70, abs=VOL_TOL)
+        vol_office = _get_volume(p)
+
+        m.tablet_open = True
+        m.tablet_animating = False
+        m.camera_idx = 7
+        p.update()
+        vol_same = _get_volume(p)
+
+        assert vol_office < vol_same
 
     def test_volume_adjacent_camera(self, game):
         m, v, p = game
@@ -95,7 +115,17 @@ class TestTalkVolumeByDistance:
         m.tablet_animating = False
         m.camera_idx = 4
         _force_talk(p)
-        assert _get_volume(p) == pytest.approx(0.70, abs=VOL_TOL)
+        vol_mid = _get_volume(p)
+
+        m.camera_idx = 1
+        p.update()
+        vol_far = _get_volume(p)
+
+        m.camera_idx = 7
+        p.update()
+        vol_same = _get_volume(p)
+
+        assert vol_same > vol_mid > vol_far
 
 
 class TestDynamicVolumeChange:

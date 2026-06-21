@@ -25,6 +25,7 @@ AUDIO_ID_ALIASES: dict[str, str] = {
     "night_end": "sounds/ui/night_ends.wav",
     "reboot_loop": "sounds/ui/wait.wav",
     "vent_close": "sounds/vents/vent_close.wav",
+    "vent_knock": "sounds/vents/knock.wav",
     "danger_loop": "sounds/threats/danger2b.wav",
     "gadget_audio": "sounds/ui/gadget1.mp3",
     "algem_talk": "sounds/ambience/ambience1.mp3",

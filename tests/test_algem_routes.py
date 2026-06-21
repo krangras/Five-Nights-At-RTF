@@ -8,16 +8,19 @@ def test_patrol_graph_matches_regular_camera_map():
     assert PATROL_GRAPH[1] == [2, 3, 4]
     assert PATROL_GRAPH[2] == [1, 3]
     assert PATROL_GRAPH[3] == [1, 2, 4, 5]
+    assert PATROL_GRAPH[4] == [1, 2, 3, 5]
     assert PATROL_GRAPH[5] == [3, 4, 6]
     assert PATROL_GRAPH[6] == [5]
     assert all(not PATROL_GRAPH[node] for node in (7, 8, 9, 10, 11))
 
 
 def test_attack_graph_has_described_vent_entries_and_exits():
-    assert BASE_GRAPH[1] == [4, 3, 2, 11]
-    assert BASE_GRAPH[4] == [3, 2, 5, 10]
+    assert BASE_GRAPH[1] == [2, 3, 4, 8]
+    assert BASE_GRAPH[4] == [1, 2, 3, 5, 11]
     assert 8 in BASE_GRAPH[2]
-    assert BASE_GRAPH[10] == [9, 7]
+    assert 9 in BASE_GRAPH[2]
+    assert BASE_GRAPH[9] == [2, 0]
+    assert BASE_GRAPH[10] == [7, 11, 0]
 
 
 def test_dfs_patrol_path_never_skips_a_camera():

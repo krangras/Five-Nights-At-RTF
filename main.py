@@ -28,6 +28,9 @@ LOADING_FONT_CACHE: dict[int, pygame.font.Font] = {}
 LECTURE_SOUNDS: list[str] = [
     f"sounds/lectures/lecture{i}.mp3" for i in range(1, 7)
 ]
+DISCLAIMER_FADE_IN_MS = 1200
+DISCLAIMER_FADE_OUT_MS = 1200
+DISCLAIMER_MIN_SHOW_MS = 3500
 
 def _get_loading_font(size=30):
     if size not in LOADING_FONT_CACHE:
@@ -45,6 +48,16 @@ def draw_loading(screen, elapsed_ms):
     txt = font.render(f"LOADING{dots}", True, (100, 100, 100))
     sw, sh = screen.get_size()
     screen.blit(txt, (sw // 2 - txt.get_width() // 2, sh // 2 - txt.get_height() // 2))
+    pygame.display.flip()
+
+
+def draw_disclaimer(screen, disclaimer_surf, alpha):
+    screen.fill((0, 0, 0))
+    if disclaimer_surf is not None:
+        screen.blit(disclaimer_surf, (0, 0))
+    veil = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+    veil.fill((0, 0, 0, max(0, min(255, alpha))))
+    screen.blit(veil, (0, 0))
     pygame.display.flip()
 
 GAME_SIZE = (1280, 720)
@@ -83,6 +96,69 @@ def toggle_fullscreen(screen, is_fullscreen):
     save_settings(_settings)
     return screen, not is_fullscreen
 
+
+def _apply_window_icon() -> None:
+    icon_candidates = [
+        "assets/logo/logo.ico",
+        "assets/logo/icon.ico",
+        "assets/logo/logo_32_rgb.png",
+    ]
+
+    for rel_path in icon_candidates:
+        if not os.path.exists(rel_path):
+            continue
+        try:
+            pygame.display.set_icon(pygame.image.load(rel_path))
+            break
+        except pygame.error:
+            continue
+
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "Ko4ki.FiveNightsAtRTF"
+        )
+
+        hwnd = pygame.display.get_wm_info().get("window")
+        if not hwnd:
+            return
+
+        user32 = ctypes.windll.user32
+        IMAGE_ICON = 1
+        LR_LOADFROMFILE = 0x0010
+        LR_DEFAULTSIZE = 0x0040
+        WM_SETICON = 0x0080
+        ICON_SMALL = 0
+        ICON_BIG = 1
+        GCLP_HICON = -14
+        GCLP_HICONSM = -34
+
+        icon_path = None
+        for rel_path in ("assets/logo/logo.ico", "assets/logo/icon.ico"):
+            abs_path = os.path.abspath(rel_path)
+            if os.path.exists(abs_path):
+                icon_path = abs_path
+                break
+        if icon_path is None:
+            return
+
+        big_icon = user32.LoadImageW(
+            None, icon_path, IMAGE_ICON, 256, 256, LR_LOADFROMFILE
+        )
+        small_icon = user32.LoadImageW(
+            None, icon_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE | LR_DEFAULTSIZE
+        )
+
+        if big_icon:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, big_icon)
+            user32.SetClassLongPtrW(hwnd, GCLP_HICON, big_icon)
+        if small_icon:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, small_icon)
+            user32.SetClassLongPtrW(hwnd, GCLP_HICONSM, small_icon)
+    except Exception:
+        pass
+
 def main():
     global _monitor_size, _settings
     pygame.init()
@@ -96,33 +172,7 @@ def main():
         screen = pygame.display.set_mode(WINDOWED_SIZE)
         is_fullscreen = False
     pygame.display.set_caption("Five Nights At RTF")
-    try:
-        icon = pygame.image.load("assets/logo/icon.ico")
-        pygame.display.set_icon(icon)
-    except pygame.error:
-        try:
-            icon = pygame.image.load("assets/logo/logo_32_rgb.png")
-            pygame.display.set_icon(icon)
-        except pygame.error:
-            pass
-    # Принудительно ставим иконку на панель задач (Windows 10+)
-    try:
-        import ctypes
-        from ctypes import wintypes
-        hwnd = pygame.display.get_wm_info()["window"]
-        icon_path = os.path.abspath("assets/logo/icon.ico")
-        user32 = ctypes.windll.user32
-        IMAGE_ICON = 1
-        LR_LOADFROMFILE = 0x0010
-        WM_SETICON = 0x0080
-        ICON_SMALL = 0
-        ICON_BIG = 1
-        hicon = user32.LoadImageW(None, icon_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE)
-        if hicon:
-            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
-            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon)
-    except Exception:
-        pass
+    _apply_window_icon()
     clock = pygame.time.Clock()
 
     _snd_cache: dict[str, pygame.mixer.Sound] = {}
@@ -130,6 +180,7 @@ def main():
         ("screamer", "sounds/screamer/screamer.mp3"),
         ("night_ends", "sounds/ui/night_ends.wav"),
         ("server_not_hacked", "sounds/screamer/server_is_not_hacked.mp3"),
+        ("disclaimer", "sounds/menu/disclaimer.mp3"),
     ]
     for _key, _path in _snd_paths:
         try:
@@ -138,6 +189,8 @@ def main():
                 _snd_cache[_key].set_volume(0.5)
             elif _key == "night_ends":
                 _snd_cache[_key].set_volume(0.55)
+            elif _key == "disclaimer":
+                _snd_cache[_key].set_volume(0.65)
         except pygame.error:
             pass
     _lecture_sounds_cache: list[pygame.mixer.Sound] = []
@@ -199,6 +252,40 @@ def main():
     final_scene_speech_played = False
     final_scene_music_chan = None
     final_scene_speech_chan = None
+    disclaimer_started_at = pygame.time.get_ticks()
+    disclaimer_dismiss_started_at = None
+    disclaimer_channel = None
+    disclaimer_sound_started = False
+    disclaimer_surf = None
+    disclaimer_sound = _snd_cache.get("disclaimer")
+    disclaimer_auto_dismiss_ms = DISCLAIMER_MIN_SHOW_MS
+    if disclaimer_sound is not None:
+        disclaimer_auto_dismiss_ms = max(
+            DISCLAIMER_MIN_SHOW_MS,
+            int(disclaimer_sound.get_length() * 1000),
+        )
+    try:
+        raw_disclaimer = pygame.image.load("assets/menu/disclaimer.png").convert_alpha()
+        sw, sh = screen.get_size()
+        target_h = sh
+        target_w = int(target_h * 1.6)
+        if target_w < sw:
+            target_w = sw
+            target_h = int(target_w / 1.6)
+        disclaimer_surf = pygame.transform.smoothscale(raw_disclaimer, (target_w, target_h))
+        if target_w != sw or target_h != sh:
+            crop = pygame.Rect(
+                max(0, (target_w - sw) // 2),
+                max(0, (target_h - sh) // 2),
+                sw,
+                sh,
+            )
+            disclaimer_surf = disclaimer_surf.subsurface(crop).copy()
+        bright = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        bright.fill((18, 18, 18, 0))
+        disclaimer_surf.blit(bright, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+    except pygame.error:
+        disclaimer_surf = None
 
     game_surface = pygame.Surface(GAME_SIZE)
     _native_size = GAME_SIZE
@@ -209,9 +296,48 @@ def main():
         p = GamePresenter(m, v, _settings)
         return m, v, p
 
-    state = "MENU"
+    state = "DISCLAIMER"
     while True:
-        if state == "MENU":
+        if state == "DISCLAIMER":
+            for e in pygame.event.get():
+                if e.type == pygame.QUIT:
+                    pygame.quit()
+                    return
+                if (
+                    disclaimer_dismiss_started_at is None
+                    and e.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN)
+                ):
+                    disclaimer_dismiss_started_at = pygame.time.get_ticks()
+
+            now = pygame.time.get_ticks()
+            if disclaimer_dismiss_started_at is None:
+                if now - disclaimer_started_at >= disclaimer_auto_dismiss_ms:
+                    disclaimer_dismiss_started_at = now
+                fade_in_elapsed = now - disclaimer_started_at
+                if fade_in_elapsed < DISCLAIMER_FADE_IN_MS:
+                    alpha = int(255 * (1.0 - fade_in_elapsed / DISCLAIMER_FADE_IN_MS))
+                else:
+                    alpha = 0
+                    if disclaimer_sound and not disclaimer_sound_started:
+                        disclaimer_channel = disclaimer_sound.play()
+                        disclaimer_sound_started = True
+            else:
+                fade_out_elapsed = now - disclaimer_dismiss_started_at
+                alpha = int(255 * (fade_out_elapsed / DISCLAIMER_FADE_OUT_MS))
+                if fade_out_elapsed >= DISCLAIMER_FADE_OUT_MS:
+                    if disclaimer_channel and disclaimer_channel.get_busy():
+                        disclaimer_channel.stop()
+                    draw_disclaimer(screen, disclaimer_surf, 255)
+                    state = "MENU"
+                    clock.tick(60)
+                    continue
+                if disclaimer_channel and disclaimer_channel.get_busy():
+                    disclaimer_channel.set_volume(
+                        0.65 * max(0.0, 1.0 - fade_out_elapsed / DISCLAIMER_FADE_OUT_MS)
+                    )
+            draw_disclaimer(screen, disclaimer_surf, alpha)
+            clock.tick(60)
+        elif state == "MENU":
             state = menu_p.handle_events()
             menu_m.update()
             menu_v.draw_menu(menu_m)

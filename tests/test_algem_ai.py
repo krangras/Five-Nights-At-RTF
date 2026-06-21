@@ -21,10 +21,10 @@ GRAPH_WITH_VENT = {
     0: [],
     1: [2, 3, 4],
     2: [1],
-    3: [1, 4, 6],      # VENT_A: 6→3
+    3: [1, 4, 6],      # direct shortcut: 6->3
     4: [1, 3, 5, 7],
     5: [4, 6],
-    6: [5, 7, 3],      # VENT_A: 6→3
+    6: [5, 7, 3],      # direct shortcut: 6->3
     7: [6, 4, 0],
 }
 
@@ -257,6 +257,49 @@ class TestFSM:
                 test_ai.state = AIState.ATTACK
                 attacks += 1
         assert attacks >= 0
+
+
+class TestNight2Profile:
+    def test_night2_attention_uses_tablet_camera_and_vent_triggers(self):
+        ai = AlgemAI(copy.deepcopy(GRAPH), night=2, start_node=4)
+        ai.update_camera_watch({4: 420})
+
+        ai.update_game_state(
+            server_on=False,
+            ad_active=False,
+            tablet_open=True,
+            laptop_open=False,
+            camera_idx=4,
+            vent_error_count=1,
+            dt=1.0,
+        )
+
+        assert ai._tablet_interest > 0.0
+        assert ai._camera_focus_interest > 0.0
+        assert ai._vent_interest > 0.0
+        assert ai.attention > 0.0
+
+    def test_night2_idle_can_enter_attack_from_explicit_triggers(self):
+        ai = AlgemAI(copy.deepcopy(GRAPH), night=2, start_node=4)
+        ai.state = AIState.IDLE
+        ai._idle_ticks_left = 0
+        ai._current_hour = 2
+        ai.attention = 90.0
+        ai._server_interest = 10.0
+
+        ai._step_idle(hour=2)
+
+        assert ai.state == AIState.ATTACK
+
+    def test_night2_lure_is_more_reliable_and_longer_range(self, monkeypatch):
+        ai = AlgemAI(copy.deepcopy(GRAPH), night=2, start_node=5)
+        ai.state = AIState.PATROL
+        monkeypatch.setattr(random, "random", lambda: 0.10)
+
+        ai.notify_audio_lure(target_node=1, duration=120)
+
+        assert ai._lure_node == 1
+        assert ai._lure_ticks_left == 120
 
     def test_no_attack_on_night1(self):
         ai = AlgemAI(copy.deepcopy(GRAPH), night=1, start_node=2)

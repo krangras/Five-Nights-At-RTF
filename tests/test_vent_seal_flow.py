@@ -228,5 +228,41 @@ def test_reroute_from_trap(game):
     assert not model.game_over
 
 
+def test_map_toggle_restores_last_regular_and_last_vent_camera(game):
+    model, view, presenter = game
+    frame_idx = 0
+
+    _press_key(presenter, pygame.K_TAB)
+    frame_idx = _advance_frames(model, view, presenter, 30, frame_idx)
+    assert model.tablet_open
+
+    presenter._switch_camera(5)
+    assert presenter._last_regular_cam == 5
+
+    view.draw(model)
+    _click(presenter, _rect_center(view._map_btn_rect))
+    frame_idx = _advance_frames(model, view, presenter, 2, frame_idx)
+    assert view.vent_map_mode
+    assert model.camera_idx == 8
+
+    presenter._switch_camera(10)
+    assert presenter._last_vent_cam == 10
+
+    view.draw(model)
+    _click(presenter, _rect_center(view._map_btn_rect))
+    frame_idx = _advance_frames(model, view, presenter, 2, frame_idx)
+    assert not view.vent_map_mode
+    assert model.camera_idx == 5
+
+    presenter._switch_camera(2)
+    assert presenter._last_regular_cam == 2
+
+    view.draw(model)
+    _click(presenter, _rect_center(view._map_btn_rect))
+    frame_idx = _advance_frames(model, view, presenter, 2, frame_idx)
+    assert view.vent_map_mode
+    assert model.camera_idx == 10
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

@@ -181,7 +181,8 @@ class GameView:
         self.tabbutton_surf = pygame.transform.scale(
             raw_tab, (int(600 * scale), int(60 * scale))
         )
-        self._tab_button_dx = 28
+        self._tab_button_margin_right = 120
+        self._tab_button_margin_bottom = 8
         self.tab_button_rect = pygame.Rect(
             662, 758, 600, 60
         )  # оригинальные координаты (1923×818)
@@ -211,6 +212,15 @@ class GameView:
             self._ad_office_images[key] = pygame.transform.smoothscale(
                 raw, target_size
             )
+        _normalize_brightness(
+            [
+                (
+                    self._ad_office_images[key],
+                    f"assets/office/server_all_four_lights_are_green+{key}.png",
+                )
+                for key in ["ad_hhru", "ad_kontur", "ad_sber"]
+            ]
+        )
 
         # Область экрана планшета — отступаем от краёв, чтобы не задеть рамку
         self.screen_rect = pygame.Rect(0, 0, screen_w, screen_h)
@@ -246,7 +256,7 @@ class GameView:
         self._minimap_bg.set_alpha(220)
         self._minimap_pos = (
             self.screen_rect.right - mm_w - 5,
-            self.screen_rect.bottom - mm_h - 5,
+            self.screen_rect.bottom - mm_h - 34,
         )
         self._minimap_size = (mm_w, mm_h)
 
@@ -263,16 +273,11 @@ class GameView:
         self._cam_blink_start = 0
         self._prev_camera_idx = 1
 
-        # Координаты индикаторов вентов (в координатах scaled vent map = mm_w × mm_h)
         vent_sx = mm_w / vw
         vent_sy = mm_h / vh
-        self._vent_indicator_pos = {
-            "VENT_A": (int(740 * vent_sx), int(520 * vent_sy)),
-            "VENT_B": (int(560 * vent_sx), int(520 * vent_sy)),
-        }
-        self._vent_reset_rects: dict[str, pygame.Rect] = {}
 
-        # Иконки вент-камер (8–11) — внутри duct-проходов, рядом с seal'ами
+        # Иконки вент-камер (8–11) — внутри duct-проходов.
+        # Порядок по запросу: 8 = низ-право, 9 = верх-право, 10 = верх-лево, 11 = низ-лево.
         # Реальные duct'ы в vent_map.png (1306x1204):
         #   Горизонт. верхний:  y≈45,  x: 16–1127
         #   Горизонт. средний:  y≈560, x: 16–1127
@@ -281,10 +286,10 @@ class GameView:
         #   Вертик. средний:    x≈339, y: 43–541
         #   Вертик. правый:     x≈1124,y: 43–746
         self._vent_cam_positions = {
-            8:  (int(900 * vent_sx),  int(45 * vent_sy)),   # верхний горизонт. duct, правая часть
-            9:  (int(18 * vent_sx),   int(145 * vent_sy)),  # левый вертик. duct, верхняя часть
-            10: (int(18 * vent_sx),   int(750 * vent_sy)),  # левый вертик. duct, нижняя часть
-            11: (int(1124 * vent_sx), int(620 * vent_sy)),  # правый вертик. duct, нижняя часть (НОВАЯ)
+            8:  (int(1124 * vent_sx), int(620 * vent_sy)),  # правый вертик. duct, нижняя часть
+            9:  (int(900 * vent_sx),  int(45 * vent_sy)),   # верхний горизонт. duct, правая часть
+            10: (int(18 * vent_sx),   int(145 * vent_sy)),  # левый вертик. duct, верхняя часть
+            11: (int(18 * vent_sx),   int(750 * vent_sy)),  # левый вертик. duct, нижняя часть
         }
 
         # Точки блокировки (SEAL) — (sx, sy, direction) в координатах vent overlay
@@ -295,9 +300,9 @@ class GameView:
         #   правый вертик: x=1124   нижний горизонт: y=903
         self._seal_positions = {
             "SEAL_TOP_RIGHT":   (int(1050 * vent_sx), int(45 * vent_sy),   "V"),  # верхн. duct, левее перекрёстия
-            "SEAL_CENTER":      (int(18 * vent_sx),   int(200 * vent_sy),  "H"),  # левый duct, под CAM09
-            "SEAL_MID_RIGHT":   (int(1124 * vent_sx), int(700 * vent_sy),  "H"),  # правый duct, ниже CAM11
-            "SEAL_BOTTOM_LEFT": (int(18 * vent_sx),  int(845 * vent_sy),  "H"),  # по центру короткого правого участка у CAM10
+            "SEAL_CENTER":      (int(18 * vent_sx),   int(200 * vent_sy),  "H"),  # левый duct, под CAM10
+            "SEAL_MID_RIGHT":   (int(1124 * vent_sx), int(700 * vent_sy),  "H"),  # правый duct, ниже CAM08
+            "SEAL_BOTTOM_LEFT": (int(18 * vent_sx),   int(845 * vent_sy),  "H"),  # нижний левый duct, ниже CAM11
         }
         self._seal_rects: dict[str, pygame.Rect] = {}
 
@@ -494,10 +499,10 @@ class GameView:
             "assets/cameras/algem_mainhall_is_watching_you.png"
         )
         closed_cam_files = {
-            8: "cam_8_closed.png",
-            9: "cam_9_closed.png",
-            10: "cam_10_closed.png",
-            11: "cam_11_closed.png",
+            8: "cam_11_closed.png",
+            9: "cam_8_closed.png",
+            10: "cam_9_closed.png",
+            11: "cam_10_closed.png",
         }
         for cam_idx, fname in closed_cam_files.items():
             path = f"assets/vents_cameras/{fname}"
@@ -514,10 +519,10 @@ class GameView:
             5: "service_room_algem.png",
             6: "westhall_algem.png",
             7: "coworking_algem.png",
-            8: "cam8_with_algem.png",
-            9: "cam9_with_algem.png",
-            10: "cam10_with_algem.png",
-            11: "cam11_with_algem.png",
+            8: "cam11_with_algem.png",
+            9: "cam8_with_algem.png",
+            10: "cam9_with_algem.png",
+            11: "cam10_with_algem.png",
         }
         for cam_idx, fname in algem_files.items():
             path = f"assets/cameras/{fname}"
@@ -582,9 +587,9 @@ class GameView:
         raw_mute = pygame.image.load(
             "assets/office/mutecall.png"
         ).convert_alpha()
-        mute_scale = 140 / raw_mute.get_width()
+        mute_scale = 112 / raw_mute.get_width()
         self.mutecall_surf = pygame.transform.scale(
-            raw_mute, (140, int(raw_mute.get_height() * mute_scale))
+            raw_mute, (112, int(raw_mute.get_height() * mute_scale))
         )
         self._mutecall_rect = pygame.Rect(0, 0, *self.mutecall_surf.get_size())
 
@@ -841,11 +846,15 @@ class GameView:
         if mouse_pos is None:
             return False
         tx = (
-            self.screen_rect.centerx
-            - self.tabbutton_surf.get_width() // 2
-            + self._tab_button_dx
+            self.screen_rect.right
+            - self.tabbutton_surf.get_width()
+            - self._tab_button_margin_right
         )
-        ty = self.screen_rect.bottom - self.tabbutton_surf.get_height() - 5
+        ty = (
+            self.screen_rect.bottom
+            - self.tabbutton_surf.get_height()
+            - self._tab_button_margin_bottom
+        )
         rect = pygame.Rect(tx, ty, *self.tabbutton_surf.get_size())
         return rect.collidepoint(mouse_pos)
 
@@ -863,9 +872,6 @@ class GameView:
         if mouse_pos is None:
             return False
         return self._map_btn_rect.collidepoint(mouse_pos)
-
-    def get_vent_reset_clicked(self, mouse_pos):
-        return None
 
     def is_laptop_icon_clicked(self, mouse_pos):
         if not hasattr(self, "_laptop_icons"):
@@ -910,8 +916,8 @@ class GameView:
 
     def _draw_hack_bar(self, model) -> None:
         bar_w, bar_h = 300, 20
-        x = (self.screen_w - bar_w) // 2
-        y = self.screen_h - 80
+        x = self.screen_w - bar_w - 88
+        y = 16
         fill_w = int(bar_w * model.hack_progress)
 
         pygame.draw.rect(self.screen, (30, 30, 40), (x, y, bar_w, bar_h))
@@ -2187,7 +2193,7 @@ class GameView:
         self.screen.blit(self._minimap_bg, (mx, my))
         self.screen.blit(self._vent_overlay, (mx, my))
 
-        # Иконки вент-камер (8–11) — стиль FNAF3: серый прямоугольник + "CAM XX"
+        # Иконки вент-камер (8–11) — старые спрайты, но переставлены по новым позициям.
         for cidx, (cx, cy) in self._vent_cam_positions.items():
             icon = self._cam_icons.get(cidx)
             if icon is None:
@@ -2196,7 +2202,6 @@ class GameView:
             ix = mx + cx - iw // 2
             iy = my + cy - ih // 2
 
-            # Определяем активность
             is_active = (cidx == model.camera_idx)
             if is_active:
                 blink_green = ((pygame.time.get_ticks() - self._cam_blink_start) // 1000) % 2 == 0
@@ -2206,7 +2211,6 @@ class GameView:
                 tint_color = (60, 60, 60)
                 border_color = (140, 140, 140)
 
-            # Фон иконки (полупрозрачный тёмный)
             bg = self._minimap_tint_cache.get("vent_bg")
             if bg is None:
                 bg = pygame.Surface((iw, ih), pygame.SRCALPHA)
@@ -2214,7 +2218,6 @@ class GameView:
                 self._minimap_tint_cache["vent_bg"] = bg
             self.screen.blit(bg, (ix, iy))
 
-            # Tint поверх иконки
             self.screen.blit(icon, (ix, iy))
             tint_key = (tint_color, 150)
             tint = self._minimap_tint_cache.get(tint_key)
@@ -2224,7 +2227,6 @@ class GameView:
                 self._minimap_tint_cache[tint_key] = tint
             self.screen.blit(tint, (ix, iy))
 
-            # Рамка
             pygame.draw.rect(self.screen, border_color, (ix - 2, iy - 2, iw + 4, ih + 4), 1)
 
         # Seal-точки — аутентичный стиль FNAF 3:
@@ -2311,16 +2313,10 @@ class GameView:
                 return sid
         return None
 
-    def get_vent_reset_clicked(self, mouse_pos):
-        """Возвращает vent_id, если клик попал на кнопку RESET, иначе None."""
-        if mouse_pos is None:
-            return None
-        for vid, rect in self._vent_reset_rects.items():
-            if rect.collidepoint(mouse_pos):
-                return vid
-        return None
-
     def get_minimap_hotspot(self, screen_pos):
+        from gameplay_model import CAMERAS
+
+        display_ids = {idx: disp for idx, disp, _name, _fname in CAMERAS}
         mx, my = self._minimap_pos
         rx, ry = screen_pos
         pad = 6
@@ -2336,7 +2332,7 @@ class GameView:
                 ix - pad <= rx <= ix + iw + pad
                 and iy - pad <= ry <= iy + ih + pad
             ):
-                return (cidx, f"CAM {cidx:02d}")
+                return (cidx, f"CAM {display_ids.get(cidx, f'{cidx:02d}')}")
         return None
 
     def draw(self, model):
@@ -2506,20 +2502,44 @@ class GameView:
 
                 self.screen.set_clip(old_clip)
 
+                if self.vent_map_mode:
+                    hint_lines = [
+                        "CLICK THE GREEN BAR",
+                        "NEXT TO THE TARGET VENT TO SEAL IT",
+                    ]
+                    tab_ty = (
+                        self.screen_rect.bottom
+                        - self.tabbutton_surf.get_height()
+                        - self._tab_button_margin_bottom
+                    )
+                    hint_x = mmx + 8
+                    hint_y = tab_ty - 34
+                    for i, line in enumerate(hint_lines):
+                        txt = self.font_very_small.render(
+                            line,
+                            False,
+                            (232, 232, 232),
+                        )
+                        self.screen.blit(txt, (hint_x, hint_y + i * 12))
+
         # Кнопка TAB — на столе
         tx = (
-            self.screen_rect.centerx
-            - self.tabbutton_surf.get_width() // 2
-            + self._tab_button_dx
+            self.screen_rect.right
+            - self.tabbutton_surf.get_width()
+            - self._tab_button_margin_right
         )
-        ty = self.screen_rect.bottom - self.tabbutton_surf.get_height() - 5
+        ty = (
+            self.screen_rect.bottom
+            - self.tabbutton_surf.get_height()
+            - self._tab_button_margin_bottom
+        )
         self.screen.blit(self.tabbutton_surf, (tx, ty))
 
-        # Кнопка Mute Call — на столе, справа от TAB (только когда звонит)
+        # Кнопка Mute Call — в левом верхнем углу под временем, чтобы не терялась на фоне.
         phone_on = model.phone_call_active
         if phone_on and not model.phone_muted:
-            mx = tx + self.tabbutton_surf.get_width() + 8
-            my = self.screen_rect.bottom - self.mutecall_surf.get_height() - 5
+            mx = 20
+            my = 96
             self._mutecall_rect.topleft = (mx, my)
             self.screen.blit(self.mutecall_surf, (mx, my))
 

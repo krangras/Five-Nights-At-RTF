@@ -35,6 +35,7 @@ import heapq
 import random
 import time
 from collections import deque
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Callable
 
@@ -55,6 +56,31 @@ class AIState(Enum):
     IDLE   = auto()   # Ожидание и накопление агрессии
     PATROL = auto()   # Случайный обход комнат
     ATTACK = auto()   # Целенаправленная атака через A*
+
+
+@dataclass(frozen=True)
+class NightProfile:
+    server_growth: float
+    ad_growth: float
+    hack_interest_scale: float
+    silence_decay: float
+    ad_safe_window: float
+    tablet_growth: float
+    tablet_cap: float
+    camera_focus_growth: float
+    camera_focus_cap: float
+    camera_focus_threshold_ticks: int
+    vent_growth: float
+    vent_cap: float
+    idle_attack_threshold: float
+    patrol_attack_threshold: float
+    hour_attack_delta: float
+    office_pull_start: float
+    office_pull_max: float
+    watch_penalty_scale: float
+    lure_fail_chance: float
+    lure_hear_distance: int
+    entry_delay: int
 
 
 # ---------------------------------------------------------------------------
@@ -231,11 +257,18 @@ class AlgemAI:
     HACK_INTEREST_SCALE: float = 22.0
     # Скорость падения шкалы в тишине (сервер выкл, реклама закрыта)
     SILENCE_DECAY: float = 18.0
-    # Окно безопасности рекламы (секунды)
-    AD_SAFE_WINDOW: float = 2.0
+    # Окно безопасности рекламы (секунды) — уменьшается с ночью
+    _AD_SAFE_WINDOWS: dict[int, float] = {1: 2.0, 2: 2.0, 3: 1.8, 4: 1.65, 5: 1.5}
     # При ненулевом интересе Алгем начинает чаще выбирать узлы ближе к офису.
     OFFICE_PULL_START: float = 18.0
     OFFICE_PULL_MAX: float = 0.85
+    _NIGHT_PROFILES: dict[int, NightProfile] = {
+        1: NightProfile(0.0, 0.0, 0.0, 18.0, 99.0, 0.0, 0.0, 0.0, 0.0, 999999, 0.0, 0.0, 999.0, 999.0, 0.0, 999.0, 0.0, 0.85, 0.15, 2, 90),
+        2: NightProfile(5.0, 18.0, 16.0, 14.0, 2.4, 8.0, 18.0, 11.0, 22.0, 240, 10.0, 16.0, 84.0, 88.0, 2.5, 24.0, 0.40, 0.65, 0.08, 3, 105),
+        3: NightProfile(9.0, 26.0, 22.0, 18.0, 1.8, 10.0, 22.0, 14.0, 28.0, 210, 12.0, 22.0, 76.0, 81.0, 3.0, 18.0, 0.85, 0.85, 0.15, 2, 90),
+        4: NightProfile(12.0, 26.0, 22.0, 18.0, 1.65, 12.0, 24.0, 16.0, 30.0, 180, 14.0, 24.0, 72.0, 78.0, 3.4, 18.0, 0.85, 0.90, 0.15, 2, 90),
+        5: NightProfile(15.0, 26.0, 22.0, 18.0, 1.5, 14.0, 28.0, 18.0, 32.0, 150, 16.0, 28.0, 68.0, 74.0, 4.0, 18.0, 0.85, 0.95, 0.15, 2, 90),
+    }
 
     # Зоны патруля по ночам (какие узлы доступны для случайного блуждания)
     _PATROL_ZONES: dict[int, set[int]] = {
@@ -262,6 +295,10 @@ class AlgemAI:
         self._graph:  dict[int, list[int]] = graph
         self._patrol_graph: dict[int, list[int]] = patrol_graph or graph
         self._night:  int                  = night
+        self._profile: NightProfile        = self._NIGHT_PROFILES.get(
+            night, self._NIGHT_PROFILES[5]
+        )
+        self._current_hour: int            = 0
 
         # ── Позиция ──────────────────────────────────────────────────────
         self.location:         int = start_node
@@ -295,10 +332,17 @@ class AlgemAI:
         self.attention: float = 0.0
         self._server_on: bool = False
         self._ad_active: bool = False
+        self._tablet_open: bool = False
+        self._laptop_open: bool = False
+        self._current_camera_idx: int | None = None
+        self._vent_error_count: int = 0
         self._ad_safe_timer: float = 0.0   # таймер иммунитета рекламы (секунды)
         self._ad_immune: bool = True       # True пока не прошло AD_SAFE_WINDOW
         self._server_interest: float = 0.0
         self._ad_interest: float = 0.0
+        self._tablet_interest: float = 0.0
+        self._camera_focus_interest: float = 0.0
+        self._vent_interest: float = 0.0
 
         # ── Вспомогательные ─────────────────────────────────────────────
         self.main_hall_sprite: int  = 0   # вариант спрайта в Главном коридоре
@@ -341,10 +385,21 @@ class AlgemAI:
         """
         self._camera_watch = watch
 
+    def _attack_threshold(self, base_threshold: float) -> float:
+        """Lower attack thresholds as the night clock advances."""
+        return max(
+            40.0,
+            base_threshold - self._current_hour * self._profile.hour_attack_delta,
+        )
+
     def update_game_state(
         self,
         server_on: bool,
         ad_active: bool,
+        tablet_open: bool = False,
+        laptop_open: bool = False,
+        camera_idx: int | None = None,
+        vent_error_count: int = 0,
         dt: float = 1 / 60,
     ) -> None:
         """
@@ -358,49 +413,105 @@ class AlgemAI:
         old_ad = self._ad_active
         self._server_on = server_on
         self._ad_active = ad_active
+        self._tablet_open = tablet_open
+        self._laptop_open = laptop_open
+        self._current_camera_idx = camera_idx
+        self._vent_error_count = vent_error_count
 
         if server_on:
-            growth = self.NIGHT_SERVER_GROWTH.get(self._night, 0.0)
             self._server_interest = min(
                 self.SERVER_INTEREST_CAP,
-                self._server_interest + growth * dt,
+                self._server_interest + self._profile.server_growth * dt,
             )
         else:
             self._server_interest = max(
                 0.0,
-                self._server_interest - self.SILENCE_DECAY * dt,
+                self._server_interest - self._profile.silence_decay * dt,
             )
 
-        # Реклама: окно безопасности 2 сек
         if ad_active:
             if not old_ad:
-                # Реклама только что появилась — запускаем таймер иммунитета
                 self._ad_safe_timer = 0.0
                 self._ad_immune = True
             if self._ad_immune:
                 self._ad_safe_timer += dt
-                if self._ad_safe_timer >= self.AD_SAFE_WINDOW:
+                if self._ad_safe_timer >= self._profile.ad_safe_window:
                     self._ad_immune = False
             if not self._ad_immune:
                 self._ad_interest = min(
                     self.AD_INTEREST_CAP,
-                    self._ad_interest + self.AD_GROWTH * dt,
+                    self._ad_interest + self._profile.ad_growth * dt,
                 )
         else:
             self._ad_safe_timer = 0.0
             self._ad_immune = True
             self._ad_interest = max(
                 0.0,
-                self._ad_interest - self.SILENCE_DECAY * dt,
+                self._ad_interest - self._profile.silence_decay * dt,
+            )
+
+        if tablet_open and not laptop_open:
+            self._tablet_interest = min(
+                self._profile.tablet_cap,
+                self._tablet_interest + self._profile.tablet_growth * dt,
+            )
+        else:
+            self._tablet_interest = max(
+                0.0,
+                self._tablet_interest - self._profile.silence_decay * dt,
+            )
+
+        focus_ticks = 0
+        if camera_idx is not None:
+            focus_ticks = self._camera_watch.get(camera_idx, 0)
+        if (
+            tablet_open
+            and not laptop_open
+            and focus_ticks >= self._profile.camera_focus_threshold_ticks
+        ):
+            overload = min(
+                1.0,
+                (focus_ticks - self._profile.camera_focus_threshold_ticks) / 240.0,
+            )
+            self._camera_focus_interest = min(
+                self._profile.camera_focus_cap,
+                self._camera_focus_interest
+                + self._profile.camera_focus_growth * (0.35 + overload) * dt,
+            )
+        else:
+            self._camera_focus_interest = max(
+                0.0,
+                self._camera_focus_interest - self._profile.silence_decay * dt,
+            )
+
+        if vent_error_count > 0:
+            self._vent_interest = min(
+                self._profile.vent_cap,
+                self._vent_interest
+                + self._profile.vent_growth * min(2, vent_error_count) * dt,
+            )
+        else:
+            self._vent_interest = max(
+                0.0,
+                self._vent_interest - self._profile.silence_decay * dt,
             )
 
         target_attention = min(
             100.0,
             self._server_interest
             + self._ad_interest
-            + self.hack_attraction * self.HACK_INTEREST_SCALE,
+            + self._tablet_interest
+            + self._camera_focus_interest
+            + self._vent_interest
+            + self.hack_attraction * self._profile.hack_interest_scale,
         )
-        if not server_on and not ad_active and self.hack_attraction <= 0.01:
+        if (
+            not server_on
+            and not ad_active
+            and not tablet_open
+            and vent_error_count <= 0
+            and self.hack_attraction <= 0.01
+        ):
             target_attention = 0.0
         self.attention += (target_attention - self.attention) * 0.12
         self.attention = max(0.0, min(100.0, self.attention))
@@ -424,11 +535,10 @@ class AlgemAI:
             return          # Алгем уже в этой комнате, эффекта нет
 
         path = bfs_path(self.location, target_node, self._graph)
-        if path is None or len(path) - 1 > 2:
+        if path is None or len(path) - 1 > self._profile.lure_hear_distance:
             return          # Слишком далеко — не слышит
 
-        # 15% шанс что приманка не сработает
-        if random.random() < 0.15:
+        if random.random() < self._profile.lure_fail_chance:
             return
 
         self._lure_node       = target_node
@@ -457,6 +567,8 @@ class AlgemAI:
             True  — Алгем добрался до офиса (Game Over).
             False — всё в порядке.
         """
+        self._current_hour = hour
+
         # Обратный отсчёт анимационного триггера
         if self.trigger_timer > 0:
             self.trigger_timer -= 1
@@ -532,11 +644,16 @@ class AlgemAI:
             return False
 
         # Порог перехода в ATTACK зависит от ночи
-        attack_threshold = 85.0 - (self._night * 3.0)
+        attack_threshold = self._attack_threshold(
+            self._profile.idle_attack_threshold
+        )
         can_attack = (
             self.hack_attraction >= 0.05
             or self._server_interest >= 8.0
             or self._ad_interest >= 8.0
+            or self._tablet_interest >= 6.0
+            or self._camera_focus_interest >= 6.0
+            or self._vent_interest >= 6.0
         )
 
         if can_attack and self.attention >= attack_threshold:
@@ -568,8 +685,13 @@ class AlgemAI:
             self.hack_attraction >= 0.05
             or self._server_interest >= 8.0
             or self._ad_interest >= 8.0
+            or self._tablet_interest >= 6.0
+            or self._camera_focus_interest >= 6.0
+            or self._vent_interest >= 6.0
         )
-        attack_threshold = 90.0 - (self._night * 3.0)
+        attack_threshold = self._attack_threshold(
+            self._profile.patrol_attack_threshold
+        )
         if can_attack and self.attention >= attack_threshold:
             self.state = AIState.ATTACK
 
@@ -614,7 +736,7 @@ class AlgemAI:
         next_node = path[1]
 
         if next_node == self.OFFICE_NODE:
-            self._entry_timer = 90  # ~1.5 сек на реакцию игрока
+            self._entry_timer = self._profile.entry_delay
             return False
 
         self._move_to(next_node)
@@ -678,14 +800,17 @@ class AlgemAI:
             watch    = self._camera_watch.get(n, 0)
             observed = min(1.0, watch / 300.0)
             penalty  = 0.05 if n == self.OFFICE_NODE else 1.0
-            weight = max(0.05, (1.0 - observed * 0.85)) * penalty
+            weight = max(
+                0.05,
+                (1.0 - observed * self._profile.watch_penalty_scale),
+            ) * penalty
 
-            if self.attention >= self.OFFICE_PULL_START and n != self.OFFICE_NODE:
+            if self.attention >= self._profile.office_pull_start and n != self.OFFICE_NODE:
                 office_dist = self._base_heuristic.get(n, 999)
                 if office_dist < 999:
                     pull = min(
-                        self.OFFICE_PULL_MAX,
-                        (self.attention - self.OFFICE_PULL_START) / 100.0,
+                        self._profile.office_pull_max,
+                        (self.attention - self._profile.office_pull_start) / 100.0,
                     )
                     weight *= 1.0 + max(0.0, 4.0 - office_dist) * 0.18 * pull
 
@@ -716,9 +841,13 @@ class AlgemAI:
         Эта функция делает поведение «реактивным» на действия игрока:
         смотри на камеру → Алгем будет обходить эту комнату.
         """
-        watch    = self._camera_watch.get(u, 0)
+        watch = self._camera_watch.get(u, 0)
         observed = min(1.0, watch / 300.0)
-        return 1.0 + observed * 2.0
+        weight = 1.0 + observed * (1.0 + self._profile.watch_penalty_scale * 1.5)
+        if v in {8, 9, 10, 11} and self._vent_interest > 0.0:
+            vent_bias = min(0.35, self._vent_interest / max(1.0, self._profile.vent_cap))
+            weight *= 1.0 - vent_bias
+        return max(0.55, weight)
 
     def _move_to(self, node: int) -> None:
         """Переместить Алгема и взвести анимационный триггер."""

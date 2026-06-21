@@ -17,6 +17,7 @@ gameplay_presenter.py — Presenter (P в паттерне MVP).
 
 from __future__ import annotations
 
+import math
 import random
 from typing import Any
 
@@ -28,7 +29,6 @@ from algem_ai import AIState, bfs_path
 from gameplay_model import (
     BASE_GRAPH, CAMERAS, CAMERA_COUNT, VENT_CAMERAS,
     GameModel, SealState, SEAL_CAMERA_MAP, VENT_SEALS,
-    find_nearest_vent_camera,
 )
 from settings import save_settings
 
@@ -53,8 +53,14 @@ SOUND_BASE_VOLUMES: dict[str, float] = {
     "snd_endnight": 0.55,
     "snd_wait": 0.30,
     "snd_vent_close": 0.36,
+    "snd_knock": 0.36,
     "snd_danger2b": 0.34,
 }
+
+
+def _phone_call_sound_path(night: int) -> str:
+    night_idx = max(1, min(5, night))
+    return f"sounds/ui/callnight{night_idx}.mp3"
 
 TALK_DIST_PARAMS: dict[int, tuple[int, float]] = {
     0: (0, 0.88),
@@ -64,13 +70,59 @@ TALK_DIST_PARAMS: dict[int, tuple[int, float]] = {
     4: (36, 0.13),
 }
 
-VENT_DIST_VOLUMES: dict[int, float] = {
-    0: 0.70,
-    1: 0.53,
-    2: 0.36,
-    3: 0.22,
-    4: 0.12,
+# Физические координаты камер для расчёта взвешенных расстояний.
+_NODE_POSITIONS: dict[int, tuple[float, float]] = {
+    0: (245.0, 76.0),   # office
+    1: (447.0, 303.0),
+    2: (331.0, 120.0),
+    3: (270.0, 279.0),
+    4: (207.0, 334.0),
+    5: (148.0, 65.0),
+    6: (88.0, 213.0),
+    7: (32.0, 116.0),
+    8: (430.0, 238.0),  # lower right vent
+    9: (344.0, 17.0),   # upper right vent
+    10: (7.0, 56.0),    # upper left vent
+    11: (7.0, 288.0),   # lower left vent
 }
+
+# Взвешенные расстояния (Dijkstra) между всеми парами камер.
+# Вес ребра = Евклидово расстояние между соседями → уникальные float-значения.
+def _precompute_weighted_distances() -> dict[tuple[int, int], float]:
+    import heapq
+    from gameplay_model import BASE_GRAPH
+    result: dict[tuple[int, int], float] = {}
+    for start in BASE_GRAPH:
+        dist_map: dict[int, float] = {start: 0.0}
+        heap = [(0.0, start)]
+        while heap:
+            d, node = heapq.heappop(heap)
+            if d > dist_map.get(node, float("inf")):
+                continue
+            for neighbor in BASE_GRAPH.get(node, []):
+                pos_a = _NODE_POSITIONS.get(node)
+                pos_b = _NODE_POSITIONS.get(neighbor)
+                if pos_a and pos_b:
+                    w = math.dist(pos_a, pos_b)
+                else:
+                    w = 100.0
+                nd = d + w
+                if nd < dist_map.get(neighbor, float("inf")):
+                    dist_map[neighbor] = nd
+                    heapq.heappush(heap, (nd, neighbor))
+        for end, d in dist_map.items():
+            result[(start, end)] = d
+    return result
+
+WEIGHTED_DISTANCES: dict[tuple[int, int], float] = _precompute_weighted_distances()
+
+# Максимальное расстояние для нормализации → громкость по экспоненте.
+_MAX_DIST: float = max(WEIGHTED_DISTANCES.values()) if WEIGHTED_DISTANCES else 1.0
+
+def _volume_from_distance(dist: float) -> float:
+    """Непрерывная кривая громкости: 0.70 на расстоянии 0 → 0.10 на max."""
+    t = min(dist / _MAX_DIST, 1.0)
+    return 0.70 * (1.0 - t) + 0.10 * t
 
 CHANNEL_MASTERS: dict[str, float] = {
     "algem_talk": 0.82,
@@ -124,6 +176,7 @@ class GamePresenter:
         self._projection_corner_idx = 0
         self._projection_dragging = False
         self._last_regular_cam: int = 1
+        self._last_vent_cam: int = 8
 
         # ── Загрузка всех звуков сразу ───────────────────────────────────
         self._keys_held: set[int] = set()
@@ -141,6 +194,7 @@ class GamePresenter:
             "snd_endnight": ("night_end", SOUND_BASE_VOLUMES["snd_endnight"]),
             "snd_wait": ("reboot_loop", SOUND_BASE_VOLUMES["snd_wait"]),
             "snd_vent_close": ("vent_close", SOUND_BASE_VOLUMES["snd_vent_close"]),
+            "snd_knock": ("vent_knock", SOUND_BASE_VOLUMES["snd_knock"]),
             "snd_danger2b": ("danger_loop", SOUND_BASE_VOLUMES["snd_danger2b"]),
             "snd_laptop_on": ("sounds/laptop/laptop_turning_on.mp3", 0.60),
             "snd_laptop_off": ("sounds/laptop/laptop_turning_off.mp3", 0.60),
@@ -154,11 +208,12 @@ class GamePresenter:
             "snd_cam_init": "sounds/cameras/camera_init.wav",
             "snd_ambience": "sounds/ambience/ambience.wav",
             "snd_algem_leave": "sounds/threats/alegem_is_leaving.wav",
-            "snd_phone_call": "sounds/ui/callnight1.mp3",
+            "snd_phone_call": _phone_call_sound_path(self.model.night),
             "snd_startnight": "sounds/ui/night_starts.wav",
             "snd_endnight": "sounds/ui/night_ends.wav",
             "snd_wait": "sounds/ui/wait.wav",
             "snd_vent_close": "sounds/vents/vent_close.wav",
+            "snd_knock": "sounds/vents/knock.wav",
             "snd_danger2b": "sounds/threats/danger2b.wav",
             "snd_laptop_on": "sounds/laptop/laptop_turning_on.mp3",
             "snd_laptop_off": "sounds/laptop/laptop_turning_off.mp3",
@@ -209,10 +264,6 @@ class GamePresenter:
         self._vent_sound_timer: int = 0
 
         # ── Звуки Алгема: расстояние от офиса ────────────────────────────
-        self._office_distance: dict[int, int] = {}
-        for node in range(1, CAMERA_COUNT + 1):
-            path = bfs_path(node, 0, BASE_GRAPH)
-            self._office_distance[node] = len(path) - 1 if path else 4
         self._dist_params: dict[int, tuple[int, float]] = TALK_DIST_PARAMS
         self._algem_talk_variants: dict[int, list[pygame.mixer.Sound]] | None = None
 
@@ -225,6 +276,8 @@ class GamePresenter:
         self._seal_playing: bool = False
         self._seal_timer: int = 0
         self._prev_seal_states: dict[str, SealState] = dict(self.model.seals)
+        self._vent_block_signature: tuple | None = None
+        self._vent_seal_just_closed: int = 0  # тиков с момента последнего закрытия вента
         self._danger_playing: bool = False
         self._on_node5_grace: int = 0
 
@@ -477,22 +530,13 @@ class GamePresenter:
                 going_vent = not self.view.vent_map_mode
                 self.view.vent_map_mode = going_vent
                 if going_vent:
-                    # Сохраняем текущую обычную камеру и переключаем на ближайшую вент
+                    # Возвращаем игрока на последнюю просмотренную вент-камеру.
                     if self.model.camera_idx not in VENT_CAMERAS:
                         self._last_regular_cam = self.model.camera_idx
-                    nearest = find_nearest_vent_camera(
-                        self._last_regular_cam, BASE_GRAPH,
-                    )
-                    self._switch_camera(nearest)
+                    self._switch_camera(self._last_vent_cam)
                 else:
-                    # Возврат к обычной камере
+                    # Возврат на последнюю просмотренную обычную камеру.
                     self._switch_camera(self._last_regular_cam)
-                return
-
-            # Кнопки RESET VENT_A / RESET VENT_B
-            vent_hit = self.view.get_vent_reset_clicked(pos)
-            if vent_hit is not None:
-                self.model.start_vent_reset(vent_hit)
                 return
 
             # Seal-точки на карте вентиляции
@@ -658,9 +702,10 @@ class GamePresenter:
         self._update_phone()
         self._update_algem_sounds()
         self._update_vent_sounds()
+        self._update_seal_sound()
+        self._update_vent_block_sound()
         self._update_danger_sound()
         self._update_reboot_sound()
-        self._update_seal_sound()
 
         self._update_ad()
         self._update_laptop()
@@ -803,13 +848,7 @@ class GamePresenter:
         self._algem_talk_timer -= 1
 
         if self._algem_talk_channel.get_busy():
-            if self.model.tablet_open and not self.model.tablet_animating:
-                cam_to_algem = bfs_path(
-                    self.model.camera_idx, self.model.algem_location, BASE_GRAPH
-                )
-                dist = len(cam_to_algem) - 1 if cam_to_algem else 4
-            else:
-                dist = self._office_distance.get(self.model.algem_location, 4)
+            dist = self._current_audio_distance(self.model.algem_location)
             self._algem_talk_channel.set_volume(
                 self._distance_volume(self._dist_params, dist, "algem_talk")
             )
@@ -821,13 +860,7 @@ class GamePresenter:
         if not self._algem_talk_sounds:
             return
 
-        if self.model.tablet_open and not self.model.tablet_animating:
-            cam_to_algem = bfs_path(
-                self.model.camera_idx, self.model.algem_location, BASE_GRAPH
-            )
-            dist = len(cam_to_algem) - 1 if cam_to_algem else 4
-        else:
-            dist = self._office_distance.get(self.model.algem_location, 4)
+        dist = self._current_audio_distance(self.model.algem_location)
         variants = self._talk_variants.get(dist, self._talk_variants[4])
         self._algem_talk_channel.set_volume(
             self._distance_volume(self._dist_params, dist, "algem_talk")
@@ -839,7 +872,13 @@ class GamePresenter:
         """Звуки вентиляции, привязанные к последней обычной камере игрока."""
         loc = self.model.algem_location
         in_vent = loc in VENT_CAMERAS
-        if not in_vent:
+        direct_vent_view = (
+            self.model.tablet_open
+            and not self.model.tablet_animating
+            and self.model.camera_idx == loc
+        )
+        moving_in_vent = in_vent and self.model.algem_trigger > 0
+        if not in_vent or not moving_in_vent or direct_vent_view:
             if self._vent_sound_channel.get_busy():
                 self._vent_sound_channel.stop()
             self._vent_sound_timer = 0
@@ -852,7 +891,11 @@ class GamePresenter:
             tablet_open=self.model.tablet_open,
             tablet_animating=self.model.tablet_animating,
         )
-        volume = self._distance_volume(VENT_DIST_VOLUMES, dist, "vent")
+        raw = WEIGHTED_DISTANCES.get(
+            (self.model.camera_idx, self.model.algem_location), _MAX_DIST
+        )
+        base_volume = _volume_from_distance(raw)
+        volume = self._mix_volume("vent_presence", base_volume * CHANNEL_MASTERS["vent"])
 
         if not self._vent_sound_channel.get_busy():
             if not self._vent_sounds:
@@ -861,6 +904,25 @@ class GamePresenter:
             self._vent_sound_timer = 0
 
         self._vent_sound_channel.set_volume(volume)
+
+    def _update_vent_block_sound(self) -> None:
+        """Hit when Algem runs into a sealed vent, with post-close grace period."""
+        if self._vent_seal_just_closed > 0:
+            self._vent_seal_just_closed -= 1
+        if self.model.algem_trigger <= 0:
+            self._vent_block_signature = None
+            return
+        blocked = self._current_vent_block_signature()
+        if blocked is None:
+            self._vent_block_signature = None
+            return
+
+        if self._vent_seal_just_closed > 0:
+            return
+
+        if self._vent_block_signature is None and self.snd_knock:
+            self.snd_knock.play()
+        self._vent_block_signature = blocked
 
     def _distance_volume(
         self,
@@ -879,6 +941,30 @@ class GamePresenter:
             return max(0.0, min(1.0, mixed))
         return self._mix_volume(sound_id, mixed)
 
+    def _current_audio_distance(self, source_node: int) -> int:
+        """Distance bucket from the active listening point to a source node."""
+        listener_node = self._listener_audio_node(
+            camera_idx=self.model.camera_idx,
+            tablet_open=self.model.tablet_open,
+            tablet_animating=self.model.tablet_animating,
+        )
+        return self._camera_audio_distance(listener_node, source_node)
+
+    @staticmethod
+    def _listener_audio_node(
+        camera_idx: int,
+        tablet_open: bool,
+        tablet_animating: bool,
+    ) -> int:
+        if tablet_open and not tablet_animating:
+            return camera_idx
+        return 0
+
+    @staticmethod
+    def _camera_audio_distance(listener_node: int, source_node: int) -> int:
+        """Взвешенное расстояние через граф комнат (нормализовано для совместимости)."""
+        return int(WEIGHTED_DISTANCES.get((listener_node, source_node), _MAX_DIST))
+
     @staticmethod
     def _vent_listen_distance(
         algem_node: int,
@@ -887,21 +973,38 @@ class GamePresenter:
         tablet_open: bool,
         tablet_animating: bool,
     ) -> int:
-        """Расстояние для вент-звука: слушаем от обычной камеры, а не от vent-view."""
+        """Расстояние для вент-звука по общей акустической карте камер."""
+        _ = last_regular_cam  # kept for compatibility with older call sites/tests
         if algem_node not in VENT_CAMERAS:
             return 4
+        listener_node = GamePresenter._listener_audio_node(
+            camera_idx=camera_idx,
+            tablet_open=tablet_open,
+            tablet_animating=tablet_animating,
+        )
+        return GamePresenter._camera_audio_distance(listener_node, algem_node)
 
-        if tablet_open and not tablet_animating:
-            listener_cam = (
-                last_regular_cam
-                if camera_idx in VENT_CAMERAS
-                else camera_idx
-            )
-            path = bfs_path(listener_cam, algem_node, BASE_GRAPH)
-            return len(path) - 1 if path else 4
+    def _current_vent_block_signature(self) -> tuple | None:
+        """Detect a sealed vent near a moving Algem."""
+        blocked_nodes = {
+            vent_node
+            for seal_id, vent_node in VENT_SEALS.items()
+            if self.model.seals.get(seal_id) == SealState.CLOSED
+        }
+        if not blocked_nodes:
+            return None
 
-        path = bfs_path(7, algem_node, BASE_GRAPH)
-        return len(path) - 1 if path else 4
+        loc = self.model.algem_location
+        if loc in blocked_nodes:
+            return ("inside", loc)
+
+        adjacent_blocked = tuple(
+            sorted(node for node in blocked_nodes if node in BASE_GRAPH.get(loc, []))
+        )
+        if adjacent_blocked:
+            return ("adjacent", loc, adjacent_blocked)
+
+        return None
 
     def _update_danger_sound(self) -> None:
         """Звук danger2b.wav когда Алгем на последней камере (node 5)."""
@@ -967,6 +1070,10 @@ class GamePresenter:
         if self.model.camera_idx == idx:
             return
         self.model.camera_idx = idx
+        if idx in VENT_CAMERAS:
+            self._last_vent_cam = idx
+        else:
+            self._last_regular_cam = idx
         if self.snd_cam_switch:
             self._cam_switch_channel.play(self.snd_cam_switch)
 
@@ -1078,6 +1185,7 @@ class GamePresenter:
                 and self.snd_vent_close
             ):
                 self.snd_vent_close.play()
+                self._vent_seal_just_closed = 60
 
         active = any(
             self.model.seals.get(s) == SealState.SEALING
