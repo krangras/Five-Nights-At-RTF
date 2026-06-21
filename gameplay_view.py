@@ -546,8 +546,7 @@ class GameView:
         self._noise_h = screen_h // 3
         self._noise_surf = pygame.Surface((self._noise_w, self._noise_h), pygame.SRCALPHA)
         self._noise_timer = 0
-        self._noise_alpha = 25
-        self._noise_burst_timer = 0
+        self._noise_alpha = 30
 
         # Сканлинии (crt scanlines) — кэшируются, скроллятся
         self._scanline_surf = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
@@ -2043,11 +2042,6 @@ class GameView:
             self._noise_timer = random.randint(1, 3)
             # Генерируем шум на маленькой surface
             arr = np.random.randint(0, 255, (self._noise_h, self._noise_w, 3), dtype=np.uint8)
-            # Альфа: тихий шум normal, иногда burst
-            self._noise_burst_timer -= 1
-            if self._noise_burst_timer <= 0:
-                self._noise_alpha = random.choice([25, 25, 25, 60, 80])
-                self._noise_burst_timer = random.randint(120, 400)
             alpha_arr = np.full((self._noise_h, self._noise_w, 1), self._noise_alpha, dtype=np.uint8)
             rgba = np.concatenate([arr, alpha_arr], axis=2)
             raw = pygame.image.frombuffer(rgba.tobytes(), (self._noise_w, self._noise_h), "RGBA")
