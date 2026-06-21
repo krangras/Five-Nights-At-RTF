@@ -98,19 +98,19 @@ def main():
     # Принудительно ставим иконку на панель задач (Windows 10+)
     try:
         import ctypes
+        from ctypes import wintypes
         hwnd = pygame.display.get_wm_info()["window"]
-        ICON_small = 1
-        ICON_big = 0
-        IMAGE_ICON = 1
-        LR_LOADFROMFILE = 0x0010
-        GCLP_HICONSM = -34
-        GCLP_HICON = -14
         icon_path = os.path.abspath("assets/logo/icon.ico")
         user32 = ctypes.windll.user32
+        IMAGE_ICON = 1
+        LR_LOADFROMFILE = 0x0010
+        WM_SETICON = 0x0080
+        ICON_SMALL = 0
+        ICON_BIG = 1
         hicon = user32.LoadImageW(None, icon_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE)
         if hicon:
-            user32.SetClassLongPtrW(hwnd, GCLP_HICONSM, hicon)
-            user32.SetClassLongPtrW(hwnd, GCLP_HICON, hicon)
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon)
     except Exception:
         pass
     clock = pygame.time.Clock()

@@ -17,9 +17,32 @@ DEFAULT_LAPTOP_PROJECTION_CORNERS = [
     [445, 610],
 ]
 LAPTOP_PROJECTION_CONFIG_PATH = "laptop_projection.json"
+LAPTOP_BOOT_TICKS = 180
+LAPTOP_SHUTDOWN_TICKS = 150
 
 
-def _normalize_brightness(surfaces_with_paths, target=15):
+def get_laptop_power_sequence(power_state: str, power_timer: int) -> tuple[str, float]:
+    """Map laptop power timers to a visual phase and normalized progress."""
+    if power_state == "BOOTING":
+        progress = max(0.0, min(1.0, 1.0 - power_timer / LAPTOP_BOOT_TICKS))
+        if progress < 0.18:
+            return "boot_wake", progress / 0.18
+        if progress < 0.62:
+            return "boot_post", (progress - 0.18) / 0.44
+        return "boot_loading", (progress - 0.62) / 0.38
+
+    if power_state == "SHUTTING_DOWN":
+        progress = max(
+            0.0, min(1.0, 1.0 - power_timer / LAPTOP_SHUTDOWN_TICKS)
+        )
+        if progress < 0.48:
+            return "shutdown_msg", progress / 0.48
+        return "shutdown_fade", (progress - 0.48) / 0.52
+
+    return "off_idle", 0.0
+
+
+def _normalize_brightness(surfaces_with_paths, target=25):
     """
     Нормализует яркость изображений. Если в assets/.cache/norm/ есть
     кешированная версия — загружает её вместо пересчёта.
@@ -197,9 +220,9 @@ class GameView:
             2: "cam2.png",
             3: "cam3.png",
             4: "cam4.png",
-            5: "cam7.png",
-            6: "cam5.png",
-            7: "cam6.png",
+            5: "cam5.png",
+            6: "cam6.png",
+            7: "cam7.png",
             8: "cam8.png",
             9: "cam9.png",
             10: "cam10.png",
@@ -309,10 +332,10 @@ class GameView:
             cw = int(raw.get_width() * scale)
             surf = pygame.transform.smoothscale(raw, (cw, cam_h))
             dark = pygame.Surface((cw, cam_h))
-            dark.fill((170, 170, 170))
+            dark.fill((195, 195, 195))
             surf.blit(dark, (0, 0), special_flags=pygame.BLEND_MULT)
             purple = pygame.Surface((cw, cam_h), pygame.SRCALPHA)
-            purple.fill((40, 15, 60, 55))
+            purple.fill((40, 15, 60, 40))
             surf.blit(purple, (0, 0))
             self.camera_surfaces[idx] = surf
             self.camera_max_offsets[idx] = max(0, cw - self.screen_rect.w)
@@ -331,10 +354,10 @@ class GameView:
                 cw = int(raw.get_width() * s)
                 surf = pygame.transform.smoothscale(raw, (cw, cam_h))
                 dark = pygame.Surface((cw, cam_h))
-                dark.fill((170, 170, 170))
+                dark.fill((195, 195, 195))
                 surf.blit(dark, (0, 0), special_flags=pygame.BLEND_MULT)
                 purple = pygame.Surface((cw, cam_h), pygame.SRCALPHA)
-                purple.fill((40, 15, 60, 55))
+                purple.fill((40, 15, 60, 40))
                 surf.blit(purple, (0, 0))
                 return surf
             except pygame.error:
@@ -401,6 +424,56 @@ class GameView:
             pygame.draw.circle(self._rec_glow, (255, 0, 0, 50), (12, 12), 12)
 
             self._dark_overlay = pygame.Surface((sw, sh), pygame.SRCALPHA)
+
+            self._laptop_scanlines = pygame.Surface((sw, sh), pygame.SRCALPHA)
+            for y in range(0, sh, 2):
+                alpha = 10 if (y // 2) % 2 == 0 else 18
+                pygame.draw.line(
+                    self._laptop_scanlines,
+                    (0, 0, 0, alpha),
+                    (0, y),
+                    (sw, y),
+                )
+
+            self._laptop_crt_vignette = pygame.Surface(
+                (sw, sh), pygame.SRCALPHA
+            )
+            for i in range(24):
+                inset = i * 8
+                alpha = min(110, 4 + i * 4)
+                pygame.draw.rect(
+                    self._laptop_crt_vignette,
+                    (0, 0, 0, alpha),
+                    pygame.Rect(inset, inset, sw - inset * 2, sh - inset * 2),
+                    8,
+                    border_radius=18,
+                )
+
+            self._laptop_panel_noise = pygame.Surface(
+                (sw, sh), pygame.SRCALPHA
+            )
+            rng = random.Random(17)
+            for _ in range(260):
+                x = rng.randrange(sw)
+                y = rng.randrange(sh)
+                w = rng.randint(6, 28)
+                h = rng.randint(1, 3)
+                alpha = rng.randint(5, 12)
+                tone = rng.randint(26, 40)
+                pygame.draw.rect(
+                    self._laptop_panel_noise,
+                    (tone, tone, tone + 2, alpha),
+                    pygame.Rect(x, y, w, h),
+                )
+            for _ in range(120):
+                y = rng.randrange(sh)
+                alpha = rng.randint(3, 8)
+                pygame.draw.line(
+                    self._laptop_panel_noise,
+                    (255, 255, 255, alpha),
+                    (0, y),
+                    (sw, y),
+                )
 
             self._text_cache = {}
 
@@ -857,8 +930,16 @@ class GameView:
 
     # ── Ноутбук ──────────────────────────────────────────────────────
 
-    def _draw_xp_icon(self, ix: int, iy: int, key: str, hovered: bool) -> None:
+    def _draw_xp_icon(
+        self,
+        ix: int,
+        iy: int,
+        key: str,
+        hovered: bool,
+        surface: pygame.Surface | None = None,
+    ) -> None:
         """Нарисовать одну иконку рабочего стола в стиле XP."""
+        target = surface if surface is not None else self.screen
         icon_s = 48
         pad = 2
 
@@ -868,18 +949,18 @@ class GameView:
                 (icon_s + pad * 2, icon_s + pad * 2), pygame.SRCALPHA
             )
             sel.fill((80, 120, 200, 80))
-            self.screen.blit(sel, (ix - pad, iy - pad))
+            target.blit(sel, (ix - pad, iy - pad))
 
         if key == "mycomputer":
             # Монитор
             pygame.draw.rect(
-                self.screen,
+                target,
                 (180, 180, 180),
                 (ix + 4, iy + 2, 40, 30),
                 border_radius=3,
             )
             pygame.draw.rect(
-                self.screen,
+                target,
                 (50, 50, 50),
                 (ix + 4, iy + 2, 40, 30),
                 2,
@@ -887,17 +968,17 @@ class GameView:
             )
             # Экран
             pygame.draw.rect(
-                self.screen, (40, 80, 160), (ix + 8, iy + 6, 32, 20)
+                target, (40, 80, 160), (ix + 8, iy + 6, 32, 20)
             )
             pygame.draw.rect(
-                self.screen, (30, 30, 30), (ix + 8, iy + 6, 32, 20), 1
+                target, (30, 30, 30), (ix + 8, iy + 6, 32, 20), 1
             )
             # Подставка
             pygame.draw.rect(
-                self.screen, (140, 140, 140), (ix + 18, iy + 32, 12, 4)
+                target, (140, 140, 140), (ix + 18, iy + 32, 12, 4)
             )
             pygame.draw.rect(
-                self.screen,
+                target,
                 (120, 120, 120),
                 (ix + 12, iy + 36, 24, 3),
                 border_radius=2,
@@ -906,20 +987,20 @@ class GameView:
         elif key == "claude":
             # Скрин-иконка — череп / хакер
             cx, cy = ix + icon_s // 2, iy + 16
-            pygame.draw.circle(self.screen, (60, 20, 80), (cx, cy), 16)
-            pygame.draw.circle(self.screen, (100, 40, 140), (cx, cy), 16, 2)
+            pygame.draw.circle(target, (60, 20, 80), (cx, cy), 16)
+            pygame.draw.circle(target, (100, 40, 140), (cx, cy), 16, 2)
             # Глаза
-            pygame.draw.circle(self.screen, (200, 50, 50), (cx - 6, cy - 3), 4)
-            pygame.draw.circle(self.screen, (200, 50, 50), (cx + 6, cy - 3), 4)
+            pygame.draw.circle(target, (200, 50, 50), (cx - 6, cy - 3), 4)
+            pygame.draw.circle(target, (200, 50, 50), (cx + 6, cy - 3), 4)
             pygame.draw.circle(
-                self.screen, (255, 200, 200), (cx - 5, cy - 4), 1
+                target, (255, 200, 200), (cx - 5, cy - 4), 1
             )
             pygame.draw.circle(
-                self.screen, (255, 200, 200), (cx + 7, cy - 4), 1
+                target, (255, 200, 200), (cx + 7, cy - 4), 1
             )
             # Нижняя часть
             pygame.draw.rect(
-                self.screen,
+                target,
                 (60, 20, 80),
                 (cx - 10, cy + 12, 20, 6),
                 border_radius=2,
@@ -929,13 +1010,13 @@ class GameView:
             # Корзина
             bx, by = ix + 12, iy + 10
             pygame.draw.rect(
-                self.screen,
+                target,
                 (180, 180, 180),
                 (bx, by + 6, 24, 26),
                 border_radius=2,
             )
             pygame.draw.rect(
-                self.screen,
+                target,
                 (140, 140, 140),
                 (bx, by + 6, 24, 26),
                 2,
@@ -943,13 +1024,13 @@ class GameView:
             )
             # Ручка
             pygame.draw.rect(
-                self.screen,
+                target,
                 (160, 160, 160),
                 (bx + 6, by, 12, 8),
                 border_radius=2,
             )
             pygame.draw.rect(
-                self.screen,
+                target,
                 (120, 120, 120),
                 (bx + 6, by, 12, 8),
                 1,
@@ -958,7 +1039,7 @@ class GameView:
             # Полоски
             for lx in (bx + 6, bx + 12, bx + 18):
                 pygame.draw.line(
-                    self.screen, (120, 120, 120), (lx, by + 10), (lx, by + 30)
+                    target, (120, 120, 120), (lx, by + 10), (lx, by + 30)
                 )
 
         # Подпись под иконкой
@@ -972,7 +1053,7 @@ class GameView:
             lines = [lines]
         for j, line in enumerate(lines):
             rendered = self._ctext(self._ui_font_sm, line, (0, 0, 0))
-            self.screen.blit(
+            target.blit(
                 rendered,
                 (
                     ix + 1 + icon_s // 2 - rendered.get_width() // 2 + 1,
@@ -980,13 +1061,518 @@ class GameView:
                 ),
             )
             rendered = self._ctext(self._ui_font_sm, line, (255, 255, 255))
-            self.screen.blit(
+            target.blit(
                 rendered,
                 (
                     ix + icon_s // 2 - rendered.get_width() // 2,
                     iy + icon_s + 4 + j * 16,
                 ),
             )
+
+    def _draw_laptop_power_transition(self, model) -> None:
+        sw, sh = self.screen_w, self.screen_h
+        phase, phase_t = get_laptop_power_sequence(
+            model.laptop_power_state, model.laptop_power_timer
+        )
+
+        layer = self._render_laptop_phase_surface(phase, phase_t, model)
+        self.screen.blit(layer, (0, 0))
+
+        if model.laptop_power_state in ("BOOTING", "SHUTTING_DOWN"):
+            scanlines = self._laptop_scanlines.copy()
+            scanlines.set_alpha(12)
+            self.screen.blit(scanlines, (0, 0))
+
+        boot_progress = 0.0
+        if model.laptop_power_state == "BOOTING":
+            boot_progress = self._clamp01(
+                1.0 - model.laptop_power_timer / LAPTOP_BOOT_TICKS
+            )
+
+        draw_power_button = model.laptop_power_state != "BOOTING" or boot_progress < 0.84
+        if draw_power_button:
+            power_btn = pygame.Rect(sw // 2 - 28, int(sh * 0.83), 56, 24)
+            self._laptop_power_btn = power_btn
+            self._draw_laptop_power_button(model.laptop_power_state, power_btn)
+        else:
+            self._laptop_power_btn = pygame.Rect(0, 0, 0, 0)
+
+    def _render_laptop_phase_surface(
+        self, phase: str, phase_t: float, model=None
+    ) -> pygame.Surface:
+        surface = pygame.Surface((self.screen_w, self.screen_h))
+
+        if phase == "boot_wake":
+            self._draw_boot_animation(surface, phase_t * 0.18, model)
+            return surface
+        if phase == "boot_post":
+            self._draw_boot_animation(surface, 0.18 + phase_t * 0.44, model)
+            return surface
+        if phase == "boot_loading":
+            self._draw_boot_animation(surface, 0.62 + phase_t * 0.38, model)
+            return surface
+        if phase == "shutdown_msg":
+            self._draw_shutdown_animation(surface, phase_t * 0.48)
+            return surface
+        if phase == "shutdown_fade":
+            self._draw_shutdown_animation(surface, 0.48 + phase_t * 0.52)
+            return surface
+
+        self._draw_powered_off_screen(surface)
+        return surface
+
+    def _draw_laptop_power_button(
+        self, power_state: str, rect: pygame.Rect
+    ) -> None:
+        pulse = {
+            "OFF": 0.10,
+            "BOOTING": 0.28,
+            "SHUTTING_DOWN": 0.05,
+        }.get(power_state, 0.0)
+        fill = (10, 10, 11)
+        rim = (
+            58 + int(48 * pulse),
+            58 + int(48 * pulse),
+            60 + int(52 * pulse),
+        )
+        pygame.draw.rect(self.screen, fill, rect, border_radius=6)
+        pygame.draw.rect(self.screen, rim, rect, 1, border_radius=6)
+        highlight = pygame.Surface((rect.w - 4, max(4, rect.h // 2)), pygame.SRCALPHA)
+        pygame.draw.rect(
+            highlight,
+            (255, 255, 255, 10 + int(18 * pulse)),
+            highlight.get_rect(),
+            border_radius=5,
+        )
+        self.screen.blit(highlight, (rect.x + 2, rect.y + 2))
+        symbol_color = (
+            108 + int(78 * pulse),
+            108 + int(78 * pulse),
+            112 + int(82 * pulse),
+        )
+        cx, cy = rect.center
+        pygame.draw.circle(self.screen, symbol_color, (cx, cy + 1), 6, 2)
+        pygame.draw.line(self.screen, symbol_color, (cx, cy - 8), (cx, cy + 1), 2)
+
+    def _clamp01(self, value: float) -> float:
+        return max(0.0, min(1.0, value))
+
+    def _ease_out_cubic(self, value: float) -> float:
+        t = self._clamp01(value)
+        return 1.0 - (1.0 - t) ** 3
+
+    def _ease_in_out(self, value: float) -> float:
+        t = self._clamp01(value)
+        return t * t * (3.0 - 2.0 * t)
+
+    def _draw_power_scan_line(
+        self,
+        surface: pygame.Surface,
+        y: int,
+        width: int,
+        height: int,
+        alpha: int,
+    ) -> None:
+        sw, _sh = surface.get_size()
+        line = pygame.Surface((max(1, width), max(1, height)), pygame.SRCALPHA)
+        line.fill((96, 132, 154, alpha))
+        surface.blit(line, (sw // 2 - width // 2, y - height // 2))
+
+    def _draw_laptop_desktop_preview(
+        self,
+        surface: pygame.Surface,
+        model=None,
+        alpha: int = 255,
+    ) -> None:
+        """Draw a non-interactive copy of the normal desktop for boot fade-in."""
+        sw, sh = surface.get_size()
+        alpha = max(0, min(255, int(alpha)))
+        if alpha <= 0:
+            return
+
+        desktop = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        desktop.blit(self.laptop_wallpaper, (0, 0))
+
+        tb_h = 40
+        tb_top = self._tb_top
+        desktop.blit(self._tb_surf, (0, tb_top))
+
+        line_alpha = 220
+        pygame.draw.line(
+            desktop,
+            (100, 160, 255, line_alpha),
+            (0, tb_top),
+            (sw, tb_top),
+        )
+
+        start_rect = pygame.Rect(2, tb_top + 2, 86, 36)
+        desktop.blit(self._start_btn_surf, start_rect.topleft)
+        pygame.draw.rect(
+            desktop,
+            (20, 100, 20, line_alpha),
+            start_rect,
+            1,
+            border_radius=4,
+        )
+        start_label = self._ctext(self._ui_font_bold, "start", (255, 255, 255))
+        desktop.blit(start_label, (start_rect.x + 12, start_rect.y + 11))
+
+        pygame.draw.line(
+            desktop,
+            (60, 100, 180, line_alpha),
+            (start_rect.right + 4, tb_top + 6),
+            (start_rect.right + 4, sh - 6),
+        )
+
+        tray_rect = pygame.Rect(sw - 120, tb_top, 120, tb_h)
+        pygame.draw.rect(desktop, (30, 80, 160), tray_rect)
+        pygame.draw.line(
+            desktop,
+            (80, 130, 210, line_alpha),
+            (tray_rect.x, tb_top),
+            (tray_rect.x, sh),
+        )
+
+        if model is not None:
+            display_h = 12 if getattr(model, "hour", 0) == 0 else model.hour
+            display_m = getattr(model, "timer", 0) // 60
+            clock_str = f"{display_h}:{display_m:02d}"
+        else:
+            clock_str = "12:00"
+        clock_label = self._ctext(self._ui_font_bold, clock_str, (255, 255, 255))
+        desktop.blit(
+            clock_label,
+            (sw - clock_label.get_width() - 10, sh - tb_h + 11),
+        )
+
+        self._draw_xp_icon(30, 30, "claude", False, surface=desktop)
+        desktop.set_alpha(alpha)
+        surface.blit(desktop, (0, 0))
+
+    def _draw_boot_status_panel(
+        self,
+        surface: pygame.Surface,
+        progress: float,
+        alpha: int,
+    ) -> None:
+        sw, sh = surface.get_size()
+        p = self._clamp01(progress)
+        alpha = max(0, min(255, int(alpha)))
+        if alpha <= 0:
+            return
+
+        cx, cy = sw // 2, sh // 2
+        layer = pygame.Surface((sw, sh), pygame.SRCALPHA)
+
+        appear = self._ease_in_out(max(0.0, (p - 0.28) / 0.26))
+        local_alpha = int(alpha * appear)
+        if local_alpha <= 0:
+            return
+
+        title = self._ctext(self.font, "RTF OS", (210, 236, 246)).copy()
+        title.set_alpha(local_alpha)
+        layer.blit(title, (cx - title.get_width() // 2, cy - 74))
+
+        subtitle = self._ctext(
+            self._ui_font_sm, "secure workstation", (126, 158, 174)
+        ).copy()
+        subtitle.set_alpha(int(local_alpha * 0.86))
+        layer.blit(subtitle, (cx - subtitle.get_width() // 2, cy - 34))
+
+        line_t = self._ease_in_out((p - 0.36) / 0.46)
+        line_w = int(sw * (0.10 + 0.24 * line_t))
+        line_alpha = int(local_alpha * (0.46 + 0.18 * math.sin(p * math.tau * 2.0)))
+        if line_w > 8 and line_alpha > 0:
+            self._draw_power_scan_line(layer, cy + 2, line_w, 1, line_alpha)
+
+        boot_lines = [
+            (0.40, "checking cameras"),
+            (0.52, "mounting local server"),
+            (0.64, "loading night profile"),
+            (0.76, "opening session"),
+            (0.88, "starting desktop"),
+        ]
+        status_text = "starting services"
+        for threshold, text in boot_lines:
+            if p >= threshold:
+                status_text = text
+        dots = "." * (1 + int((p * 20) % 3))
+        status = self._ctext(
+            self._ui_font_sm,
+            status_text + dots,
+            (144, 176, 190),
+        ).copy()
+        status.set_alpha(int(local_alpha * 0.9))
+        layer.blit(status, (cx - status.get_width() // 2, cy + 24))
+
+        surface.blit(layer, (0, 0))
+
+    def _draw_plain_boot_screen(
+        self,
+        surface: pygame.Surface,
+        title: str,
+        lines: list[str],
+    ) -> None:
+        sw, sh = surface.get_size()
+        surface.fill((0, 0, 0))
+
+        header_rect = pygame.Rect(28, 26, sw - 56, 34)
+        pygame.draw.rect(surface, (7, 18, 24), header_rect)
+        pygame.draw.rect(surface, (68, 112, 128), header_rect, 1)
+        title_surf = self._ctext(self._ui_font_bold, title, (218, 238, 244))
+        surface.blit(title_surf, (header_rect.x + 12, header_rect.y + 8))
+
+        build = self._ctext(
+            self._ui_font_sm,
+            "RTF BOARD / NIGHT SHIFT TERMINAL",
+            (98, 140, 154),
+        )
+        surface.blit(build, (header_rect.right - build.get_width() - 12, header_rect.y + 9))
+
+        panel = pygame.Rect(28, 76, sw - 56, sh - 150)
+        pygame.draw.rect(surface, (3, 8, 11), panel)
+        pygame.draw.rect(surface, (46, 82, 94), panel, 1)
+
+        left_w = min(300, panel.w // 2 - 20)
+        left = pygame.Rect(panel.x + 14, panel.y + 14, left_w, panel.h - 28)
+        right = pygame.Rect(left.right + 18, left.y, panel.right - left.right - 32, left.h)
+        pygame.draw.rect(surface, (5, 13, 17), left)
+        pygame.draw.rect(surface, (5, 13, 17), right)
+        pygame.draw.rect(surface, (38, 76, 88), left, 1)
+        pygame.draw.rect(surface, (38, 76, 88), right, 1)
+
+        logo_lines = [
+            "+-- R T F --+",
+            "|  LAB-17  |",
+            "+----------+",
+        ]
+        y = left.y + 18
+        for line in logo_lines:
+            txt = self._ctext(self._ui_font_sm, line, (162, 214, 226))
+            surface.blit(txt, (left.x + 18, y))
+            y += 24
+
+        spec_lines = [
+            "CPU      I386 COMPATIBLE",
+            "RAM      262144 KB",
+            "VIDEO    VGA TEXT MODE",
+            "DISK 0   LOCAL SERVER",
+            "CCTV     11 CHANNELS",
+            "VENT     SEAL BUS READY",
+        ]
+        y += 14
+        for line in spec_lines:
+            key, value = line[:8], line[9:]
+            k = self._ctext(self._ui_font_sm, key, (96, 132, 142))
+            v = self._ctext(self._ui_font_sm, value, (188, 210, 214))
+            surface.blit(k, (left.x + 18, y))
+            surface.blit(v, (left.x + 104, y))
+            y += 22
+
+        right_title = self._ctext(self._ui_font_bold, "POST CHECK", (218, 238, 244))
+        surface.blit(right_title, (right.x + 14, right.y + 14))
+        y = right.y + 48
+        visible = max(1, min(len(lines), int((pygame.time.get_ticks() // 170) % (len(lines) + 1))))
+        if title != "RTF BIOS 1.04":
+            visible = len(lines)
+        for i, line in enumerate(lines[:visible]):
+            color = (156, 204, 172) if "OK" in line or "READY" in line else (174, 194, 202)
+            marker = "[OK]" if "OK" in line or "READY" in line else ">>"
+            m = self._ctext(self._ui_font_sm, marker, (84, 172, 108) if marker == "[OK]" else (102, 150, 166))
+            t = self._ctext(self._ui_font_sm, line, color)
+            surface.blit(m, (right.x + 16, y))
+            surface.blit(t, (right.x + 66, y))
+            y += 24
+
+        if visible < len(lines):
+            cursor = "█" if (pygame.time.get_ticks() // 250) % 2 == 0 else " "
+            cur = self._ctext(self._ui_font_sm, cursor, (184, 224, 232))
+            surface.blit(cur, (right.x + 16, y))
+
+        footer = pygame.Rect(28, sh - 58, sw - 56, 28)
+        pygame.draw.rect(surface, (7, 18, 24), footer)
+        pygame.draw.rect(surface, (46, 82, 94), footer, 1)
+        footer_text = self._ctext(
+            self._ui_font_sm,
+            "DEL Setup   F8 Boot Menu   CTRL+ALT+DEL Restart",
+            (128, 172, 184),
+        )
+        surface.blit(footer_text, (footer.x + 12, footer.y + 7))
+
+    def _draw_plain_center_screen(
+        self,
+        surface: pygame.Surface,
+        title: str,
+        subtitle: str,
+    ) -> None:
+        sw, sh = surface.get_size()
+        surface.fill((0, 0, 0))
+        cx = sw // 2
+        cy = sh // 2
+
+        title_surf = self._ctext(self.font, title, (224, 238, 244))
+        surface.blit(title_surf, (cx - title_surf.get_width() // 2, cy - 48))
+
+        subtitle_surf = self._ctext(self._ui_font_sm, subtitle, (136, 158, 170))
+        surface.blit(subtitle_surf, (cx - subtitle_surf.get_width() // 2, cy + 2))
+
+    def _draw_boot_animation(
+        self,
+        surface: pygame.Surface,
+        progress: float,
+        model=None,
+    ) -> None:
+        sw, sh = surface.get_size()
+        p = self._clamp01(progress)
+
+        if p >= 0.88:
+            self._draw_laptop_desktop_preview(surface, model=model, alpha=255)
+            return
+
+        surface.fill((0, 0, 0))
+
+        if p < 0.22:
+            self._draw_plain_boot_screen(
+                surface,
+                "RTF BIOS 1.04",
+                [
+                    "CPU CLOCK SYNC OK",
+                    "MEMORY MAP OK",
+                    "VIDEO ADAPTER OK",
+                    "FIXED DISK OK",
+                    "CCTV BUS READY",
+                    "VENT CONTROL READY",
+                    "BOOT DEVICE SELECTED",
+                ],
+            )
+            return
+
+        if p < 0.52:
+            self._draw_plain_boot_screen(
+                surface,
+                "Starting RTF OS",
+                [
+                    "KERNEL IMAGE OK",
+                    "LOCAL SERVER READY",
+                    "CAMERA MATRIX READY",
+                    "VENT SEAL DRIVER READY",
+                    "NIGHT PROFILE LOADED",
+                    "SESSION MANAGER STARTING",
+                ],
+            )
+            return
+
+        if p < 0.74:
+            self._draw_plain_center_screen(
+                surface,
+                "RTF OS",
+                "Please wait while the system starts",
+            )
+            return
+
+        self._draw_plain_center_screen(
+            surface,
+            "Welcome",
+            "Loading your personal settings",
+        )
+
+    def _draw_shutdown_animation(self, surface: pygame.Surface, progress: float) -> None:
+        p = self._clamp01(progress)
+
+        if p < 0.62:
+            self._draw_plain_center_screen(
+                surface,
+                "RTF OS",
+                "Saving your settings",
+            )
+            return
+
+        self._draw_powered_off_screen(surface)
+
+    def _fill_power_background(
+        self,
+        surface: pygame.Surface,
+        top_color: tuple[int, int, int],
+        bottom_color: tuple[int, int, int],
+    ) -> None:
+        sw, sh = surface.get_size()
+        for y in range(sh):
+            t = y / max(1, sh - 1)
+            color = (
+                int(top_color[0] + (bottom_color[0] - top_color[0]) * t),
+                int(top_color[1] + (bottom_color[1] - top_color[1]) * t),
+                int(top_color[2] + (bottom_color[2] - top_color[2]) * t),
+            )
+            pygame.draw.line(surface, color, (0, y), (sw, y))
+
+    def _draw_panel_sheen(
+        self,
+        surface: pygame.Surface,
+        alpha: int,
+        width: int = 480,
+        height: int = 220,
+    ) -> None:
+        # Старый метод оставлен для совместимости, но он больше не используется
+        # в анимациях питания.
+        sw, sh = surface.get_size()
+        sheen = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        rect = pygame.Rect(sw // 2 - width // 2, sh // 2 - height // 2, width, height)
+        band_h = max(18, height // 8)
+        top_band = pygame.Rect(rect.x, rect.y + height // 5, rect.w, band_h)
+        mid_band = pygame.Rect(rect.x, rect.centery - band_h // 2, rect.w, band_h)
+        pygame.draw.rect(sheen, (172, 174, 178, alpha), top_band, border_radius=3)
+        pygame.draw.rect(sheen, (58, 60, 64, alpha // 2), mid_band, border_radius=3)
+        surface.blit(sheen, (0, 0), special_flags=pygame.BLEND_ADD)
+
+    def _draw_boot_wake_screen(
+        self, surface: pygame.Surface, phase_t: float
+    ) -> None:
+        self._draw_boot_animation(surface, phase_t * 0.18)
+
+    def _draw_boot_post_screen(
+        self, surface: pygame.Surface, phase_t: float
+    ) -> None:
+        self._draw_boot_animation(surface, 0.18 + phase_t * 0.44)
+
+    def _draw_boot_loading_screen(
+        self, surface: pygame.Surface, phase_t: float
+    ) -> None:
+        self._draw_boot_animation(surface, 0.62 + phase_t * 0.38)
+
+    def _draw_shutdown_message_screen(
+        self, surface: pygame.Surface, phase_t: float
+    ) -> None:
+        self._draw_shutdown_animation(surface, phase_t * 0.48)
+
+    def _draw_shutdown_fade_screen(
+        self, surface: pygame.Surface, phase_t: float
+    ) -> None:
+        self._draw_shutdown_animation(surface, 0.48 + phase_t * 0.52)
+
+    def _draw_powered_off_screen(self, surface: pygame.Surface) -> None:
+        surface.fill((0, 0, 0))
+        sw, sh = surface.get_size()
+        message = "It is now safe to turn on your computer"
+
+        pulse = 0.5 + 0.5 * math.sin(pygame.time.get_ticks() / 850.0)
+        font = pygame.font.SysFont("tahoma", 22, bold=True)
+        glow_alpha = int(28 + 22 * pulse)
+        text_alpha = int(232 + 23 * pulse)
+
+        glow = self._ctext(font, message, (82, 176, 214)).copy()
+        glow.set_alpha(glow_alpha)
+        x = sw // 2 - glow.get_width() // 2
+        y = sh // 2 - glow.get_height() // 2 - 6
+        for dx, dy in ((-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, 2)):
+            surface.blit(glow, (x + dx, y + dy))
+
+        shadow = self._ctext(font, message, (4, 8, 10)).copy()
+        shadow.set_alpha(220)
+        surface.blit(shadow, (x + 2, y + 2))
+
+        text = self._ctext(font, message, (218, 246, 255)).copy()
+        text.set_alpha(text_alpha)
+        surface.blit(text, (x, y))
 
     def _draw_laptop_screen(self, model) -> None:
         sw, sh = self.screen_w, self.screen_h
@@ -995,56 +1581,7 @@ class GameView:
         power_btn = pygame.Rect(sw - 112, sh - 78, 84, 34)
         self._laptop_power_btn = power_btn
         if model.laptop_power_state != "ON":
-            self.screen.fill((0, 0, 0))
-            vignette = pygame.Surface((sw, sh), pygame.SRCALPHA)
-            vignette.fill((0, 0, 0, 0))
-            pygame.draw.rect(vignette, (0, 0, 0, 28), (0, 0, sw, sh), 40)
-            self.screen.blit(vignette, (0, 0))
-
-            power_btn = pygame.Rect(sw // 2 - 23, int(sh * 0.73), 46, 22)
-            self._laptop_power_btn = power_btn
-            fill = (
-                (36, 98, 198)
-                if model.laptop_power_state == "OFF"
-                else (70, 96, 138)
-            )
-            pygame.draw.rect(self.screen, fill, power_btn, border_radius=4)
-            pygame.draw.rect(
-                self.screen,
-                (185, 210, 240),
-                power_btn,
-                1,
-                border_radius=4,
-            )
-            btn_txt = self._ctext(self._ui_font_sm, "ON", (255, 255, 255))
-            self.screen.blit(
-                btn_txt,
-                (
-                    power_btn.centerx - btn_txt.get_width() // 2,
-                    power_btn.centery - btn_txt.get_height() // 2,
-                ),
-            )
-
-            if model.laptop_power_state == "BOOTING":
-                lines = ["Windows XP", "", "Initializing system..."]
-                if model.laptop_boot_stage == "boot_black":
-                    lines = ["Windows XP"]
-            elif model.laptop_power_state == "SHUTTING_DOWN":
-                lines = ["Windows XP", "", "Windows is shutting down..."]
-            else:
-                lines = ["It is now safe to turn on your computer"]
-
-            total_h = len(lines) * 18
-            y = sh // 2 - total_h // 2 - 8
-            for line in lines:
-                if not line:
-                    y += 18
-                    continue
-                clr = (190, 205, 225) if "safe" in line.lower() else (215, 215, 215)
-                font = self._ui_font_sm if len(line) > 18 else self._ui_font
-                txt = self._ctext(font, line, clr)
-                self.screen.blit(txt, (sw // 2 - txt.get_width() // 2, y))
-                y += 18
+            self._draw_laptop_power_transition(model)
 
             self._laptop_icons = []
             self._laptop_menu_items = []

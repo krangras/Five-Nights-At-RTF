@@ -45,6 +45,13 @@ class MenuView:
         self._load_assets()
         self.noise_frames = self._generate_static_noise()
 
+        self.star_image = None
+        try:
+            raw = pygame.image.load("assets/menu/star.png").convert_alpha()
+            self.star_image = pygame.transform.smoothscale(raw, (int(64 * self.scale_x), int(64 * self.scale_y)))
+        except pygame.error:
+            pass
+
     def update_screen(self, screen):
         self.screen = screen
         info = pygame.display.Info()
@@ -69,6 +76,13 @@ class MenuView:
         self.glitch_images = [pygame.transform.smoothscale(img, size) for img in self.glitch_images]
         self.noise_frames = self._generate_static_noise()
         self._update_button_rects()
+
+        if self.star_image is not None:
+            try:
+                raw = pygame.image.load("assets/menu/star.png").convert_alpha()
+                self.star_image = pygame.transform.smoothscale(raw, (int(64 * sx), int(64 * sy)))
+            except pygame.error:
+                self.star_image = None
 
     def _update_button_rects(self):
         sx, sy = self.scale_x, self.scale_y
@@ -113,7 +127,7 @@ class MenuView:
 
         # Нормализация яркости всех изображений
         all_images = [normal] + glitch_raw
-        target_brightness = 15
+        target_brightness = 25
         
         for img in all_images:
             w, h = img.get_size()
@@ -227,6 +241,11 @@ class MenuView:
         text_exit = ">> Exit" if model.hovered_button == "exit" else "   Exit"
         surf_exit = self.button_font.render(text_exit, True, color_exit)
         self.screen.blit(surf_exit, (btn_x, int(510 * sy)))
+
+        if model.game_completed and self.star_image is not None:
+            star_x = self.w - self.star_image.get_width() - int(30 * sx)
+            star_y = int(30 * sy)
+            self.screen.blit(self.star_image, (star_x, star_y))
 
         pygame.display.flip()
 

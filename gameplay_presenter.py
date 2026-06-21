@@ -26,7 +26,7 @@ import pygame
 from audio_mix import AudioCalibrationOverlay, effective_volume, ensure_audio_settings
 from algem_ai import AIState, bfs_path
 from gameplay_model import (
-    BASE_GRAPH, CAMERA_COUNT, VENT_CAMERAS,
+    BASE_GRAPH, CAMERAS, CAMERA_COUNT, VENT_CAMERAS,
     GameModel, SealState, SEAL_CAMERA_MAP, VENT_SEALS,
     find_nearest_vent_camera,
 )
@@ -354,48 +354,6 @@ class GamePresenter:
         # Переключение планшета по TAB — блокировано при ноутбуке
         elif key == pygame.K_TAB and not self.model.laptop_open:
             self._toggle_tablet()
-
-        # Цифровые клавиши 1–7 — переключение камер
-        key_to_cam: dict[int, int] = {
-            pygame.K_1: 1,
-            pygame.K_2: 2,
-            pygame.K_3: 3,
-            pygame.K_4: 4,
-            pygame.K_5: 5,
-            pygame.K_6: 6,
-            pygame.K_7: 7,
-            pygame.K_8: 8,
-            pygame.K_9: 9,
-        }
-        if key in key_to_cam and self.model.tablet_open and not self.model.laptop_open:
-            self._switch_camera(key_to_cam[key])
-
-        # 0 — сброс на камеру 1
-        if key == pygame.K_0 and self.model.tablet_open and not self.model.laptop_open:
-            self._switch_camera(1)
-            self.model.cam_look = 0.0
-            self.model.cam_state = "HOLDING"
-            self.model.cam_hold_timer = 0
-
-        # Стрелки — переключение камер по кругу
-        if self.model.tablet_open and not self.model.laptop_open:
-            if key in (pygame.K_RIGHT, pygame.K_LEFT):
-                if self.model.camera_idx in VENT_CAMERAS:
-                    vent_sorted = sorted(VENT_CAMERAS)
-                    cur_pos = vent_sorted.index(self.model.camera_idx)
-                    if key == pygame.K_RIGHT:
-                        new_pos = (cur_pos + 1) % len(vent_sorted)
-                    else:
-                        new_pos = (cur_pos - 1) % len(vent_sorted)
-                    self._switch_camera(vent_sorted[new_pos])
-                else:
-                    regular_count = CAMERA_COUNT - len(VENT_CAMERAS)
-                    if key == pygame.K_RIGHT:
-                        self._switch_camera((self.model.camera_idx % regular_count) + 1)
-                    else:
-                        self._switch_camera(
-                            ((self.model.camera_idx - 2) % regular_count) + 1
-                        )
 
     def _handle_projection_overlay_event(self, event: pygame.event.Event) -> bool:
         """Handle the live laptop projection editor when it is active."""
