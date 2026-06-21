@@ -335,7 +335,7 @@ class GameView:
             dark.fill((195, 195, 195))
             surf.blit(dark, (0, 0), special_flags=pygame.BLEND_MULT)
             purple = pygame.Surface((cw, cam_h), pygame.SRCALPHA)
-            purple.fill((40, 15, 60, 40))
+            purple.fill((20, 30, 60, 40))
             surf.blit(purple, (0, 0))
             self.camera_surfaces[idx] = surf
             self.camera_max_offsets[idx] = max(0, cw - self.screen_rect.w)
@@ -357,7 +357,7 @@ class GameView:
                 dark.fill((195, 195, 195))
                 surf.blit(dark, (0, 0), special_flags=pygame.BLEND_MULT)
                 purple = pygame.Surface((cw, cam_h), pygame.SRCALPHA)
-                purple.fill((40, 15, 60, 40))
+                purple.fill((20, 30, 60, 40))
                 surf.blit(purple, (0, 0))
                 return surf
             except pygame.error:
@@ -541,8 +541,41 @@ class GameView:
                     self.crt_mask.set_at((x, y), (0, 0, 0, a))
             pygame.image.save(self.crt_mask, crt_path)
 
-        # Шум/помехи камер (noice*.jpg, noice*.png)
-        self._noise_frames = []
+        # ── Процедурный шум (numpy) ────────────────────────────────────
+        self._noise_w = screen_w // 3
+        self._noise_h = screen_h // 3
+        self._noise_surf = pygame.Surface((self._noise_w, self._noise_h), pygame.SRCALPHA)
+        self._noise_timer = 0
+        self._noise_alpha = 25
+        self._noise_burst_timer = 0
+
+        # Сканлинии (crt scanlines) — кэшируются, скроллятся
+        self._scanline_surf = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
+        for y in range(0, screen_h, 3):
+            pygame.draw.line(self._scanline_surf, (0, 0, 0, 22), (0, y), (screen_w, y))
+        self._scanline_offset = 0
+
+        # VHS tracking bar
+        self._vhs_bar_y = -20
+        self._vhs_bar_h = 6
+        self._vhs_bar_active = False
+        self._vhs_bar_timer = 0
+        self._vhs_bar_next = random.randint(300, 900)
+        self._vhs_bar_surf = pygame.Surface((screen_w, self._vhs_bar_h), pygame.SRCALPHA)
+
+        # Full-screen flicker
+        self._flicker_surf = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
+        self._flicker_timer = random.randint(600, 1800)
+
+        # Вертикальная полоса (rare)
+        self._vbar_x = 0
+        self._vbar_w = 0
+        self._vbar_active = False
+        self._vbar_timer = 0
+        self._vbar_next = random.randint(900, 2700)
+
+        # Glitch frames для Алгема (старые noice*.png)
+        self._glitch_frames = []
         for fname in sorted(os.listdir("assets/cctv")):
             if fname.lower().startswith("noice") and (
                 fname.lower().endswith(".png")
@@ -550,17 +583,8 @@ class GameView:
             ):
                 img = pygame.image.load(f"assets/cctv/{fname}").convert()
                 s = pygame.transform.smoothscale(img, (screen_w, screen_h))
-                s.set_alpha(35)
-                self._noise_frames.append(s)
-        self._noise_idx = 0
-        self._noise_timer = 0
-
-        # Те же помехи на полную непрозрачность для глитча при уходе Алгема
-        self._glitch_frames = []
-        for s in self._noise_frames:
-            copy = s.copy()
-            copy.set_alpha(255)
-            self._glitch_frames.append(copy)
+                s.set_alpha(255)
+                self._glitch_frames.append(s)
 
         # Планшет — 10 отдельных картинок без фона
         self.cam_frames = []
@@ -2030,14 +2054,89 @@ class GameView:
         pygame.draw.polygon(self.screen, (0, 0, 0), cursor_pts, 1)
 
     def _draw_cctv_effects(self, camera_idx, model):
-        # Шум/помехи
+        sw, sh = self.screen_w, self.screen_h
+
+        # ── 1. Процедурный шум (numpy, low-res) ───────────────────────
         self._noise_timer -= 1
         if self._noise_timer <= 0:
-            self._noise_idx = (self._noise_idx + 1) % len(self._noise_frames)
-            self._noise_timer = 3
-        self.screen.blit(self._noise_frames[self._noise_idx], (0, 0))
+            self._noise_timer = random.randint(1, 3)
+            # Генерируем шум на маленькой surface
+            arr = np.random.randint(0, 255, (self._noise_h, self._noise_w, 3), dtype=np.uint8)
+            # Альфа: тихий шум normal, иногда burst
+            self._noise_burst_timer -= 1
+            if self._noise_burst_timer <= 0:
+                self._noise_alpha = random.choice([25, 25, 25, 60, 80])
+                self._noise_burst_timer = random.randint(120, 400)
+            alpha_arr = np.full((self._noise_h, self._noise_w, 1), self._noise_alpha, dtype=np.uint8)
+            rgba = np.concatenate([arr, alpha_arr], axis=2)
+            raw = pygame.image.frombuffer(rgba.tobytes(), (self._noise_w, self._noise_h), "RGBA")
+            self._noise_surf = pygame.transform.smoothscale(raw, (sw, sh))
+        self.screen.blit(self._noise_surf, (0, 0))
 
-        # Всплеск помех на камере, где был и где сейчас Алгем
+        # ── 2. CRT сканлинии (скролл вниз) ───────────────────────────
+        self._scanline_offset = (self._scanline_offset + 0.7) % 3
+        self.screen.blit(self._scanline_surf, (0, int(self._scanline_offset)))
+
+        # ── 3. VHS tracking bar ───────────────────────────────────────
+        self._vhs_bar_timer -= 1
+        if not self._vhs_bar_active and self._vhs_bar_timer <= 0:
+            self._vhs_bar_active = True
+            self._vhs_bar_y = -self._vhs_bar_h
+            self._vhs_bar_timer = random.randint(60, 120)
+            self._vhs_bar_next = random.randint(400, 1200)
+        if self._vhs_bar_active:
+            self._vhs_bar_y += 4
+            if self._vhs_bar_y > sh:
+                self._vhs_bar_active = False
+                self._vhs_bar_timer = self._vhs_bar_next
+            else:
+                # Рисуем полосу с горизонтальным сдвигом
+                bar_alpha = random.randint(50, 90)
+                self._vhs_bar_surf.fill((200, 200, 200, bar_alpha))
+                self.screen.blit(self._vhs_bar_surf, (0, self._vhs_bar_y))
+                # Сдвиг пикселей внутри полосы
+                shift = random.randint(-8, 8)
+                clip = pygame.Rect(0, max(0, self._vhs_bar_y), sw, min(self._vhs_bar_h, sh - max(0, self._vhs_bar_y)))
+                if clip.h > 0:
+                    strip = self.screen.subsurface(clip).copy()
+                    self.screen.blit(strip, (shift, self._vhs_bar_y))
+
+        # ── 4. Full-screen flicker ────────────────────────────────────
+        self._flicker_timer -= 1
+        if self._flicker_timer <= 0 and not hasattr(self, '_flicker_active'):
+            self._flicker_active = True
+            self._flicker_frames_left = random.randint(1, 3)
+            self._flicker_alpha = random.randint(15, 40)
+            self._flicker_dark = random.random() < 0.5
+        if getattr(self, '_flicker_active', False):
+            if self._flicker_dark:
+                self._flicker_surf.fill((0, 0, 0, self._flicker_alpha))
+                self.screen.blit(self._flicker_surf, (0, 0))
+            else:
+                self._flicker_surf.fill((255, 255, 255, self._flicker_alpha))
+                self.screen.blit(self._flicker_surf, (0, 0), special_flags=pygame.BLEND_ADD)
+            self._flicker_frames_left -= 1
+            if self._flicker_frames_left <= 0:
+                del self._flicker_active
+                self._flicker_timer = random.randint(600, 1800)
+
+        # ── 5. Вертикальная полоса (rare) ─────────────────────────────
+        self._vbar_timer -= 1
+        if not self._vbar_active and self._vbar_timer <= 0:
+            self._vbar_active = True
+            self._vbar_x = random.randint(0, sw - 60)
+            self._vbar_w = random.randint(20, 60)
+            self._vbar_timer = random.randint(2, 5)
+        if self._vbar_active:
+            vbar_surf = pygame.Surface((self._vbar_w, sh), pygame.SRCALPHA)
+            vbar_surf.fill((180, 180, 200, random.randint(30, 60)))
+            self.screen.blit(vbar_surf, (self._vbar_x, 0))
+            if self._vbar_timer <= 0:
+                self._vbar_active = False
+                self._vbar_timer = self._vbar_next
+                self._vbar_next = random.randint(900, 2700)
+
+        # ── 6. Glitch Алгема (старые noice*.png) ──────────────────────
         if model.night > 1:
             on_target_cam = camera_idx in (
                 model.algem_prev_location,
@@ -2048,12 +2147,10 @@ class GameView:
                 and on_target_cam
                 and self._glitch_frames
             ):
-                idx = (pygame.time.get_ticks() // 50) % len(
-                    self._glitch_frames
-                )
+                idx = (pygame.time.get_ticks() // 50) % len(self._glitch_frames)
                 self.screen.blit(self._glitch_frames[idx], (0, 0))
 
-        # CRT curvature mask
+        # ── 7. CRT curvature mask ─────────────────────────────────────
         self.screen.blit(self.crt_mask, (0, 0))
 
         from gameplay_model import CAMERAS
