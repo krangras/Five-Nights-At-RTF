@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white" alt="Python"/>
-  <img src="https://img.shields.io/badge/pygame-2.6-green?logo=pygame" alt="Pygame"/>
+  <img src="https://img.shields.io/badge/python-3.14+-blue?logo=python&logoColor=white" alt="Python"/>
+  <img src="https://img.shields.io/badge/pygame--ce-2.5-green?logo=pygame" alt="Pygame-CE"/>
   <img src="https://img.shields.io/badge/license-MIT-orange" alt="License"/>
 </p>
 
@@ -77,7 +77,7 @@ Five Nights At RTF/
 
 ## Стек технологий
 
-- **Python 3.10+** / **Pygame 2.6**
+- **Python 3.14+** / **Pygame-CE 2.5**
 - **OpenCV** — проекция экрана ноутбука с перспективой
 - **NumPy** — аудиообработка, матричные операции
 - **MSS** — захват экрана для ноутбука
@@ -110,20 +110,30 @@ Five Nights At RTF/
 
 ## Установка
 
+### 1. Установи [uv](https://docs.astral.sh/uv/getting-started/installation/)
+
+```bash
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Linux / Mac
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### 2. Запусти игру
+
 ```bash
 git clone https://github.com/krangras/Five-Nights-At-RTF.git
 cd "Five Nights At RTF"
-python -m venv venv
-venv\Scripts\activate     # Windows
-# source venv/bin/activate  # Linux/Mac
-pip install -r requirements.txt
-python main.py
+uv run main.py
 ```
+
+Первый запуск автоматически создаст `.venv` и установит все зависимости. Повторные запуски — просто `uv run main.py`.
 
 ## Тесты
 
 ```bash
-python -m pytest tests/ -v
+uv run --group dev pytest tests/ -v
 ```
 
 ---
