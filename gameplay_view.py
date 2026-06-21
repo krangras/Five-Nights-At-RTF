@@ -555,25 +555,6 @@ class GameView:
             pygame.draw.line(self._scanline_surf, (0, 0, 0, 22), (0, y), (screen_w, y))
         self._scanline_offset = 0
 
-        # VHS tracking bar
-        self._vhs_bar_y = -20
-        self._vhs_bar_h = 6
-        self._vhs_bar_active = False
-        self._vhs_bar_timer = 0
-        self._vhs_bar_next = random.randint(300, 900)
-        self._vhs_bar_surf = pygame.Surface((screen_w, self._vhs_bar_h), pygame.SRCALPHA)
-
-        # Full-screen flicker
-        self._flicker_surf = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
-        self._flicker_timer = random.randint(600, 1800)
-
-        # Вертикальная полоса (rare)
-        self._vbar_x = 0
-        self._vbar_w = 0
-        self._vbar_active = False
-        self._vbar_timer = 0
-        self._vbar_next = random.randint(900, 2700)
-
         # Glitch frames для Алгема (старые noice*.png)
         self._glitch_frames = []
         for fname in sorted(os.listdir("assets/cctv")):
@@ -2077,66 +2058,7 @@ class GameView:
         self._scanline_offset = (self._scanline_offset + 0.7) % 3
         self.screen.blit(self._scanline_surf, (0, int(self._scanline_offset)))
 
-        # ── 3. VHS tracking bar ───────────────────────────────────────
-        self._vhs_bar_timer -= 1
-        if not self._vhs_bar_active and self._vhs_bar_timer <= 0:
-            self._vhs_bar_active = True
-            self._vhs_bar_y = -self._vhs_bar_h
-            self._vhs_bar_timer = random.randint(60, 120)
-            self._vhs_bar_next = random.randint(400, 1200)
-        if self._vhs_bar_active:
-            self._vhs_bar_y += 4
-            if self._vhs_bar_y > sh:
-                self._vhs_bar_active = False
-                self._vhs_bar_timer = self._vhs_bar_next
-            else:
-                # Рисуем полосу с горизонтальным сдвигом
-                bar_alpha = random.randint(50, 90)
-                self._vhs_bar_surf.fill((200, 200, 200, bar_alpha))
-                self.screen.blit(self._vhs_bar_surf, (0, self._vhs_bar_y))
-                # Сдвиг пикселей внутри полосы
-                shift = random.randint(-8, 8)
-                clip = pygame.Rect(0, max(0, self._vhs_bar_y), sw, min(self._vhs_bar_h, sh - max(0, self._vhs_bar_y)))
-                if clip.h > 0:
-                    strip = self.screen.subsurface(clip).copy()
-                    self.screen.blit(strip, (shift, self._vhs_bar_y))
-
-        # ── 4. Full-screen flicker ────────────────────────────────────
-        self._flicker_timer -= 1
-        if self._flicker_timer <= 0 and not hasattr(self, '_flicker_active'):
-            self._flicker_active = True
-            self._flicker_frames_left = random.randint(1, 3)
-            self._flicker_alpha = random.randint(15, 40)
-            self._flicker_dark = random.random() < 0.5
-        if getattr(self, '_flicker_active', False):
-            if self._flicker_dark:
-                self._flicker_surf.fill((0, 0, 0, self._flicker_alpha))
-                self.screen.blit(self._flicker_surf, (0, 0))
-            else:
-                self._flicker_surf.fill((255, 255, 255, self._flicker_alpha))
-                self.screen.blit(self._flicker_surf, (0, 0), special_flags=pygame.BLEND_ADD)
-            self._flicker_frames_left -= 1
-            if self._flicker_frames_left <= 0:
-                del self._flicker_active
-                self._flicker_timer = random.randint(600, 1800)
-
-        # ── 5. Вертикальная полоса (rare) ─────────────────────────────
-        self._vbar_timer -= 1
-        if not self._vbar_active and self._vbar_timer <= 0:
-            self._vbar_active = True
-            self._vbar_x = random.randint(0, sw - 60)
-            self._vbar_w = random.randint(20, 60)
-            self._vbar_timer = random.randint(2, 5)
-        if self._vbar_active:
-            vbar_surf = pygame.Surface((self._vbar_w, sh), pygame.SRCALPHA)
-            vbar_surf.fill((180, 180, 200, random.randint(30, 60)))
-            self.screen.blit(vbar_surf, (self._vbar_x, 0))
-            if self._vbar_timer <= 0:
-                self._vbar_active = False
-                self._vbar_timer = self._vbar_next
-                self._vbar_next = random.randint(900, 2700)
-
-        # ── 6. Glitch Алгема (старые noice*.png) ──────────────────────
+        # ── 3. Glitch Алгема (старые noice*.png) ──────────────────────
         if model.night > 1:
             on_target_cam = camera_idx in (
                 model.algem_prev_location,
