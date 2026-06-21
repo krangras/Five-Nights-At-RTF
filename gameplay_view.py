@@ -16,7 +16,9 @@ DEFAULT_LAPTOP_PROJECTION_CORNERS = [
     [593, 576],
     [445, 610],
 ]
-LAPTOP_PROJECTION_CONFIG_PATH = "laptop_projection.json"
+LAPTOP_PROJECTION_CONFIG_PATH = os.path.join(
+    os.environ.get("APPDATA", "."), "FiveNightsAtRTF", "laptop_projection.json"
+)
 LAPTOP_BOOT_TICKS = 180
 LAPTOP_SHUTDOWN_TICKS = 150
 
@@ -48,7 +50,7 @@ def _normalize_brightness(surfaces_with_paths, target=25):
     кешированная версия — загружает её вместо пересчёта.
     Принимает список кортежей (surface, source_filepath).
     """
-    cache_dir = "assets/.cache/norm"
+    cache_dir = os.path.join(os.environ.get("APPDATA", "."), "FiveNightsAtRTF", "cache", "norm")
     for img, src_path in surfaces_with_paths:
         if src_path:
             cache_path = f"{cache_dir}/{os.path.basename(src_path)}"
@@ -527,7 +529,7 @@ class GameView:
 
         # CRT curvature mask + deep vignette (кешируется в PNG)
         self.crt_mask = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
-        crt_path = "assets/crt_mask.png"
+        crt_path = os.path.join(os.environ.get("APPDATA", "."), "FiveNightsAtRTF", "crt_mask.png")
         if os.path.exists(crt_path):
             self.crt_mask = pygame.image.load(crt_path).convert_alpha()
         else:
