@@ -5,7 +5,7 @@ import re
 
 
 class ScreamerPlayer:
-    """Покадровый проигрыватель скримера из PNG/JPG фреймов."""
+    """Frame-based screamer player from PNG/JPG frames."""
 
     def __init__(self, frames_dir="assets/screamer", screen_size=(1280, 720),
                  speed=1.0, door_frames=15, door_speed=8.0, scream_frame=40,
@@ -19,9 +19,6 @@ class ScreamerPlayer:
         self.scream_frame = scream_frame
         self.scream_triggered = False
 
-        # Поддерживаем два формата именования:
-        #   frame_XX_delay-0.04s.png  (office_screamer)
-        #   ezgif-frame-XXX.jpg       (vent_screamer)
         png_pattern = os.path.join(frames_dir, "frame_*_delay-*.png")
         jpg_pattern = os.path.join(frames_dir, "ezgif-frame-*.jpg")
         files = sorted(glob.glob(png_pattern) + glob.glob(jpg_pattern))

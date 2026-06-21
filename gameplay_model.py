@@ -31,9 +31,9 @@ CAMERAS: list[tuple[int, str, str, str]] = [
     (2, "02", "CANTEEN",       "canteen.png"),
     (3, "03", "TOILETS",       "toilets.png"),
     (4, "04", "MAIN HALL",     "main_hall.png"),
-    (5, "05", "SERVICE ROOM",  "service_room.png"),
-    (6, "06", "WEST HALL",     "westhall.png"),
-    (7, "07", "COWORKING",     "coworking.png"),
+    (5, "05", "WEST HALL",     "westhall.png"),
+    (6, "06", "COWORKING",     "coworking.png"),
+    (7, "07", "SERVICE ROOM",  "service_room.png"),
     (8, "08", "LOWER RIGHT VENT", "cam11.png"),
     (9, "09", "UPPER RIGHT VENT", "cam8.png"),
     (10, "10", "UPPER LEFT VENT", "cam9.png"),
@@ -332,6 +332,13 @@ class GameModel:
         self._seal_timers[seal_id] = SEAL_DURATION
         self.currently_sealing_id = seal_id
 
+        # Сообщаем ИИ, что игрок начал закрывать конкретный vent-вход.
+        # Камера не исчезает из логики мгновенно: Алгем получает stun/retreat,
+        # а путь пересчитывается на следующих тиках.
+        vent_node = VENT_SEALS.get(seal_id)
+        if vent_node is not None and hasattr(self._ai, "notify_seal_started"):
+            self._ai.notify_seal_started(vent_node, SEAL_DURATION)
+
     # ──────────────────────────────────────────────────────────────────────
     # Главный тик модели
     # ──────────────────────────────────────────────────────────────────────
@@ -355,7 +362,12 @@ class GameModel:
             return
 
         if self.night_start_ticks > 0:
-            self.night_start_ticks -= 1
+            # Стартовую заставку ночи считает Presenter. Пока она идёт,
+            # не запускаем часы, звонок, серверные события и ИИ: иначе
+            # телефонный звонок может начаться/закончиться ещё на экране
+            # "Night starts", а игрок будто зря записывал звонок.
+            self._update_office_look()
+            return
 
         self._update_office_look()
         self._update_cam_pan()
@@ -493,7 +505,7 @@ class GameModel:
 
         # Строим граф с учётом сломанных вентов
         current_graph = self._build_current_graph()
-        self._ai.update_graph(current_graph)
+        self._ai.update_graph(current_graph, copy.deepcopy(PATROL_GRAPH))
         self._ai.update_camera_watch(self.camera_watch_ticks)
 
         # Притяжение Алгема: растёт пока сервер включён, падает когда выключен
@@ -518,10 +530,26 @@ class GameModel:
         if reached_office:
             self.algem_in_office = True
             self.kill_from_vent = self._ai.prev_location in VENT_CAMERAS
-            self.office_threat_timer = OFFICE_THREAT_TICKS_BY_NIGHT.get(
-                self.night,
-                OFFICE_THREAT_TICKS_BY_NIGHT[5],
-            )
+            self.office_threat_timer = self._random_office_threat_timer()
+
+    def _random_office_threat_timer(self) -> int:
+        """Случайное, но честное окно перед скримером.
+
+        Скример больше не привязан к закрытию планшета. Алгем сначала
+        исчезает с последней камеры/вента, потом игрок получает короткое
+        random-окно на реакцию. Чем выше ночь и progress взлома, тем окно
+        короче.
+        """
+        base = OFFICE_THREAT_TICKS_BY_NIGHT.get(self.night, OFFICE_THREAT_TICKS_BY_NIGHT[5])
+        spread = max(36, int(base * 0.42))
+        timer = random.randint(max(45, base - spread), base + spread)
+        if self.kill_from_vent:
+            timer = int(timer * 1.10)  # маленький бонус, чтобы vent-смерть не была мгновенной
+        if self.hack_progress >= 0.75:
+            timer = int(timer * 0.78)
+        elif self.hack_progress >= 0.50:
+            timer = int(timer * 0.88)
+        return max(45, timer)
 
     def _bfs_dist(self, start: int, goal: int) -> int:
         """BFS-расстояние между узлами (для расчёта перегрузки сервера)."""
@@ -1084,6 +1112,11 @@ class GameModel:
                 for other in list(g):
                     if other != vent_node:
                         g[other] = [n for n in g[other] if n != vent_node]
+                # Если Алгем уже внутри этого vent-узла, он может физически
+                # отступить наружу, но закрытый seal не должен оставлять прямой
+                # выход в офис. Это убирает нечестный instant-kill с последней
+                # vent-камеры.
+                g[vent_node] = [n for n in g.get(vent_node, []) if n != 0]
 
         return g
 

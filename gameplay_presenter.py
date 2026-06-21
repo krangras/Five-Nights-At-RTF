@@ -348,6 +348,10 @@ class GamePresenter:
         self._ad_channel: pygame.mixer.Channel = pygame.mixer.Channel(8)
         self._algem_talk_timer: int = random.randint(1800, 3600)
         self._vent_sound_timer: int = 0
+        # Hold таймер для crawl-loop: новый FSM двигает Алгема по шагам,
+        # но звук вентиляции должен ощущаться не только один короткий
+        # trigger-тик после смены камеры, а пока он реально находится в венте.
+        self._vent_presence_hold_timer: int = 0
 
         # ── Звуки Алгема: расстояние от офиса ────────────────────────────
         self._dist_params: dict[int, tuple[int, float]] = TALK_DIST_PARAMS
@@ -366,6 +370,7 @@ class GamePresenter:
         self._vent_seal_just_closed: int = 0  # тиков с момента последнего закрытия вента
         self._danger_playing: bool = False
         self._on_node5_grace: int = 0
+        self._laptop_boot_sound_played: bool = False
 
         # ── Таймеры приманки (для анимации кнопки) ───────────────────────
         self._bait_timer: int = 0
@@ -954,29 +959,30 @@ class GamePresenter:
         self._algem_talk_timer = random.randint(3600, 5400)
 
     def _update_vent_sounds(self) -> None:
-        """Distance-based crawl sound for Algem inside vents.
+        """Play crawl audio for any active vent movement.
 
-        Важное разделение:
-        - голос/реплики Алгема на прямой камере звучат максимально громко;
-        - loop-звук ползания по вентиляции на прямой vent-камере глушится.
-
-        Причина: vent-камеры сейчас статичные картинки без crawl-анимации.
-        Если игрок уже смотрит прямо на vent-камеру с Алгемом, отдельный
-        loop ползания выглядел бы как звук без видимого движения.
+        Правило простое:
+        - любое движение Алгема по вентиляции должно сопровождаться crawl-loop;
+        - если игрок смотрит прямо на vent-камеру с Алгемом, crawl глушится;
+        - как только игрок уходит с этой камеры, звук сразу возвращается,
+          пока Алгем ещё реально ползёт по вентам.
         """
         loc = self.model.algem_location
         in_vent = loc in VENT_CAMERAS
-        moving_in_vent = in_vent and self.model.algem_trigger > 0
-        direct_vent_view = self._is_direct_vent_camera_view(loc)
+        ai = getattr(self.model, "_ai", None)
+        vent_motion_ticks = getattr(ai, "vent_motion_ticks", 0)
 
-        if not in_vent or not moving_in_vent or direct_vent_view:
+        direct_vent_view = self._is_direct_vent_camera_view(loc)
+        vent_motion_active = in_vent and vent_motion_ticks > 0
+
+        if not vent_motion_active or direct_vent_view:
             if self._vent_sound_channel.get_busy():
                 self._vent_sound_channel.stop()
             self._vent_sound_timer = 0
             return
 
         volume = self._vent_listen_volume(
-            algem_node=self.model.algem_location,
+            algem_node=loc,
             camera_idx=self.model.camera_idx,
             last_regular_cam=self._last_regular_cam,
             tablet_open=self.model.tablet_open,
@@ -1324,11 +1330,13 @@ class GamePresenter:
                 self.model.laptop_boot_stage = "boot_black"
             elif self.model.laptop_power_timer > 0:
                 self.model.laptop_boot_stage = "initializing"
+                if self.model.laptop_power_timer <= 24 and not self._laptop_boot_sound_played:
+                    if self.snd_laptop_on:
+                        self.snd_laptop_on.play()
+                    self._laptop_boot_sound_played = True
             else:
                 self.model.laptop_power_state = "ON"
                 self.model.laptop_boot_stage = "desktop"
-                if self.snd_laptop_on:
-                    self.snd_laptop_on.play()
 
         elif self.model.laptop_power_state == "SHUTTING_DOWN":
             if self.model.laptop_power_timer > 0:
@@ -1430,9 +1438,12 @@ class GamePresenter:
         self._bait_cam_timer = 0
 
     def _check_node5_attack(self) -> None:
-        """Если Алгем на node 5 дольше grace-периода — атака через любой триггер."""
-        if self._on_node5_grace >= 60:
-            self.model.game_over = True
+        """Legacy hook: раньше скример привязывался к закрытию планшета.
+
+        Теперь убийство считается моделью/ИИ через BREACH + random kill-window,
+        поэтому переключение планшета само по себе не должно вызывать game_over.
+        """
+        return
 
     def _update_node5_grace(self) -> None:
         """Обновить счётчик времени Алгема на node 5."""
@@ -1620,14 +1631,17 @@ class GamePresenter:
         self._projection_dragging = False
         self.model.ad_active = False
         self.model.ad_image_key = None
+        self._laptop_boot_sound_played = False
+        self._trigger_laptop_power_noise("on")
 
     def _start_laptop_shutdown(self) -> None:
         if self.model.laptop_power_state != "ON":
             return
-        self._trigger_laptop_shutdown_noise()
+        self._trigger_laptop_power_noise("off")
         self._sync_server_with_laptop_shutdown()
         self.model.laptop_power_state = "SHUTTING_DOWN"
         self.model.laptop_power_timer = 150
+        self._laptop_boot_sound_played = False
         self.model.laptop_start_menu = False
         self.model.laptop_app = None
         self._laptop_saved_app = None
@@ -1637,32 +1651,14 @@ class GamePresenter:
         if self.snd_laptop_off:
             self.snd_laptop_off.play()
 
-    def _trigger_laptop_shutdown_noise(self) -> None:
-        """Laptop shutdown is extremely noticeable when Algem is already nearby."""
+    def _trigger_laptop_power_noise(self, event: str) -> None:
+        """Forward laptop on/off sounds to Algem with distance-based reaction."""
         if self.model.night <= 1:
             return
-
-        ai = self.model._ai
-        dist_to_office = self.model._bfs_dist(ai.location, 0)
-
-        ai._server_interest = min(ai.SERVER_INTEREST_CAP, ai._server_interest + 28.0)
-        ai.attention = min(100.0, ai.attention + 38.0)
-        ai.state = AIState.ATTACK
-        ai._idle_ticks_left = 0
-        ai.cancel_audio_lure()
-        ai.hack_attraction = max(ai.hack_attraction, 1.0)
-
-        if dist_to_office <= 2:
-            ai._server_interest = ai.SERVER_INTEREST_CAP
-            ai.attention = min(100.0, ai.attention + 42.0)
-            ai._move_timer = min(ai._move_timer, 18 if dist_to_office <= 1 else 30)
-
-        if ai.location == 7:
-            self.model.algem_in_office = True
-            current = self.model.office_threat_timer or 9999
-            self.model.office_threat_timer = min(current, 90)
-        elif ai.location == 10:
-            ai._move_timer = min(ai._move_timer, 10)
+        ai = getattr(self.model, "_ai", None)
+        if ai is None or not hasattr(ai, "notify_laptop_power_event"):
+            return
+        ai.notify_laptop_power_event(event)
 
     def _sync_server_with_laptop_shutdown(self) -> None:
         self.model.server_overload = False

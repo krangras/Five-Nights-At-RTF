@@ -1,61 +1,40 @@
 """
-algem_ai.py — Модуль искусственного интеллекта для противника «Алгебраист».
+algem_ai.py — ИИ Алгема для Five Nights At RTF.
 
-Реализует конечный автомат (FSM) с тремя состояниями и алгоритм A* для
-поиска пути. Полностью изолирован от Pygame — только чистая игровая логика.
-Это позволяет тестировать ИИ независимо от рендеринга (принцип SRP).
+В модуле намеренно сохранены и явно используются три алгоритмические идеи
+для курсового/ТЗ:
 
-Граф комнат (узлы):
-    0 — Офис игрока (цель атаки)
-    1 — Главный коридор
-    2 — Комната Алгема (начальная позиция)
-    3 — Туалеты
-    4 — Западный коридор
-    5 — Столовая
-    6 — Коворкинг
-    7 — Серверная
+* FSM — конечный автомат поведения Алгема.
+* DFS/BFS — патруль и поиск маршрута к приманке в обычной зоне.
+* A* — целенаправленная атака к офису по полному графу.
 
-Состояния FSM:
-    IDLE   — Алгем «думает», агрессия накапливается пассивно.
-    PATROL — Случайное блуждание; узлы без камер притягивают сильнее.
-    ATTACK — Целенаправленное движение к офису через A*.
-
-Переходы:
-    IDLE   → PATROL : таймер ожидания истёк.
-    PATROL → ATTACK : вероятность растёт с ночью и накопленной агрессией.
-    ATTACK → PATROL : сработала аудио-приманка или вентиляция сброшена.
-    любое  → IDLE   : редкое «задумывание» (баг персонажа как геймплейный элемент).
-
-Автор: генерируется как часть курсового проекта.
+Алгем не телепортируется: любой переход проходит только в соседний узел
+текущего графа. Перед скримером есть честная фаза BREACH: он исчезает с
+последней vent-камеры, но не убивает мгновенно.
 """
 
 from __future__ import annotations
 
 import heapq
 import random
-import time
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Callable
 
 
-# ---------------------------------------------------------------------------
-# Перечисление состояний FSM
-# ---------------------------------------------------------------------------
-
 class AIState(Enum):
-    """
-    Состояния конечного автомата (Finite State Machine) Алгебраиста.
+    """FSM-состояния Алгема."""
 
-    Использование Enum вместо строк/констант:
-      - исключает опечатки;
-      - позволяет сравнивать через `is`, не через `==`;
-      - IDE подсвечивает все вхождения.
-    """
-    IDLE   = auto()   # Ожидание и накопление агрессии
-    PATROL = auto()   # Случайный обход комнат
-    ATTACK = auto()   # Целенаправленная атака через A*
+    IDLE = auto()          # короткая пауза / низкий интерес
+    PATROL = auto()        # DFS-патруль по обычным камерам
+    INVESTIGATE = auto()   # проверяет шум, приманку или активность игрока
+    ATTACK = auto()        # A* к офису
+    VENT_STALK = auto()    # A* уже идёт через вентиляцию
+    BREACH = auto()        # ушёл с последней vent-камеры, но ещё не убил
+    KILL_PENDING = auto()  # зарезервировано под расширение kill-window в AI
+    STUNNED = auto()       # остановлен seal/потерял маршрут
+    RETREAT = auto()       # отступает после блока/потери интереса
 
 
 @dataclass(frozen=True)
@@ -84,39 +63,20 @@ class NightProfile:
 
 
 # ---------------------------------------------------------------------------
-# Чистые функции поиска пути (без побочных эффектов, легко тестируются)
+# Чистые функции поиска пути
 # ---------------------------------------------------------------------------
 
-def bfs_path(
-    start: int,
-    goal:  int,
-    graph: dict[int, list[int]],
-) -> list[int] | None:
-    """
-    Поиск кратчайшего пути в невзвешенном графе (BFS).
 
-    Используется:
-      - для предподсчёта эвристики A*;
-      - как fallback в состоянии PATROL при аудио-приманке.
-
-    Args:
-        start : начальный узел.
-        goal  : целевой узел.
-        graph : словарь смежности {узел: [соседи]}.
-
-    Returns:
-        Список узлов пути [start, ..., goal] или None если путь не найден.
-
-    Сложность: O(V + E).
-    """
+def bfs_path(start: int, goal: int, graph: dict[int, list[int]]) -> list[int] | None:
+    """Кратчайший путь в невзвешенном графе. Сложность O(V + E)."""
     if start == goal:
         return [start]
 
-    queue:   deque[list[int]] = deque([[start]])
-    visited: set[int]         = {start}
+    queue: deque[list[int]] = deque([[start]])
+    visited: set[int] = {start}
 
     while queue:
-        path    = queue.popleft()
+        path = queue.popleft()
         current = path[-1]
         for neighbor in graph.get(current, []):
             if neighbor in visited:
@@ -126,77 +86,14 @@ def bfs_path(
                 return new_path
             visited.add(neighbor)
             queue.append(new_path)
-
     return None
 
 
-def astar_path(
-    start:          int,
-    goal:           int,
-    graph:          dict[int, list[int]],
-    edge_weight_fn: Callable[[int, int], float],
-    heuristic:      dict[int, int],
-) -> list[int] | None:
-    """
-    Алгоритм A* для взвешенного графа.
-
-    Выбран вместо Dijkstra, потому что допустимая эвристика (BFS-расстояние
-    до цели в невзвешенном графе) гарантирует оптимальность и ускоряет поиск.
-
-    Args:
-        start          : начальный узел.
-        goal           : целевой узел (обычно офис = 0).
-        graph          : текущий граф (может включать вент-короткие пути).
-        edge_weight_fn : функция стоимости ребра (u, v) → float ≥ 1.0.
-        heuristic      : предподсчитанный словарь {узел: BFS-расстояние до goal}.
-
-    Returns:
-        Список узлов оптимального пути или None.
-
-    Сложность: O((V + E) · log V).
-    """
+def dfs_path(start: int, goal: int, graph: dict[int, list[int]]) -> list[int] | None:
+    """Один физически допустимый маршрут через DFS. Сложность O(V + E)."""
     if start == goal:
         return [start]
 
-    # Элемент кучи: (f = g + h, g, узел, путь)
-    # f — оценка полного пути; g — пройденная стоимость
-    open_heap: list[tuple[float, float, int, list[int]]] = []
-    h0        = heuristic.get(start, 999)
-    heapq.heappush(open_heap, (float(h0), 0.0, start, [start]))
-
-    # Лучшая найденная стоимость g для каждого узла (для отброса устаревших)
-    best_g: dict[int, float] = {start: 0.0}
-
-    while open_heap:
-        f, g, current, path = heapq.heappop(open_heap)
-
-        # Устаревшая запись (нашли лучший путь позже) — пропускаем
-        if g > best_g.get(current, float("inf")):
-            continue
-
-        if current == goal:
-            return path
-
-        for neighbor in graph.get(current, []):
-            w     = edge_weight_fn(current, neighbor)
-            new_g = g + w
-            if new_g < best_g.get(neighbor, float("inf")):
-                best_g[neighbor] = new_g
-                h = heuristic.get(neighbor, 999)
-                heapq.heappush(
-                    open_heap,
-                    (new_g + h, new_g, neighbor, path + [neighbor]),
-                )
-
-    return None
-
-
-def dfs_path(
-    start: int,
-    goal: int,
-    graph: dict[int, list[int]],
-) -> list[int] | None:
-    """Return one physical patrol route found with depth-first search."""
     stack: list[tuple[int, list[int]]] = [(start, [start])]
     visited: set[int] = set()
 
@@ -213,64 +110,85 @@ def dfs_path(
     return None
 
 
-# ---------------------------------------------------------------------------
-# Главный класс ИИ
-# ---------------------------------------------------------------------------
+def astar_path(
+    start: int,
+    goal: int,
+    graph: dict[int, list[int]],
+    edge_weight_fn: Callable[[int, int], float],
+    heuristic: dict[int, int],
+) -> list[int] | None:
+    """A* для взвешенного графа. Возвращает путь [start, ..., goal]."""
+    if start == goal:
+        return [start]
+
+    open_heap: list[tuple[float, float, int, list[int]]] = []
+    heapq.heappush(open_heap, (float(heuristic.get(start, 999)), 0.0, start, [start]))
+    best_g: dict[int, float] = {start: 0.0}
+
+    while open_heap:
+        _f, g, current, path = heapq.heappop(open_heap)
+        if g > best_g.get(current, float("inf")):
+            continue
+        if current == goal:
+            return path
+
+        for neighbor in graph.get(current, []):
+            w = max(0.05, edge_weight_fn(current, neighbor))
+            new_g = g + w
+            if new_g < best_g.get(neighbor, float("inf")):
+                best_g[neighbor] = new_g
+                heapq.heappush(
+                    open_heap,
+                    (new_g + heuristic.get(neighbor, 999), new_g, neighbor, path + [neighbor]),
+                )
+    return None
+
 
 class AlgemAI:
-    """
-    Конечный автомат (FSM) для управления Алгебраистом.
+    """FSM + DFS/BFS + A* контроллер Алгема."""
 
-    Принцип единственной ответственности (SRP):
-      - Этот класс знает ТОЛЬКО о логике перемещения и состояниях.
-      - Он не рендерит, не воспроизводит звуки, не работает с Pygame напрямую.
-      - Граф и конфиг ночи передаются извне → легко тестировать и расширять.
+    OFFICE_NODE = 0
+    VENT_NODES = {8, 9, 10, 11}
+    LAST_VENT_NODES = {9, 10}
+    PATROL_SAFE_HOME = 1
 
-    Публичные атрибуты (читаются из GameModel через свойства):
-        location         : int         — текущий узел в графе.
-        prev_location    : int         — предыдущий узел (для анимации глитча).
-        trigger_timer    : int         — тиков осталось от анимационного события.
-        main_hall_sprite : int         — 0 или 1, вариант спрайта в Гл. коридоре.
-        state            : AIState     — текущее состояние FSM.
-    """
-
-    # Узел офиса — цель атаки
-    OFFICE_NODE: int = 0
-
-    # Конфиг скоростей для каждой ночи: (мин. интервал, макс. интервал) в тиках
+    # Интервалы между решениями. Чем выше ночь, тем быстрее ИИ.
     _NIGHT_SPEED: dict[int, tuple[int, int]] = {
-        1: (600, 900),    # Алгема нет
-        2: (630, 1080),   # 10.5-18 сек
-        3: (450, 810),    # 7.5-13.5 сек
-        4: (315, 630),    # 5.25-10.5 сек
-        5: (225, 450),    # 3.75-7.5 сек
+        1: (999999, 999999),
+        2: (520, 920),
+        3: (380, 720),
+        4: (270, 560),
+        5: (190, 420),
     }
 
-    # Детерминированные параметры баланса по ночам.
-    # Нарастающий интерес: чем дольше шумят системы, тем сильнее они тянут Алгема.
-    NIGHT_SERVER_GROWTH: dict[int, float] = {
-        1: 0.0, 2: 6.0, 3: 9.0, 4: 12.0, 5: 15.0,
+    # Шанс/давление пассивного патруля. Он не стоит всю ночь, но и не убивает
+    # игрока просто за бездействие на ранних ночах.
+    _AMBIENT_CAP_BY_NIGHT: dict[int, float] = {1: 0.0, 2: 7.0, 3: 12.0, 4: 17.0, 5: 23.0}
+    _AMBIENT_GROWTH_BY_NIGHT: dict[int, float] = {1: 0.0, 2: 0.28, 3: 0.45, 4: 0.62, 5: 0.86}
+
+    _BREACH_DELAY_BY_NIGHT: dict[int, tuple[int, int]] = {
+        1: (999999, 999999),
+        2: (150, 270),   # 2.5–4.5 сек: кадр, где его уже нет в венте
+        3: (120, 240),
+        4: (90, 210),
+        5: (70, 180),
     }
-    SERVER_INTEREST_CAP: float = 55.0
-    AD_GROWTH: float = 26.0
-    AD_INTEREST_CAP: float = 45.0
-    HACK_INTEREST_SCALE: float = 22.0
-    # Скорость падения шкалы в тишине (сервер выкл, реклама закрыта)
-    SILENCE_DECAY: float = 18.0
-    # Окно безопасности рекламы (секунды) — уменьшается с ночью
-    _AD_SAFE_WINDOWS: dict[int, float] = {1: 2.0, 2: 2.0, 3: 1.8, 4: 1.65, 5: 1.5}
-    # При ненулевом интересе Алгем начинает чаще выбирать узлы ближе к офису.
-    OFFICE_PULL_START: float = 18.0
-    OFFICE_PULL_MAX: float = 0.85
+    _STUN_TICKS_BY_NIGHT: dict[int, tuple[int, int]] = {
+        1: (0, 0),
+        2: (180, 300),
+        3: (150, 270),
+        4: (120, 240),
+        5: (90, 180),
+    }
+
     _NIGHT_PROFILES: dict[int, NightProfile] = {
         1: NightProfile(0.0, 0.0, 0.0, 18.0, 99.0, 0.0, 0.0, 0.0, 0.0, 999999, 0.0, 0.0, 999.0, 999.0, 0.0, 999.0, 0.0, 0.85, 0.15, 2, 90),
-        2: NightProfile(5.0, 18.0, 16.0, 14.0, 2.4, 8.0, 18.0, 11.0, 22.0, 240, 10.0, 16.0, 84.0, 88.0, 2.5, 24.0, 0.40, 0.65, 0.08, 3, 105),
-        3: NightProfile(9.0, 26.0, 22.0, 18.0, 1.8, 10.0, 22.0, 14.0, 28.0, 210, 12.0, 22.0, 76.0, 81.0, 3.0, 18.0, 0.85, 0.85, 0.15, 2, 90),
-        4: NightProfile(12.0, 26.0, 22.0, 18.0, 1.65, 12.0, 24.0, 16.0, 30.0, 180, 14.0, 24.0, 72.0, 78.0, 3.4, 18.0, 0.85, 0.90, 0.15, 2, 90),
-        5: NightProfile(15.0, 26.0, 22.0, 18.0, 1.5, 14.0, 28.0, 18.0, 32.0, 150, 16.0, 28.0, 68.0, 74.0, 4.0, 18.0, 0.85, 0.95, 0.15, 2, 90),
+        2: NightProfile(5.2, 18.0, 18.0, 14.0, 2.4, 6.5, 16.0, 9.0, 20.0, 240, 10.0, 16.0, 88.0, 92.0, 2.0, 28.0, 0.35, 0.60, 0.08, 3, 105),
+        3: NightProfile(8.5, 24.0, 25.0, 17.0, 1.9, 8.0, 20.0, 12.0, 26.0, 210, 12.0, 22.0, 78.0, 84.0, 3.0, 24.0, 0.55, 0.75, 0.13, 3, 90),
+        4: NightProfile(11.5, 26.0, 30.0, 18.0, 1.65, 10.0, 24.0, 15.0, 30.0, 180, 14.0, 24.0, 72.0, 78.0, 3.6, 20.0, 0.72, 0.85, 0.15, 3, 90),
+        5: NightProfile(15.0, 28.0, 38.0, 18.0, 1.45, 12.0, 28.0, 18.0, 34.0, 150, 16.0, 28.0, 64.0, 72.0, 4.5, 16.0, 0.88, 0.95, 0.17, 3, 90),
     }
 
-    # Зоны патруля по ночам (какие узлы доступны для случайного блуждания)
     _PATROL_ZONES: dict[int, set[int]] = {
         1: {1, 2, 3, 4, 5, 6},
         2: {1, 2, 3, 4, 5, 6},
@@ -279,118 +197,93 @@ class AlgemAI:
         5: {1, 2, 3, 4, 5, 6},
     }
 
+    # Предпочтительные точки проверки источников шума. Не обязательно цель
+    # находится ровно там; это просто понятные игровые маршруты.
+    _SERVER_INVESTIGATE_TARGETS = [5, 6, 3, 4]
+    _TABLET_INVESTIGATE_TARGETS = [3, 4, 2, 5]
+    _AD_INVESTIGATE_TARGETS = [2, 3, 4]
+
     def __init__(
         self,
-        graph:      dict[int, list[int]],
-        night:      int,
+        graph: dict[int, list[int]],
+        night: int,
         start_node: int = 1,
         patrol_graph: dict[int, list[int]] | None = None,
     ) -> None:
-        """
-        Args:
-            graph      : начальный граф комнат (может обновляться при вентах).
-            night      : номер ночи 1–5; влияет на скорость и агрессивность.
-            start_node : начальная позиция (по умолчанию — комната Алгема, узел 1).
-        """
-        self._graph:  dict[int, list[int]] = graph
-        self._patrol_graph: dict[int, list[int]] = patrol_graph or graph
-        self._night:  int                  = night
-        self._profile: NightProfile        = self._NIGHT_PROFILES.get(
-            night, self._NIGHT_PROFILES[5]
-        )
-        self._current_hour: int            = 0
+        self._graph = graph
+        self._patrol_graph = patrol_graph or graph
+        self._patrol_graph_is_dedicated = patrol_graph is not None
+        self._night = night
+        self._profile = self._NIGHT_PROFILES.get(night, self._NIGHT_PROFILES[5])
+        self._current_hour = 0
 
-        # ── Позиция ──────────────────────────────────────────────────────
-        self.location:         int = start_node
-        self.prev_location:    int = start_node
+        self.location = start_node
+        self.prev_location = start_node
+        self.trigger_timer = 0
+        self._move_timer = self._initial_delay()
 
-        # ── Таймеры ──────────────────────────────────────────────────────
-        self.trigger_timer:    int = 0        # тиков для анимации перехода
-        self._move_timer:      int = self._initial_delay()
+        self.state = AIState.IDLE
+        self._idle_ticks_left = random.randint(60, 180)
+        self.aggression = 0.0
+        self.attention = 0.0
+        self.hack_attraction = 0.0
 
-        # ── FSM ──────────────────────────────────────────────────────────
-        self.state:            AIState = AIState.IDLE   # начинает в покое
-        self._idle_ticks_left: int     = 0
+        self._lure_node = -1
+        self._lure_ticks_left = 0
+        self._investigate_target: int | None = None
+        self._attack_goal = self.OFFICE_NODE
+        self._breach_timer = 0
+        self._breach_source = -1
+        self._entry_timer = 0  # backward-compatible external hook
+        self._stun_timer = 0
+        self._retreat_target = self.PATROL_SAFE_HOME
 
-        # ── Агрессия [0.0 … 1.0] — растёт в IDLE, сбрасывается при смене ──
-        self.aggression:       float = 0.0
-
-        # ── Аудио-приманка ───────────────────────────────────────────────
-        self._lure_node:       int  = -1    # -1 = нет приманки
-        self._lure_ticks_left: int  = 0
-
-        # ── Таймер входа в офис ──────────────────────────────────────────
-        # Когда Алгем решает войти в офис, он задерживается на ~1.5 сек
-        # на текущей камере, давая игроку шанс заметить и среагировать.
-        self._entry_timer: int = 0
-
-        # ── Приманка сервера (взлом) ─────────────────────────────────────
-        # Чем выше значение, тем сильнее сервер притягивает Алгема.
-        self.hack_attraction: float = 0.0
-
-        # ── Шкала внимания [0..100] — детерминированная замена random ────
-        self.attention: float = 0.0
-        self._server_on: bool = False
-        self._ad_active: bool = False
-        self._tablet_open: bool = False
-        self._laptop_open: bool = False
+        self._server_on = False
+        self._ad_active = False
+        self._tablet_open = False
+        self._laptop_open = False
         self._current_camera_idx: int | None = None
-        self._vent_error_count: int = 0
-        self._ad_safe_timer: float = 0.0   # таймер иммунитета рекламы (секунды)
-        self._ad_immune: bool = True       # True пока не прошло AD_SAFE_WINDOW
-        self._server_interest: float = 0.0
-        self._ad_interest: float = 0.0
-        self._tablet_interest: float = 0.0
-        self._camera_focus_interest: float = 0.0
-        self._vent_interest: float = 0.0
+        self._vent_error_count = 0
+        self._ad_safe_timer = 0.0
+        self._ad_immune = True
+        self._server_interest = 0.0
+        self._ad_interest = 0.0
+        self._tablet_interest = 0.0
+        self._camera_focus_interest = 0.0
+        self._vent_interest = 0.0
+        self._ambient_interest = 0.0
 
-        # ── Вспомогательные ─────────────────────────────────────────────
-        self.main_hall_sprite: int  = 0   # вариант спрайта в Главном коридоре
-        self._camera_watch:    dict[int, int] = {}  # передаётся из GameModel
-        self._patrol_stack:    list[int] = [start_node]
-        self._patrol_visited:  set[int] = {start_node}
+        self.main_hall_sprite = 0
+        self._camera_watch: dict[int, int] = {}
+        self._patrol_stack = [start_node]
+        self._patrol_visited = {start_node}
+        self._recent_nodes: deque[int] = deque(maxlen=5)
+        self._last_path: list[int] = []
+        self._last_move_rejected: tuple[int, int] | None = None
+        self._vent_motion_ticks = 0
+        self._last_vent_move = (-1, -1)
+        self._pressure_cooldown_ticks = 0
+        self._laptop_noise_cooldown = 0
+        self._attack_route_epoch = 0
 
-        # Предподсчёт BFS-эвристики до офиса (неизменна для базового графа)
-        self._base_heuristic: dict[int, int] = self._precompute_heuristic(
-            self._graph, self.OFFICE_NODE
-        )
+        self._base_heuristic = self._precompute_heuristic(self._graph, self.OFFICE_NODE)
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Публичный API — вызывается из GameModel
-    # ──────────────────────────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def update_graph(
         self,
         graph: dict[int, list[int]],
         patrol_graph: dict[int, list[int]] | None = None,
     ) -> None:
-        """
-        Обновить граф движения (например, при поломке вентиляции).
-
-        Вызывается из GameModel каждый тик, передавая граф с учётом
-        текущего состояния вентов.
-        """
         self._graph = graph
         if patrol_graph is not None:
             self._patrol_graph = patrol_graph
-        # Эвристика пересчитывается только если граф изменился
         self._base_heuristic = self._precompute_heuristic(self._graph, self.OFFICE_NODE)
 
     def update_camera_watch(self, watch: dict[int, int]) -> None:
-        """
-        Передать данные о «просматриваемости» комнат.
-
-        Камеры, на которые долго смотрит игрок, увеличивают стоимость
-        соответствующих рёбер — Алгем избегает наблюдаемых комнат.
-        """
         self._camera_watch = watch
-
-    def _attack_threshold(self, base_threshold: float) -> float:
-        """Lower attack thresholds as the night clock advances."""
-        return max(
-            40.0,
-            base_threshold - self._current_hour * self._profile.hour_attack_delta,
-        )
 
     def update_game_state(
         self,
@@ -402,14 +295,6 @@ class AlgemAI:
         vent_error_count: int = 0,
         dt: float = 1 / 60,
     ) -> None:
-        """
-        Передать состояние сервера и рекламы для расчёта шкалы внимания.
-
-        Args:
-            server_on : True если сервер включён.
-            ad_active : True если рекламный баннер виден.
-            dt        : дельта-тайм в секундах (по умолчанию 1/60).
-        """
         old_ad = self._ad_active
         self._server_on = server_on
         self._ad_active = ad_active
@@ -420,7 +305,7 @@ class AlgemAI:
 
         if server_on:
             self._server_interest = min(
-                self.SERVER_INTEREST_CAP,
+                58.0,
                 self._server_interest + self._profile.server_growth * dt,
             )
         else:
@@ -439,16 +324,13 @@ class AlgemAI:
                     self._ad_immune = False
             if not self._ad_immune:
                 self._ad_interest = min(
-                    self.AD_INTEREST_CAP,
+                    45.0,
                     self._ad_interest + self._profile.ad_growth * dt,
                 )
         else:
             self._ad_safe_timer = 0.0
             self._ad_immune = True
-            self._ad_interest = max(
-                0.0,
-                self._ad_interest - self._profile.silence_decay * dt,
-            )
+            self._ad_interest = max(0.0, self._ad_interest - self._profile.silence_decay * dt)
 
         if tablet_open and not laptop_open:
             self._tablet_interest = min(
@@ -456,23 +338,11 @@ class AlgemAI:
                 self._tablet_interest + self._profile.tablet_growth * dt,
             )
         else:
-            self._tablet_interest = max(
-                0.0,
-                self._tablet_interest - self._profile.silence_decay * dt,
-            )
+            self._tablet_interest = max(0.0, self._tablet_interest - self._profile.silence_decay * dt)
 
-        focus_ticks = 0
-        if camera_idx is not None:
-            focus_ticks = self._camera_watch.get(camera_idx, 0)
-        if (
-            tablet_open
-            and not laptop_open
-            and focus_ticks >= self._profile.camera_focus_threshold_ticks
-        ):
-            overload = min(
-                1.0,
-                (focus_ticks - self._profile.camera_focus_threshold_ticks) / 240.0,
-            )
+        focus_ticks = self._camera_watch.get(camera_idx, 0) if camera_idx is not None else 0
+        if tablet_open and not laptop_open and focus_ticks >= self._profile.camera_focus_threshold_ticks:
+            overload = min(1.0, (focus_ticks - self._profile.camera_focus_threshold_ticks) / 240.0)
             self._camera_focus_interest = min(
                 self._profile.camera_focus_cap,
                 self._camera_focus_interest
@@ -487,23 +357,35 @@ class AlgemAI:
         if vent_error_count > 0:
             self._vent_interest = min(
                 self._profile.vent_cap,
-                self._vent_interest
-                + self._profile.vent_growth * min(2, vent_error_count) * dt,
+                self._vent_interest + self._profile.vent_growth * min(2, vent_error_count) * dt,
             )
         else:
-            self._vent_interest = max(
-                0.0,
-                self._vent_interest - self._profile.silence_decay * dt,
-            )
+            self._vent_interest = max(0.0, self._vent_interest - self._profile.silence_decay * dt)
+
+        # Пассивный пульс: Алгем не стоит всю ночь, но на ранних ночах это
+        # почти не превращается в атаку без действий игрока.
+        ambient_cap = self._AMBIENT_CAP_BY_NIGHT.get(self._night, 0.0)
+        ambient_growth = self._AMBIENT_GROWTH_BY_NIGHT.get(self._night, 0.0)
+        if self._night >= 2:
+            hour_bonus = 1.0 + self._current_hour * 0.18
+            self._ambient_interest = min(ambient_cap, self._ambient_interest + ambient_growth * hour_bonus * dt)
+        else:
+            self._ambient_interest = 0.0
+
+        # Hack attraction уже сглаженно передаётся из GameModel. Здесь делаем
+        # нелинейный рост: ближе к завершению взлома Алгем ускоряется заметнее.
+        hack_curve = max(0.0, min(1.0, self.hack_attraction)) ** 1.28
+        hack_pressure = hack_curve * self._profile.hack_interest_scale
 
         target_attention = min(
             100.0,
-            self._server_interest
+            self._ambient_interest
+            + self._server_interest
             + self._ad_interest
             + self._tablet_interest
             + self._camera_focus_interest
             + self._vent_interest
-            + self.hack_attraction * self._profile.hack_interest_scale,
+            + hack_pressure,
         )
         if (
             not server_on
@@ -512,430 +394,608 @@ class AlgemAI:
             and vent_error_count <= 0
             and self.hack_attraction <= 0.01
         ):
+            # Тишина гасит именно угрозу/интерес. Патруль при этом не заморожен:
+            # его запускает FSM через IDLE -> PATROL, а не шкала attention.
             target_attention = 0.0
+
         self.attention += (target_attention - self.attention) * 0.12
         self.attention = max(0.0, min(100.0, self.attention))
 
     def notify_audio_lure(self, target_node: int, duration: int = 480) -> None:
-        """
-        Сообщить ИИ об активации аудио-приманки в комнате target_node.
-
-        Механика (как в FNAF3):
-          - В режиме ATTACK: цель меняется с офиса на источник звука.
-          - В режиме PATROL: следующий шаг будет в сторону приманки.
-          - В режиме IDLE: Алгем «просыпается» и начинает патруль.
-
-        Алгем слышит приманку только в радиусе 2 комнат (BFS-расстояние).
-
-        Args:
-            target_node : узел, где играет звук.
-            duration    : сколько тиков действует приманка.
-        """
         if target_node == self.location:
-            return          # Алгем уже в этой комнате, эффекта нет
-
+            return
         path = bfs_path(self.location, target_node, self._graph)
         if path is None or len(path) - 1 > self._profile.lure_hear_distance:
-            return          # Слишком далеко — не слышит
-
+            return
         if random.random() < self._profile.lure_fail_chance:
             return
 
-        self._lure_node       = target_node
+        self._lure_node = target_node
         self._lure_ticks_left = duration
-
-        # Приманка «будит» Алгема
-        if self.state == AIState.IDLE:
-            self.state             = AIState.PATROL
-            self._idle_ticks_left  = 0
+        self._investigate_target = target_node
+        self.state = AIState.INVESTIGATE
+        self._idle_ticks_left = 0
+        self._move_timer = min(self._move_timer, 45)
 
     def cancel_audio_lure(self) -> None:
-        """Принудительно отменить аудио-приманку (например, при сбросе вента)."""
-        self._lure_node       = -1
+        self._lure_node = -1
         self._lure_ticks_left = 0
+        if self.state is AIState.INVESTIGATE and self._investigate_target is not None:
+            self._investigate_target = None
+
+    def notify_laptop_power_event(self, event: str) -> None:
+        """React to office laptop power sounds with distance-based urgency."""
+        if self._night <= 1:
+            return
+        cooldown_scale = 0.38 if self._laptop_noise_cooldown > 0 else 1.0
+        self._laptop_noise_cooldown = 240
+        source_node = self.OFFICE_NODE
+        path = bfs_path(self.location, source_node, self._graph)
+        if path is None:
+            distance = 6
+        else:
+            distance = max(0, len(path) - 1)
+
+        event = event.lower().strip()
+        if event == "on":
+            base_interest = 11.0
+            base_attention = 10.0
+            hearing_limit = 4
+            fast_move_cap = 54
+        else:
+            base_interest = 16.0
+            base_attention = 15.0
+            hearing_limit = 5
+            fast_move_cap = 42
+
+        if distance > hearing_limit:
+            # Совсем далеко — слышит лишь на поздних ночах и с меньшим эффектом.
+            if self._night < 4:
+                return
+            falloff = max(0.18, 1.0 - (distance - hearing_limit) * 0.22)
+        else:
+            falloff = max(0.30, 1.0 - distance * 0.18)
+
+        interest_gain = base_interest * falloff * (0.85 + self._night * 0.08) * cooldown_scale
+        attention_gain = base_attention * falloff * (0.80 + self._night * 0.07) * cooldown_scale
+
+        self._server_interest = min(58.0, self._server_interest + interest_gain)
+        self.attention = min(100.0, self.attention + attention_gain)
+        self._idle_ticks_left = 0
+
+        if distance <= hearing_limit:
+            self.cancel_audio_lure()
+            if self.state in (AIState.IDLE, AIState.PATROL):
+                self.state = AIState.INVESTIGATE
+                self._investigate_target = self._choose_investigate_target() or self._nearest_patrol_node() or self.PATROL_SAFE_HOME
+            self._move_timer = min(self._move_timer, fast_move_cap + distance * 12)
+
+        if distance <= 2:
+            self.hack_attraction = max(self.hack_attraction, 0.22 if event == "on" else 0.30)
+            if event == "off" or self.attention >= self._attack_threshold(self._profile.patrol_attack_threshold) - 8.0:
+                self._enter_attack_state()
+                self._move_timer = min(self._move_timer, 24 if distance <= 1 else 36)
+
+    def notify_seal_started(self, vent_node: int, duration_ticks: int = 300) -> None:
+        """Игровая реакция на начало закрытия вентиля.
+
+        Если игрок закрывает заслонку прямо на камере с Алгемом, он не должен
+        успеть визуально «исчезнуть» в пустой вент до кадра CLOSED. Поэтому
+        держим его в STUNNED минимум до завершения закрытия, а уже потом
+        переводим в RETREAT.
+        """
+        if self.location == vent_node or vent_node in self._graph.get(self.location, []):
+            lo, hi = self._STUN_TICKS_BY_NIGHT.get(self._night, (120, 240))
+            stun_ticks = random.randint(lo, hi)
+            if self.location == vent_node:
+                stun_ticks = max(stun_ticks, duration_ticks + 24)
+            else:
+                stun_ticks = max(stun_ticks, min(duration_ticks // 2, 150))
+            if stun_ticks > 0:
+                self._stun_timer = stun_ticks
+                self.state = AIState.STUNNED
+                self._retreat_target = self._nearest_patrol_node() or self.PATROL_SAFE_HOME
+                self._move_timer = min(self._move_timer, 30)
+                self.trigger_timer = 0
+                if self.location == vent_node:
+                    self._pressure_cooldown_ticks = max(self._pressure_cooldown_ticks, duration_ticks + 210)
+                    self.attention = max(0.0, self.attention - 16.0)
+                    self._server_interest *= 0.82
+                    self._ad_interest *= 0.86
+                    self._vent_interest *= 0.70
+                else:
+                    self._pressure_cooldown_ticks = max(self._pressure_cooldown_ticks, 120)
 
     def tick(self, hour: int) -> bool:
-        """
-        Один игровой тик ИИ.
-
-        Обновляет шкалу внимания, таймеры, и при необходимости делает ход.
-
-        Args:
-            hour : текущий игровой час (0–5).
-
-        Returns:
-            True  — Алгем добрался до офиса (Game Over).
-            False — всё в порядке.
-        """
         self._current_hour = hour
 
-        # Обратный отсчёт анимационного триггера
         if self.trigger_timer > 0:
             self.trigger_timer -= 1
+        if self._vent_motion_ticks > 0:
+            direct_vent_view = (
+                self.location in self.VENT_NODES
+                and self._tablet_open
+                and not self._laptop_open
+                and self._current_camera_idx == self.location
+            )
+            if not direct_vent_view:
+                self._vent_motion_ticks -= 1
+        if self._pressure_cooldown_ticks > 0:
+            self._pressure_cooldown_ticks -= 1
+        if self._laptop_noise_cooldown > 0:
+            self._laptop_noise_cooldown -= 1
 
-        # Первая ночь — ознакомительная, Алгем не двигается
         if self._night <= 1:
             return False
 
-        # Обратный отсчёт аудио-приманки
         if self._lure_ticks_left > 0:
             self._lure_ticks_left -= 1
             if self._lure_ticks_left <= 0:
                 self._lure_node = -1
 
-        # Таймер входа в офис (тикает каждый кадр, а не только на ходах)
         if self._entry_timer > 0:
             self._entry_timer -= 1
             if self._entry_timer <= 0:
-                return True     # Время вышло — Алгем ворвался в офис
-            return False        # Ещё входит, не двигаемся
+                return True
+            return False
 
-        # Таймер хода
+        if self.state is AIState.BREACH:
+            self._breach_timer -= 1
+            if self._breach_timer <= 0:
+                # GameModel дальше запускает честное random kill-window.
+                return True
+            return False
+
+        if self.state is AIState.KILL_PENDING:
+            return True
+
+        if self.state is AIState.STUNNED:
+            self._stun_timer -= 1
+            if self._stun_timer <= 0:
+                self.state = AIState.RETREAT
+                self._move_timer = 1
+            return False
+
         self._move_timer -= 1
         if self._move_timer > 0:
             return False
 
-        # Сбрасываем таймер и выполняем шаг FSM
         self._move_timer = self._compute_interval(hour)
         return self._step(hour)
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Внутренняя логика FSM
-    # ──────────────────────────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # FSM
+    # ------------------------------------------------------------------
 
     def _step(self, hour: int) -> bool:
-        """
-        Основной диспетчер FSM — делегирует выполнение нужному состоянию.
-
-        Returns:
-            True если достигнут офис.
-        """
-        dispatch: dict[AIState, Callable[[int], bool]] = {
-            AIState.IDLE:   lambda: self._step_idle(hour),
+        dispatch: dict[AIState, Callable[[], bool]] = {
+            AIState.IDLE: lambda: self._step_idle(hour),
             AIState.PATROL: self._step_patrol,
+            AIState.INVESTIGATE: self._step_investigate,
             AIState.ATTACK: self._step_attack,
+            AIState.VENT_STALK: self._step_attack,
+            AIState.RETREAT: self._step_retreat,
         }
-        handler = dispatch.get(self.state, self._step_patrol)
-        return handler()
+        return dispatch.get(self.state, self._step_patrol)()
 
     def _step_idle(self, hour: int) -> bool:
-        """
-        Состояние IDLE: ожидание.
-        Решения детерминированы на основе шкалы внимания.
-        """
         self._idle_ticks_left -= 1
-        if self._idle_ticks_left > 0:
+        if self._idle_ticks_left > 0 and self.attention < self._investigate_threshold():
             return False
 
-        # Сервер выключен и шкала на нуле — Алгем отступает
-        if not self._server_on and self.attention <= 0 and self.location != 1:
-            # Отступаем на одну камеру назад (к предыдущей позиции)
-            neighbors = self._patrol_graph.get(self.location, [])
-            if not neighbors:
-                neighbors = self._graph.get(self.location, [])
-            if self.prev_location in neighbors and self.prev_location != self.OFFICE_NODE:
-                self._move_to(self.prev_location)
-            elif neighbors:
-                # Идём в соседнюю камеру, не в офис
-                safe = [n for n in neighbors if n != self.OFFICE_NODE]
-                if safe:
-                    self._move_to(safe[0])
-            self._idle_ticks_left = 60
-            return False
-
-        # Порог перехода в ATTACK зависит от ночи
-        attack_threshold = self._attack_threshold(
-            self._profile.idle_attack_threshold
-        )
-        can_attack = (
-            self.hack_attraction >= 0.05
-            or self._server_interest >= 8.0
-            or self._ad_interest >= 8.0
-            or self._tablet_interest >= 6.0
-            or self._camera_focus_interest >= 6.0
-            or self._vent_interest >= 6.0
-        )
-
-        if can_attack and self.attention >= attack_threshold:
-            self.state = AIState.ATTACK
+        if self._should_attack():
+            self._enter_attack_state()
+        elif self.attention >= self._investigate_threshold():
+            self.state = AIState.INVESTIGATE
+            self._investigate_target = self._choose_investigate_target()
         else:
             self.state = AIState.PATROL
         return False
 
     def _step_patrol(self) -> bool:
-        """
-        Состояние PATROL: блуждание с весами.
-        Решения детерминированы на основе шкалы внимания.
-        """
-        next_node = self._choose_patrol_node()
-
-        if next_node == self.OFFICE_NODE:
-            return True     # Алгем дошёл до офиса
-
-        self._move_to(next_node)
-
-        # Сервер выключен и шкала на нуле — отступаем обратно в IDLE
-        if not self._server_on and self.attention <= 0:
-            self.state = AIState.IDLE
-            self._idle_ticks_left = 30
+        if self._should_attack():
+            self._enter_attack_state()
+            return False
+        if self.attention >= self._investigate_threshold() or self._lure_node >= 0:
+            self.state = AIState.INVESTIGATE
+            self._investigate_target = self._choose_investigate_target()
             return False
 
-        # Детерминированный переход в ATTACK по порогу шкалы
-        can_attack = (
-            self.hack_attraction >= 0.05
-            or self._server_interest >= 8.0
-            or self._ad_interest >= 8.0
-            or self._tablet_interest >= 6.0
-            or self._camera_focus_interest >= 6.0
-            or self._vent_interest >= 6.0
-        )
-        attack_threshold = self._attack_threshold(
-            self._profile.patrol_attack_threshold
-        )
-        if can_attack and self.attention >= attack_threshold:
-            self.state = AIState.ATTACK
+        next_node = self._choose_patrol_node()
+        self._move_to(next_node, self._patrol_graph)
+        return False
 
+    def _step_investigate(self) -> bool:
+        target = self._choose_investigate_target()
+        self._investigate_target = target
+
+        if target is None or target == self.location:
+            if self._should_attack():
+                self._enter_attack_state()
+            else:
+                self.state = AIState.PATROL
+            return False
+
+        # Приманка/расследование в обычной зоне — через DFS, чтобы алгоритм был
+        # явно использован как «средний» пункт ТЗ.
+        graph = self._patrol_graph if target in self._PATROL_ZONES.get(self._night, set()) else self._graph
+        path = dfs_path(self.location, target, graph)
+        if path is None or len(path) < 2:
+            path = bfs_path(self.location, target, self._graph)
+        if path and len(path) > 1:
+            self._move_to(path[1], self._graph if path[1] not in self._patrol_graph.get(self.location, []) else graph)
+
+        if self._lure_node < 0 and self._should_attack():
+            self._enter_attack_state()
+        elif self._lure_node < 0 and self.attention < self._investigate_threshold() * 0.65:
+            self.state = AIState.PATROL
         return False
 
     def _step_attack(self) -> bool:
-        """
-        Состояние ATTACK: целенаправленное движение через A*.
-
-        Цель — офис (узел 0), если нет активной приманки.
-        Если приманка активна — идёт к ней (как в FNAF3: отвлекается).
-
-        Returns:
-            True если достиг офиса.
-        """
-        goal = (
-            self._lure_node
-            if self._lure_node >= 0
-            else self.OFFICE_NODE
-        )
-
-        # Пересчитываем эвристику для не-офисной цели
-        heuristic = (
-            self._base_heuristic
-            if goal == self.OFFICE_NODE
-            else self._precompute_heuristic(self._graph, goal)
-        )
-
-        path = astar_path(
-            start          = self.location,
-            goal           = goal,
-            graph          = self._graph,
-            edge_weight_fn = self._edge_weight,
-            heuristic      = heuristic,
-        )
+        goal = self._lure_node if self._lure_node >= 0 else self.OFFICE_NODE
+        heuristic = self._base_heuristic if goal == self.OFFICE_NODE else self._precompute_heuristic(self._graph, goal)
+        path = astar_path(self.location, goal, self._graph, self._edge_weight, heuristic)
+        self._last_path = path or []
 
         if path is None or len(path) < 2:
-            # A closed seal may temporarily cut the route. Keep ATTACK active:
-            # the next movement tick will run A* again against the new graph.
+            self._start_stun_or_retreat()
             return False
 
         next_node = path[1]
-
         if next_node == self.OFFICE_NODE:
-            self._entry_timer = self._profile.entry_delay
+            self._start_breach()
             return False
 
-        self._move_to(next_node)
+        if not self._move_to(next_node, self._graph):
+            self._start_stun_or_retreat()
+            return False
+
+        if self.location in self.VENT_NODES:
+            self.state = AIState.VENT_STALK
+        elif self._lure_node >= 0:
+            self.state = AIState.INVESTIGATE
+        else:
+            self.state = AIState.ATTACK
         return False
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Вспомогательные методы выбора узла и оценки рёбер
-    # ──────────────────────────────────────────────────────────────────────
+    def _step_retreat(self) -> bool:
+        target = self._nearest_patrol_node() or self.PATROL_SAFE_HOME
+        if self.location == target:
+            self.state = AIState.PATROL
+            self._reset_patrol_memory()
+            return False
+        path = bfs_path(self.location, target, self._graph)
+        if path and len(path) > 1:
+            self._move_to(path[1], self._graph)
+        else:
+            self.state = AIState.PATROL
+        return False
+
+    # ------------------------------------------------------------------
+    # Выбор целей и движение
+    # ------------------------------------------------------------------
+
+    def _enter_attack_state(self) -> None:
+        if self.state not in (AIState.ATTACK, AIState.VENT_STALK):
+            self._attack_route_epoch += 1
+            self._last_path = []
+        self.state = AIState.ATTACK
 
     def _choose_patrol_node(self) -> int:
-        """
-        Взвешенный выбор следующего узла для PATROL.
-
-        Если активна аудио-приманка — BFS к её источнику.
-        Иначе — шанс пойти через вентиляцию, или стохастический выбор
-        с учётом наблюдаемости камер и зоны патруля.
-
-        На последней камере (node 7) стоит на месте без приманки.
-        """
-        neighbors = self._patrol_graph.get(self.location, [])
+        neighbors = list(self._patrol_graph.get(self.location, []))
         if not neighbors:
             return self.location
 
-        # У последней камеры не идём в офис вслепую, но и не замираем на месте.
-        if self.location == 5 and self._lure_node < 0:
-            safe_neighbors = [n for n in neighbors if n != self.OFFICE_NODE]
-            if safe_neighbors:
-                neighbors = safe_neighbors
-
-        # Аудио-приманка: идём к источнику звука
         if self._lure_node >= 0:
             path = dfs_path(self.location, self._lure_node, self._patrol_graph)
             if path and len(path) > 1:
-                candidate = path[1]
-                if candidate != self.OFFICE_NODE or self._lure_node == self.OFFICE_NODE:
-                    return candidate
+                return path[1]
 
-        # Фильтр по зоне патруля (только для случайного блуждания)
         patrol_zone = self._PATROL_ZONES.get(self._night)
-        if patrol_zone is not None and self.location in patrol_zone:
-            neighbors = [n for n in neighbors if n in patrol_zone]
-            if not neighbors:
-                neighbors = self._patrol_graph.get(self.location, [])
+        if (
+            self._patrol_graph_is_dedicated
+            and patrol_zone is not None
+            and self.location in patrol_zone
+        ):
+            filtered = [n for n in neighbors if n in patrol_zone]
+            if filtered:
+                neighbors = filtered
 
-        # Online DFS: unseen branches first, then physical backtracking.
+        # DFS-патруль: сначала непосещённые ветки, потом backtracking.
         if not self._patrol_stack or self._patrol_stack[-1] != self.location:
-            self._patrol_stack = [self.location]
-            self._patrol_visited = {self.location}
+            self._reset_patrol_memory()
         unvisited = [n for n in neighbors if n not in self._patrol_visited]
         if unvisited:
-            neighbors = unvisited
+            candidates = unvisited
         elif len(self._patrol_stack) > 1:
             self._patrol_stack.pop()
-            return self._patrol_stack[-1]
+            backtrack_target = self._patrol_stack[-1]
+            if backtrack_target in neighbors:
+                return backtrack_target
+            # PATROL_GRAPH может быть направленным. Backtracking через стек DFS
+            # не имеет права телепортировать Алгема, поэтому идём к целевому
+            # узлу кратчайшим физическим шагом через BFS.
+            path = bfs_path(self.location, backtrack_target, self._patrol_graph)
+            if path and len(path) > 1 and path[1] in neighbors:
+                return path[1]
+            self._reset_patrol_memory()
+            candidates = neighbors
         else:
-            self._patrol_visited = {self.location}
+            self._reset_patrol_memory()
+            candidates = neighbors
 
-        # Взвешенный случайный выбор
         weights: list[float] = []
-        for n in neighbors:
-            watch    = self._camera_watch.get(n, 0)
+        for node in candidates:
+            watch = self._camera_watch.get(node, 0)
             observed = min(1.0, watch / 300.0)
-            penalty  = 0.05 if n == self.OFFICE_NODE else 1.0
-            weight = max(
-                0.05,
-                (1.0 - observed * self._profile.watch_penalty_scale),
-            ) * penalty
+            weight = max(0.06, 1.0 - observed * self._profile.watch_penalty_scale)
 
-            if self.attention >= self._profile.office_pull_start and n != self.OFFICE_NODE:
-                office_dist = self._base_heuristic.get(n, 999)
-                if office_dist < 999:
-                    pull = min(
-                        self._profile.office_pull_max,
-                        (self.attention - self._profile.office_pull_start) / 100.0,
-                    )
-                    weight *= 1.0 + max(0.0, 4.0 - office_dist) * 0.18 * pull
+            # При умеренном интересе он не атакует мгновенно, но чаще выбирает
+            # камеры, которые ближе к будущему attack-маршруту.
+            if self.attention >= self._profile.office_pull_start:
+                dist = self._base_heuristic.get(node, 999)
+                if dist < 999:
+                    pull = min(self._profile.office_pull_max, (self.attention - self._profile.office_pull_start) / 100.0)
+                    weight *= 1.0 + max(0.0, 4.0 - dist) * 0.16 * pull
 
+            if node in self._recent_nodes:
+                weight *= 0.55
             weights.append(weight)
 
-        total = sum(weights)
-        r     = random.uniform(0.0, total)
-        accum = 0.0
-        for node, w in zip(neighbors, weights):
-            accum += w
-            if r <= accum:
-                self._patrol_visited.add(node)
-                self._patrol_stack.append(node)
-                return node
+        picked = self._weighted_choice(candidates, weights)
+        self._patrol_visited.add(picked)
+        self._patrol_stack.append(picked)
+        return picked
 
-        node = neighbors[-1]
-        self._patrol_visited.add(node)
-        self._patrol_stack.append(node)
-        return node
+    def _choose_investigate_target(self) -> int | None:
+        if self._lure_node >= 0:
+            return self._lure_node
+
+        sources: list[tuple[float, list[int]]] = [
+            (self._server_interest + self.hack_attraction * 18.0, self._SERVER_INVESTIGATE_TARGETS),
+            (self._ad_interest, self._AD_INVESTIGATE_TARGETS),
+            (self._tablet_interest + self._camera_focus_interest, self._TABLET_INVESTIGATE_TARGETS),
+        ]
+        sources.sort(key=lambda item: item[0], reverse=True)
+        score, targets = sources[0]
+        if score <= 0.5:
+            return None
+
+        # Выбираем достижимую ближайшую цель из тематического списка.
+        reachable: list[tuple[int, int]] = []
+        for target in targets:
+            path = bfs_path(self.location, target, self._graph)
+            if path:
+                reachable.append((len(path), target))
+        if not reachable:
+            return None
+        reachable.sort()
+        best = [target for _dist, target in reachable[:2]]
+        return random.choice(best)
+
+    def _move_to(self, node: int, graph: dict[int, list[int]] | None = None) -> bool:
+        if node == self.location:
+            return True
+        active_graph = graph or (self._patrol_graph if self.state is AIState.PATROL else self._graph)
+        if node not in active_graph.get(self.location, []):
+            self._last_move_rejected = (self.location, node)
+            return False
+
+        prev = self.location
+        self.prev_location = prev
+        self.location = node
+        self.trigger_timer = 30
+        self._recent_nodes.append(node)
+
+        if prev in self.VENT_NODES or node in self.VENT_NODES:
+            self._last_vent_move = (prev, node)
+            self._vent_motion_ticks = max(self._vent_motion_ticks, self._vent_motion_hold_ticks(prev, node))
+
+        if node == 1:
+            self.main_hall_sprite = random.randint(0, 1)
+        return True
+
+    def _start_breach(self) -> None:
+        """Последний шаг к офису: камера пустеет, скример ещё не мгновенный."""
+        source = self.location
+        self.prev_location = source
+        self.location = self.OFFICE_NODE
+        self._breach_source = source
+        self.state = AIState.BREACH
+        self._breach_timer = random.randint(*self._BREACH_DELAY_BY_NIGHT.get(self._night, (90, 210)))
+        # Совместимость со старой логикой и тестами: _entry_timer теперь означает
+        # не мгновенный вход, а фазу "исчез с камеры, но ещё не убил".
+        self._entry_timer = min(self._breach_timer, self._profile.entry_delay)
+        self.trigger_timer = 30
+        self._move_timer = self._breach_timer
+
+    def _start_stun_or_retreat(self) -> None:
+        self._stun_timer = random.randint(*self._STUN_TICKS_BY_NIGHT.get(self._night, (120, 240)))
+        if self._stun_timer > 0:
+            self.state = AIState.STUNNED
+        else:
+            self.state = AIState.RETREAT
+        self._retreat_target = self._nearest_patrol_node() or self.PATROL_SAFE_HOME
+
+    def _reset_patrol_memory(self) -> None:
+        self._patrol_stack = [self.location]
+        self._patrol_visited = {self.location}
+
+    def _nearest_patrol_node(self) -> int | None:
+        zone = self._PATROL_ZONES.get(self._night, {1, 2, 3, 4, 5, 6})
+        if self.location in zone:
+            return self.location
+        best: tuple[int, int] | None = None
+        for node in zone:
+            path = bfs_path(self.location, node, self._graph)
+            if path is None:
+                continue
+            candidate = (len(path), node)
+            if best is None or candidate < best:
+                best = candidate
+        return best[1] if best else None
+
+    def _vent_motion_hold_ticks(self, prev: int, node: int) -> int:
+        """Duration of crawl audio after a vent-related move."""
+        if prev in self.VENT_NODES and node in self.VENT_NODES:
+            return 210 if self.state is AIState.RETREAT else 180
+        if prev in self.VENT_NODES or node in self.VENT_NODES:
+            return 150 if self.state is AIState.RETREAT else 120
+        return 0
+
+    # ------------------------------------------------------------------
+    # Вес A* / пороги / таймеры
+    # ------------------------------------------------------------------
 
     def _edge_weight(self, u: int, v: int) -> float:
-        """
-        Стоимость перемещения из u в v для A*.
-
-        Камеры, которые долго наблюдает игрок, дороже (Алгем избегает).
-        Базовая стоимость = 1.0; наблюдение добавляет до +2.0.
-
-        Эта функция делает поведение «реактивным» на действия игрока:
-        смотри на камеру → Алгем будет обходить эту комнату.
-        """
-        watch = self._camera_watch.get(u, 0)
+        # Штрафуем именно узел, куда Алгем хочет зайти, а не тот, откуда он уходит.
+        watch = self._camera_watch.get(v, 0)
         observed = min(1.0, watch / 300.0)
         weight = 1.0 + observed * (1.0 + self._profile.watch_penalty_scale * 1.5)
-        if v in {8, 9, 10, 11} and self._vent_interest > 0.0:
-            vent_bias = min(0.35, self._vent_interest / max(1.0, self._profile.vent_cap))
+
+        # Свежие узлы чуть дороже, чтобы A* не выглядел как рельсы.
+        if v in self._recent_nodes:
+            weight *= 1.18
+
+        # Маршруты атаки слегка меняются от попытки к попытке, но шум стабилен
+        # внутри одной атаки. A* остаётся A*, просто не ходит по одному рельсу.
+        if v != self.OFFICE_NODE:
+            rng = random.Random(self._attack_route_epoch * 10007 + self._night * 1009 + u * 137 + v * 271)
+            weight *= rng.uniform(0.92, 1.12)
+
+        # Поздние ночи и высокий hack_progress делают вентиляцию привлекательнее.
+        if v in self.VENT_NODES:
+            vent_bias = min(0.38, 0.06 * max(0, self._night - 2) + self.hack_attraction * 0.20)
             weight *= 1.0 - vent_bias
-        return max(0.55, weight)
 
-    def _move_to(self, node: int) -> None:
-        """Переместить Алгема и взвести анимационный триггер."""
-        active_graph = self._patrol_graph if self.state is AIState.PATROL else self._graph
-        if node not in active_graph.get(self.location, []):
-            return
-        if node != self.location:
-            self.prev_location = self.location
-            self.location      = node
-            self.trigger_timer = 30
-            if node in {8, 9, 10, 11}:
-                self._move_timer = max(self._move_timer, 420)
+        # Прямой вход в офис не должен быть слишком дешёвым: это даёт время на
+        # последнюю vent-фазу и не превращает A* в мгновенный скример.
+        if v == self.OFFICE_NODE:
+            weight *= 1.20
 
-            # В Главном коридоре — случайный вариант спрайта
-            if node == 1:
-                self.main_hall_sprite = random.randint(0, 1)
+        return max(0.45, weight)
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Утилиты
-    # ──────────────────────────────────────────────────────────────────────
+    def _attack_threshold(self, base_threshold: float) -> float:
+        hack_cut = self.hack_attraction * (8.0 + self._night * 1.5)
+        hour_cut = self._current_hour * self._profile.hour_attack_delta
+        return max(35.0, base_threshold - hour_cut - hack_cut)
 
-    @staticmethod
-    def _precompute_heuristic(
-        graph: dict[int, list[int]],
-        goal:  int,
-    ) -> dict[int, int]:
-        """
-        Предподсчитать BFS-расстояния от каждого узла до goal.
+    def _investigate_threshold(self) -> float:
+        return max(10.0, 24.0 - self._night * 1.8 - self._current_hour * 0.9)
 
-        Используется как допустимая эвристика для A*:
-        h(n) ≤ реального расстояния → A* остаётся оптимальным.
-        """
-        result: dict[int, int] = {}
-        for node in graph:
-            path         = bfs_path(node, goal, graph)
-            result[node] = (len(path) - 1) if path else 999
-        return result
-
-    def _initial_delay(self) -> int:
-        """Начальная задержка перед первым ходом (зависит от номера ночи)."""
-        if self._night <= 3:
-            base = random.randint(240, 540)  # 4–9 секунд на ранних ночах
-        else:
-            base = max(60, 180 - self._night * 20)
-            base = random.randint(base, base + 90)
-        return base
+    def _should_attack(self) -> bool:
+        if self._lure_node >= 0:
+            return False
+        if (
+            self._pressure_cooldown_ticks > 0
+            and self.state not in (AIState.ATTACK, AIState.VENT_STALK, AIState.BREACH, AIState.KILL_PENDING)
+            and not (self.hack_attraction >= 0.86 and self.attention >= 92.0)
+        ):
+            return False
+        can_attack = (
+            self.hack_attraction >= 0.10
+            or self._server_interest >= 10.0
+            or self._ad_interest >= 10.0
+            or self._tablet_interest >= 10.0
+            or self._camera_focus_interest >= 10.0
+            or self._vent_interest >= 10.0
+            or (self._night >= 4 and self._ambient_interest >= self._AMBIENT_CAP_BY_NIGHT.get(self._night, 0) * 0.85)
+        )
+        threshold = self._attack_threshold(self._profile.patrol_attack_threshold)
+        return can_attack and self.attention >= threshold
 
     def _compute_interval(self, hour: int) -> int:
-        """
-        Интервал между ходами (тиков) — детерминированный.
-
-        Чем выше шкала внимания, тем быстрее следующий шаг.
-        При нулевой шкале (сервер выкл) — интервал максимален.
-        """
-        lo, hi = self._NIGHT_SPEED.get(self._night, (120, 240))
-
-        # Базовый интервал уменьшается пропорционально шкале внимания
-        # attention=0 → hi, attention=100 → lo
+        lo, hi = self._NIGHT_SPEED.get(self._night, (240, 600))
         attention_factor = self.attention / 100.0
         interval = int(hi - (hi - lo) * attention_factor)
 
-        # В ATTACK — интервал чуть меньше (25% ускорение вместо 50%)
-        if self.state is AIState.ATTACK:
-            interval = max(90, int(interval * 0.75))
+        if self.state in (AIState.ATTACK, AIState.VENT_STALK):
+            interval = int(interval * 0.74)
+        elif self.state is AIState.INVESTIGATE:
+            interval = int(interval * 0.88)
+        elif self.state is AIState.RETREAT:
+            interval = int(interval * 0.75)
 
-        # Ускорение от hack_attraction
-        hack_mult = 1.0 - self.hack_attraction * 0.5
-        interval = max(60, int(interval * hack_mult))
+        hack_mult = 1.0 - min(0.48, self.hack_attraction * (0.32 + self._night * 0.035))
+        interval = int(interval * hack_mult)
 
-        # Closing a seal takes 300 ticks; vents always leave a reaction window.
-        if self.location in {8, 9, 10, 11}:
-            interval = max(interval, 420)
+        if self._pressure_cooldown_ticks > 0 and self.state in (AIState.PATROL, AIState.RETREAT, AIState.INVESTIGATE):
+            interval = int(interval * 1.18)
 
-        return interval
+        # По вентиляции Алгем ползёт заметно медленнее, чем по обычным комнатам.
+        if self.state is AIState.RETREAT and self.location in self.VENT_NODES:
+            interval = int(interval * 1.70)
+        elif self.location in self.VENT_NODES or self.state is AIState.VENT_STALK:
+            interval = int(interval * 1.45)
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Debug / repr
-    # ──────────────────────────────────────────────────────────────────────
+        # Последние vent-камеры всегда дают окно реакции.
+        if self.location in self.LAST_VENT_NODES:
+            interval = max(interval, 540)
+        elif self.location in self.VENT_NODES:
+            interval = max(interval, 360)
+
+        return max(45, interval)
+
+    def _initial_delay(self) -> int:
+        if self._night <= 1:
+            return random.randint(240, 540)
+        lo, hi = self._NIGHT_SPEED.get(self._night, (240, 600))
+        return random.randint(max(90, lo // 2), max(120, hi))
+
+    @staticmethod
+    def _precompute_heuristic(graph: dict[int, list[int]], goal: int) -> dict[int, int]:
+        result: dict[int, int] = {}
+        for node in graph:
+            path = bfs_path(node, goal, graph)
+            result[node] = (len(path) - 1) if path else 999
+        return result
+
+    @staticmethod
+    def _weighted_choice(nodes: list[int], weights: list[float]) -> int:
+        total = sum(weights)
+        if total <= 0:
+            return random.choice(nodes)
+        r = random.uniform(0.0, total)
+        accum = 0.0
+        for node, weight in zip(nodes, weights):
+            accum += weight
+            if r <= accum:
+                return node
+        return nodes[-1]
 
     @property
     def state_name(self) -> str:
-        """Строковое имя состояния для HUD и отладки."""
         return self.state.name
+
+    @property
+    def debug_target(self) -> int | None:
+        if self.state is AIState.INVESTIGATE:
+            return self._investigate_target
+        if self.state in (AIState.ATTACK, AIState.VENT_STALK):
+            return self.OFFICE_NODE
+        if self.state is AIState.BREACH:
+            return self.OFFICE_NODE
+        return None
+
+    @property
+    def debug_path(self) -> list[int]:
+        return list(self._last_path)
+
+    @property
+    def vent_motion_ticks(self) -> int:
+        return self._vent_motion_ticks
+
+    @property
+    def last_vent_move(self) -> tuple[int, int]:
+        return self._last_vent_move
+
+    @property
+    def pressure_cooldown_ticks(self) -> int:
+        return self._pressure_cooldown_ticks
 
     def __repr__(self) -> str:
         return (
-            f"AlgemAI(state={self.state.name}, "
-            f"loc={self.location}, "
-            f"attention={self.attention:.1f}, "
-            f"lure={self._lure_node})"
+            f"AlgemAI(state={self.state.name}, loc={self.location}, "
+            f"prev={self.prev_location}, attention={self.attention:.1f}, "
+            f"hack={self.hack_attraction:.2f}, lure={self._lure_node})"
         )

@@ -47,8 +47,8 @@ from algem_ai import bfs_path
 from gameplay_model import BASE_GRAPH
 
 NODE_NAMES = {
-    1: "Algem's Room", 2: "Main Hall", 3: "Toilets",
-    4: "West Hall", 5: "Canteen", 6: "Coworking", 7: "Service Room",
+    1: "Algem's Room", 2: "Canteen", 3: "Toilets",
+    4: "Main Hall", 5: "West Hall", 6: "Coworking", 7: "Service Room",
 }
 
 CAM_SEQUENCE = [7, 4, 1, 2, 3, 5, 6, 7]

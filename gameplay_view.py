@@ -2,6 +2,7 @@ import math
 import os
 import json
 import random
+import glob
 
 import cv2
 import numpy as np
@@ -313,9 +314,9 @@ class GameView:
             2: (331, 120),  # CANTEEN
             3: (270, 279),  # TOILETS
             4: (207, 334),  # MAIN HALL
-            5: (148, 65),  # SERVICE ROOM
-            6: (88, 213),  # WEST HALL
-            7: (32, 116),  # COWORKING
+            5: (88, 213),  # WEST HALL
+            6: (32, 116),  # COWORKING
+            7: (148, 65),  # SERVICE ROOM
         }
         self._office_me_pos = (245, 76)
 
@@ -324,6 +325,7 @@ class GameView:
 
         self.camera_surfaces = {}
         self._closed_vent_surfaces: dict[int, pygame.Surface] = {}
+        self._algem_retreat_surfaces: dict[int, pygame.Surface] = {}
         self.camera_max_offsets = {}
         cam_h = self.screen_rect.h
         for idx, _display_id, name, fname in CAMERAS:
@@ -511,14 +513,52 @@ class GameView:
                 if surf is not None:
                     self._closed_vent_surfaces[cam_idx] = surf
 
+        retreat_name_roots = {
+            8: ["cam_8", "cam8", "cam11"],
+            9: ["cam_9", "cam9", "cam8"],
+            10: ["cam_10", "cam10", "cam9"],
+            11: ["cam_11", "cam11", "cam10"],
+        }
+        retreat_suffixes = (
+            "_with_leaving_algem",
+            "_with_algem_leaving",
+            "_algem_leaving",
+            "_leaving",
+            "_with_algem_retreat",
+            "_algem_retreat",
+            "_retreat",
+            "_backward",
+            "_back",
+        )
+        retreat_search_dirs = ("assets/vents_cameras", "assets/cameras")
+        for cam_idx, roots in retreat_name_roots.items():
+            candidate_paths: list[str] = []
+            for folder in retreat_search_dirs:
+                for root in roots:
+                    for suffix in retreat_suffixes:
+                        candidate_paths.append(f"{folder}/{root}{suffix}.png")
+                    candidate_paths.extend(sorted(glob.glob(f"{folder}/{root}*leaving*.png")))
+                    candidate_paths.extend(sorted(glob.glob(f"{folder}/{root}*retreat*.png")))
+                    candidate_paths.extend(sorted(glob.glob(f"{folder}/{root}*leav*.png")))
+                    candidate_paths.extend(sorted(glob.glob(f"{folder}/{root}*back*.png")))
+            seen: set[str] = set()
+            for path in candidate_paths:
+                if path in seen or not os.path.exists(path):
+                    continue
+                seen.add(path)
+                surf = _load_cam(path)
+                if surf is not None:
+                    self._algem_retreat_surfaces[cam_idx] = surf
+                    break
+
         algem_files = {
             1: "algems' room_with_algem.png",
             2: "canteen_algem.png",
             3: "toilets_algem.png",
             4: "main_hall_with_algem.png",
-            5: "service_room_algem.png",
-            6: "westhall_algem.png",
-            7: "coworking_algem.png",
+            5: "westhall_algem.png",
+            6: "coworking_algem.png",
+            7: "service_room_algem.png",
             8: "cam11_with_algem.png",
             9: "cam8_with_algem.png",
             10: "cam9_with_algem.png",
@@ -1095,13 +1135,7 @@ class GameView:
             scanlines.set_alpha(12)
             self.screen.blit(scanlines, (0, 0))
 
-        boot_progress = 0.0
-        if model.laptop_power_state == "BOOTING":
-            boot_progress = self._clamp01(
-                1.0 - model.laptop_power_timer / LAPTOP_BOOT_TICKS
-            )
-
-        draw_power_button = model.laptop_power_state != "BOOTING" or boot_progress < 0.84
+        draw_power_button = model.laptop_power_state == "OFF"
         if draw_power_button:
             power_btn = pygame.Rect(sw // 2 - 28, int(sh * 0.83), 56, 24)
             self._laptop_power_btn = power_btn
@@ -2041,7 +2075,7 @@ class GameView:
         pygame.draw.polygon(self.screen, (255, 255, 255), cursor_pts)
         pygame.draw.polygon(self.screen, (0, 0, 0), cursor_pts, 1)
 
-    def _draw_cctv_effects(self, camera_idx, model):
+    def _draw_cctv_effects(self, camera_idx, model, suppress_algem_glitch: bool = False):
         sw, sh = self.screen_w, self.screen_h
 
         # ── 1. Процедурный шум (numpy, low-res) ───────────────────────
@@ -2067,7 +2101,8 @@ class GameView:
                 model.algem_location,
             )
             if (
-                model.algem_trigger > 0
+                not suppress_algem_glitch
+                and model.algem_trigger > 0
                 and on_target_cam
                 and self._glitch_frames
             ):
@@ -2429,7 +2464,10 @@ class GameView:
                     else:
                         cam_surf = self.camera_surfaces.get(4)
                 elif loc == cam_idx:
-                    cam_surf = self._algem_surfaces.get(cam_idx)
+                    if cam_idx in (8, 9, 10, 11) and model.algem_state_name == "RETREAT":
+                        cam_surf = self._algem_retreat_surfaces.get(cam_idx) or self._algem_surfaces.get(cam_idx)
+                    else:
+                        cam_surf = self._algem_surfaces.get(cam_idx)
                     if cam_surf is None:
                         cam_surf = self.camera_surfaces.get(cam_idx)
                         if cam_surf is not None:
@@ -2444,7 +2482,18 @@ class GameView:
 
                 seal_id = SEAL_CAMERA_MAP.get(cam_idx)
                 seal_state = model.seals.get(seal_id) if seal_id is not None else None
-                if seal_state is not None and seal_state.name == "CLOSED":
+                seal_blocks_camera = (
+                    seal_state is not None
+                    and seal_state.name == "CLOSED"
+                    and cam_idx in (8, 9, 10, 11)
+                )
+                seal_is_closing_current_view = (
+                    seal_state is not None
+                    and seal_state.name == "SEALING"
+                    and cam_idx in (8, 9, 10, 11)
+                    and cam_idx in (loc, model.algem_prev_location)
+                )
+                if seal_blocks_camera:
                     cam_surf = self._closed_vent_surfaces.get(cam_idx, cam_surf)
                 cam_max_off = self.camera_max_offsets.get(model.camera_idx, 0)
                 if cam_surf is not None:
@@ -2453,7 +2502,11 @@ class GameView:
                         cam_surf,
                         (self.screen_rect.x - off, self.screen_rect.y),
                     )
-                self._draw_cctv_effects(model.camera_idx, model)
+                self._draw_cctv_effects(
+                    model.camera_idx,
+                    model,
+                    suppress_algem_glitch=bool(seal_blocks_camera or seal_is_closing_current_view),
+                )
                 # Мини-карта внутри планшета
                 self._draw_minimap(model)
 
