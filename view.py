@@ -179,7 +179,7 @@ class MenuView:
         
         return frames
 
-    def _draw_menu_bg(self, model):
+    def _draw_menu_bg(self, model, draw_star=True):
         sx, sy = self.scale_x, self.scale_y
 
         if model.algem_state == "NORMAL":
@@ -188,6 +188,11 @@ class MenuView:
             shake_x = random.randint(int(-12 * sx), int(12 * sx))
             shake_y = random.randint(int(-5 * sy), int(5 * sy))
             self.screen.blit(self.glitch_images[model.glitch_frame_idx], (shake_x, shake_y))
+
+        if draw_star and model.game_completed and self.star_image is not None:
+            star_x = self.w - self.star_image.get_width() - int(30 * sx)
+            star_y = int(30 * sy)
+            self.screen.blit(self.star_image, (star_x, star_y))
 
         self.screen.blit(self.noise_frames[model.noise_frame], (0, 0))
         self.screen.blit(self.scanlines, (0, 0))
@@ -202,14 +207,9 @@ class MenuView:
         self.screen.blit(self.vignette, (0, 0))
 
     def draw_menu(self, model):
-        sx, sy = self.scale_x, self.scale_y
-
-        if model.game_completed and self.star_image is not None:
-            star_x = self.w - self.star_image.get_width() - int(30 * sx)
-            star_y = int(30 * sy)
-            self.screen.blit(self.star_image, (star_x, star_y))
-
         self._draw_menu_bg(model)
+
+        sx, sy = self.scale_x, self.scale_y
 
         title_x = int(100 * sx)
         title_top = self.title_font.render("FIVE NIGHTS", True, (255, 255, 255))
@@ -254,7 +254,7 @@ class MenuView:
 
     def draw_settings(self, is_fullscreen: bool, hovered: str | None = None, model=None):
         if model:
-            self._draw_menu_bg(model)
+            self._draw_menu_bg(model, draw_star=False)
         else:
             self.screen.fill((10, 10, 15))
         sx, sy = self.scale_x, self.scale_y
