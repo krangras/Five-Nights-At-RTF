@@ -93,14 +93,33 @@ def toggle_fullscreen(screen, is_fullscreen):
     else:
         screen = pygame.display.set_mode(_monitor_size, pygame.FULLSCREEN)
         _settings["fullscreen"] = True
+    _apply_window_icon()
     save_settings(_settings)
     return screen, not is_fullscreen
 
 
+def _set_app_user_model_id() -> None:
+    """Must be called BEFORE pygame.display.set_mode so Windows caches it."""
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "Ko4ki.FiveNightsAtRTF"
+        )
+    except Exception:
+        pass
+
+
+_icon_big = 0
+_icon_small = 0
+_ICON_LOADED = False
+
+
 def _apply_window_icon() -> None:
+    global _icon_big, _icon_small, _ICON_LOADED
+
     icon_candidates = [
-        "assets/logo/logo.ico",
         "assets/logo/icon.ico",
+        "assets/logo/logo.ico",
         "assets/logo/logo_32_rgb.png",
     ]
 
@@ -116,46 +135,55 @@ def _apply_window_icon() -> None:
     try:
         import ctypes
 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "Ko4ki.FiveNightsAtRTF"
-        )
-
-        hwnd = pygame.display.get_wm_info().get("window")
-        if not hwnd:
-            return
-
         user32 = ctypes.windll.user32
         IMAGE_ICON = 1
         LR_LOADFROMFILE = 0x0010
-        LR_DEFAULTSIZE = 0x0040
         WM_SETICON = 0x0080
         ICON_SMALL = 0
         ICON_BIG = 1
         GCLP_HICON = -14
         GCLP_HICONSM = -34
+        WM_SIZE = 0x0005
+        SIZE_RESTORED = 0
 
-        icon_path = None
-        for rel_path in ("assets/logo/logo.ico", "assets/logo/icon.ico"):
-            abs_path = os.path.abspath(rel_path)
-            if os.path.exists(abs_path):
-                icon_path = abs_path
-                break
-        if icon_path is None:
+        if not _ICON_LOADED:
+            icon_path = None
+            for rel_path in ("assets/logo/icon.ico", "assets/logo/logo.ico"):
+                abs_path = os.path.abspath(rel_path)
+                if os.path.exists(abs_path):
+                    icon_path = abs_path
+                    break
+            if icon_path is None:
+                return
+
+            _icon_big = user32.LoadImageW(
+                None, icon_path, IMAGE_ICON, 256, 256, LR_LOADFROMFILE
+            )
+            _icon_small = user32.LoadImageW(
+                None, icon_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE
+            )
+            _ICON_LOADED = True
+
+        if not _icon_big and not _icon_small:
             return
 
-        big_icon = user32.LoadImageW(
-            None, icon_path, IMAGE_ICON, 256, 256, LR_LOADFROMFILE
-        )
-        small_icon = user32.LoadImageW(
-            None, icon_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE | LR_DEFAULTSIZE
-        )
+        hwnd = pygame.display.get_wm_info().get("window")
+        if not hwnd:
+            try:
+                hwnd = user32.FindWindowW(None, "Five Nights At RTF")
+            except Exception:
+                pass
+        if not hwnd:
+            return
 
-        if big_icon:
-            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, big_icon)
-            user32.SetClassLongPtrW(hwnd, GCLP_HICON, big_icon)
-        if small_icon:
-            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, small_icon)
-            user32.SetClassLongPtrW(hwnd, GCLP_HICONSM, small_icon)
+        if _icon_big:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, _icon_big)
+            user32.SetClassLongPtrW(hwnd, GCLP_HICON, _icon_big)
+        if _icon_small:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, _icon_small)
+            user32.SetClassLongPtrW(hwnd, GCLP_HICONSM, _icon_small)
+
+        user32.SendMessageW(hwnd, WM_SIZE, SIZE_RESTORED, 0)
     except Exception:
         pass
 
@@ -163,8 +191,18 @@ def main():
     global _monitor_size, _settings
     pygame.init()
     pygame.mixer.set_num_channels(16)
+    _set_app_user_model_id()
     _settings = load_settings()
     _monitor_size = pygame.display.list_modes()[0]
+
+    for rel_path in ("assets/logo/icon.ico", "assets/logo/logo.ico", "assets/logo/logo_32_rgb.png"):
+        if os.path.exists(rel_path):
+            try:
+                pygame.display.set_icon(pygame.image.load(rel_path))
+            except pygame.error:
+                continue
+            break
+
     if _settings.get("fullscreen", True):
         screen = pygame.display.set_mode(_monitor_size, pygame.FULLSCREEN)
         is_fullscreen = True
