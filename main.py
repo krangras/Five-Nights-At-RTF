@@ -243,6 +243,7 @@ def main():
     _menu_screen_size = screen.get_size()
 
     game_m, game_v, game_p = None, None, None
+    screamer_office, screamer_vent = None, None
     load_start = 0
     lecture_sound = None
     game_over_tick = 0
@@ -397,28 +398,43 @@ def main():
             _continue_night = min(load_save(), 5)
             state = "LOADING"
         elif state == "LOADING":
-            draw_loading(game_surface, pygame.time.get_ticks() - load_start)
-            _blit_or_scale(game_surface, screen)
-            pygame.display.flip()
-            clock.tick(60)
-            game_m, game_v, game_p = start_game(_continue_night)
-            screamer_office = ScreamerPlayer(
-                frames_dir="assets/screamer/office_screamer",
-                screen_size=GAME_SIZE,
-                scream_frame=20,
-                red_start=52,
-                red_duration=0.5,
-            )
-            screamer_vent = ScreamerPlayer(
-                frames_dir="assets/screamer/vent_screamer",
-                screen_size=GAME_SIZE,
-                scream_frame=40,
-                red_start=62,
-                red_duration=0.5,
-                hold_last=0.8,
-            )
-            screamer = None
-            state = "GAME"
+            load_start = pygame.time.get_ticks()
+            _load_state = [None] * 6  # [m, v, p, so, sv, done]
+
+            def _loader():
+                m, v, p = start_game(_continue_night)
+                so = ScreamerPlayer(
+                    frames_dir="assets/screamer/office_screamer",
+                    screen_size=GAME_SIZE,
+                    scream_frame=20, red_start=52, red_duration=0.5,
+                )
+                sv = ScreamerPlayer(
+                    frames_dir="assets/screamer/vent_screamer",
+                    screen_size=GAME_SIZE,
+                    scream_frame=40, red_start=62, red_duration=0.5,
+                    hold_last=0.8,
+                )
+                _load_state[:5] = [m, v, p, so, sv]
+                _load_state[5] = True
+
+            threading.Thread(target=_loader, daemon=True).start()
+            state = "LOADING_ANIM"
+
+        elif state == "LOADING_ANIM":
+            for e in pygame.event.get():
+                if e.type == pygame.QUIT:
+                    pygame.quit()
+                    return
+            if _load_state[5]:
+                game_m, game_v, game_p = _load_state[:3]
+                screamer_office, screamer_vent = _load_state[3:5]
+                screamer = None
+                state = "GAME"
+            else:
+                draw_loading(game_surface, pygame.time.get_ticks() - load_start)
+                _blit_or_scale(game_surface, screen)
+                pygame.display.flip()
+                clock.tick(60)
         elif state == "GAME":
             for e in pygame.event.get():
                 if e.type == pygame.QUIT:
