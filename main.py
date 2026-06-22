@@ -14,15 +14,15 @@ def _base_path():
 BASE_DIR = _base_path()
 os.chdir(BASE_DIR)
 
-from menu_model import MenuModel
-from menu_presenter import MenuPresenter
-from menu_view import MenuView
-from gameplay_model import GameModel
-from gameplay_view import GameView
-from gameplay_presenter import GamePresenter
-from save import load_save, save_progress
-from settings import load_settings, save_settings
-from screamer import ScreamerPlayer
+from fnar.menu.model import MenuModel
+from fnar.menu.presenter import MenuPresenter
+from fnar.menu.view import MenuView
+from fnar.gameplay.model import GameModel
+from fnar.gameplay.view import GameView
+from fnar.gameplay.presenter import GamePresenter
+from fnar.services.save import load_save, save_progress
+from fnar.services.settings import load_settings, save_settings
+from fnar.gameplay.screamer import ScreamerPlayer
 
 LOADING_FONT_CACHE: dict[int, pygame.font.Font] = {}
 LECTURE_SOUNDS: list[str] = [

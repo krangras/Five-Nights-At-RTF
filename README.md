@@ -46,20 +46,11 @@
 ```
 Five Nights At RTF/
 ├── main.py                  # Игровой цикл и конечный автомат состояний
-├── gameplay_model.py        # Состояние игры (Model)
-├── gameplay_presenter.py    # Обработка ввода (Presenter)
-├── gameplay_view.py         # Рендеринг (View)
-├── menu_model.py           # Состояние меню (Model)
-├── menu_presenter.py       # Обработка ввода меню (Presenter)
-├── menu_view.py            # Отрисовка меню (View)
-├── menu_assets.py          # Загрузка ассетов меню
-├── menu_effects.py         # Визуальные эффекты меню
-├── menu_audio.py           # Музыка и звуки меню
-├── algem_ai.py              # ИИ противника — FSM + A* поиск пути
-├── screamer.py              # Плеер анимации смерти
-├── audio_mix.py             # Процедурный аудиомикшер
-├── save.py                  # Сохранение / загрузка прогресса
-├── settings.py              # Настройки
+├── fnar/                    # Пакет приложения
+│   ├── menu/                # Меню: Model / View / Presenter и ресурсы
+│   ├── gameplay/            # Игровая модель, отображение, ввод и ИИ
+│   └── services/            # Сохранения, настройки, звук и общие сервисы
+├── config/                  # Конфигурация по умолчанию
 ├── assets/                  # Текстуры, шрифты, изображения камер
 │   ├── cameras/             # 11 фонов камер
 │   ├── vents_cameras/       # Виды вент-камер + состояния seal
@@ -77,7 +68,9 @@ Five Nights At RTF/
 │   ├── threats/             # Угрозы Алгема
 │   ├── lectures/            # Лекции при game over
 │   └── ui/                  # UI-звуки
-└── tests/                   # Юнит-тесты
+└── tests/
+    ├── unit/                # Автоматические pytest-тесты
+    └── manual/              # Интерактивные Pygame-сценарии
 ```
 
 ## Стек технологий
@@ -138,7 +131,7 @@ uv run main.py
 ## Тесты
 
 ```bash
-uv run --group dev pytest tests/ -v
+uv run --group dev pytest tests/unit -v
 ```
 
 ---
