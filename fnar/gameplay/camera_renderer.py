@@ -13,6 +13,7 @@ class CameraRendererMixin:
     """Render CCTV effects, camera UI, maps, and ventilation seals."""
 
     def _draw_cctv_effects(self, camera_idx, model, suppress_algem_glitch: bool = False):
+        """Render cctv effects for the current frame."""
         sw, sh = self.screen_w, self.screen_h
 
         # ── 1. Процедурный шум (numpy, low-res) ───────────────────────
@@ -59,6 +60,7 @@ class CameraRendererMixin:
 
     def _draw_camera_ui(self, display_id, cam_name):
         # RECORD light (blinking)
+        """Render camera ui for the current frame."""
         blink = (pygame.time.get_ticks() // 600) % 2 == 0
         if blink:
             pygame.draw.circle(
@@ -92,6 +94,7 @@ class CameraRendererMixin:
                 self.screen.set_at((cx, cy), c)
 
     def _draw_minimap(self, model):
+        """Render minimap for the current frame."""
         mx, my = self._minimap_pos
 
         if self.vent_map_mode:
@@ -158,15 +161,7 @@ class CameraRendererMixin:
         )
 
     def _draw_vent_map(self, model, mx, my):
-        """Карта вентиляции: camera_map + duct-линии + камеры + seal-точки.
-
-        Args:
-            model: Входной параметр метода ``_draw_vent_map``.
-            mx: Входной параметр метода ``_draw_vent_map``.
-            my: Входной параметр метода ``_draw_vent_map``.
-
-        Returns:
-            Результат выполнения метода; для процедурных методов — ``None``."""
+        """Render vent map for the current frame."""
         from .model import SealState
 
         # Основа — карта камер + duct-линии
@@ -285,13 +280,7 @@ class CameraRendererMixin:
         )
 
     def get_seal_clicked(self, mouse_pos):
-        """Возвращает seal_id, если клик попал на seal-точку, иначе None.
-
-        Args:
-            mouse_pos: Входной параметр метода ``get_seal_clicked``.
-
-        Returns:
-            Результат выполнения метода; для процедурных методов — ``None``."""
+        """Return seal clicked using the current renderer or model state."""
         if mouse_pos is None:
             return None
         for sid, rect in self._seal_rects.items():
@@ -300,6 +289,7 @@ class CameraRendererMixin:
         return None
 
     def get_minimap_hotspot(self, screen_pos):
+        """Return minimap hotspot using the current renderer or model state."""
         from .model import CAMERAS
 
         display_ids = {idx: disp for idx, disp, _name, _fname in CAMERAS}
@@ -321,6 +311,7 @@ class CameraRendererMixin:
                 return (cidx, f"CAM {display_ids.get(cidx, f'{cidx:02d}')}")
         return None
     def _should_show_directional_vent_leave(self, model, cam_idx: int) -> bool:
+        """Определяет, нужно ли показывать направленный кадр ухода Алгема из вентиляции."""
         if cam_idx not in (8, 9, 10, 11):
             return False
         if model.algem_location != cam_idx or model.algem_trigger <= 0:

@@ -1,3 +1,5 @@
+"""Визуальные эффекты главного меню: шум, сканлайны, виньетка и глитч-полосы."""
+
 from __future__ import annotations
 
 import random
@@ -13,6 +15,7 @@ MENU_VIGNETTE_ALPHA = 150
 
 
 def generate_static_noise(size: tuple[int, int], scale_x: float, scale_y: float) -> list[pygame.Surface]:
+    """Generate a random static-noise surface for the menu background."""
     width, height = size
     frames = []
     density = int(MENU_NOISE_DENSITY * scale_x * scale_y)
@@ -29,6 +32,7 @@ def generate_static_noise(size: tuple[int, int], scale_x: float, scale_y: float)
 
 
 def create_scanlines(size: tuple[int, int]) -> pygame.Surface:
+    """Create a transparent scanline overlay for CRT-style menu rendering."""
     width, height = size
     scanlines = pygame.Surface(size, pygame.SRCALPHA)
     for y in range(0, height, MENU_SCANLINE_STEP):
@@ -37,6 +41,7 @@ def create_scanlines(size: tuple[int, int]) -> pygame.Surface:
 
 
 def create_vignette(size: tuple[int, int]) -> pygame.Surface:
+    """Create a dark radial vignette overlay for the menu."""
     width, height = size
     vignette = pygame.Surface(size, pygame.SRCALPHA)
     for i in range(height):
@@ -47,6 +52,7 @@ def create_vignette(size: tuple[int, int]) -> pygame.Surface:
 
 
 def draw_glitch_bars(screen: pygame.Surface) -> None:
+    """Draw random horizontal glitch bars over the current surface."""
     width, height = screen.get_size()
     for _ in range(random.randint(2, 5)):
         y = random.randint(0, height - 1)

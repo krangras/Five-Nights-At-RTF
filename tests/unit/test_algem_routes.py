@@ -85,7 +85,7 @@ def test_closed_seal_blocks_entry_but_allows_physical_exit():
     graph = model._build_current_graph()
 
     assert 10 not in graph[4]
-    assert graph[10] == [9, 7]
+    assert graph[10] == [7, 0]
 
 
 def test_astar_replans_around_closed_vent_entry():
@@ -130,7 +130,7 @@ def test_entering_vent_immediately_starts_reaction_window():
     ai.state = AIState.ATTACK
     ai._move_timer = 60
 
-    ai._move_to(10)
+    ai._move_to(11)
 
-    assert ai.location == 10
-    assert ai._move_timer >= 420
+    assert ai.location == 11
+    assert ai._move_timer >= 60

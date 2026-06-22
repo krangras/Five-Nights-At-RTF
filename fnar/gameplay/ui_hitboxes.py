@@ -10,13 +10,7 @@ class UiHitboxesMixin:
         self,
         lines: list[str],
     ) -> pygame.Surface:
-        """Собрать маленькую UI-плашку в том же духе, что и остальные кнопки.
-
-        Args:
-            lines: Параметр типа ``list[str]``, используемый методом ``_build_status_button``.
-
-        Returns:
-            Значение типа ``pygame.Surface``."""
+        """Build status button from the current game data."""
         surf = pygame.Surface(self._btn_size, pygame.SRCALPHA)
         surf.fill(self._seal_btn_fill)
         pygame.draw.rect(surf, (255, 255, 255), (0, 0, *self._btn_size), 1)
@@ -34,6 +28,7 @@ class UiHitboxesMixin:
         return surf
 
     def _ctext(self, font, text, color):
+        """Возвращает текст из UI-словаря с безопасным fallback-значением."""
         key = (id(font), text, color)
         cached = self._text_cache.get(key)
         if cached is None:
@@ -42,16 +37,19 @@ class UiHitboxesMixin:
         return cached
 
     def is_server_clicked(self, mouse_pos, offset):
+        """Return whether server clicked is true for the current gameplay state."""
         img_x = (mouse_pos[0] + offset) / self.scale
         img_y = mouse_pos[1] / self.scale
         return self.server_hotspot.collidepoint(img_x, img_y)
 
     def is_laptop_clicked(self, mouse_pos, offset):
+        """Return whether laptop clicked is true for the current gameplay state."""
         img_x = (mouse_pos[0] + offset) / self.scale
         img_y = mouse_pos[1] / self.scale
         return self.laptop_hotspot.collidepoint(img_x, img_y)
 
     def is_tabbutton_clicked(self, mouse_pos):
+        """Return whether tabbutton clicked is true for the current gameplay state."""
         if mouse_pos is None:
             return False
         tx = (
@@ -68,21 +66,25 @@ class UiHitboxesMixin:
         return rect.collidepoint(mouse_pos)
 
     def is_mutecall_clicked(self, mouse_pos):
+        """Return whether mutecall clicked is true for the current gameplay state."""
         if mouse_pos is None:
             return False
         return self._mutecall_rect.collidepoint(mouse_pos)
 
     def is_bait_clicked(self, mouse_pos):
+        """Return whether bait clicked is true for the current gameplay state."""
         if mouse_pos is None:
             return False
         return self._bait_btn_rect.collidepoint(mouse_pos)
 
     def is_map_clicked(self, mouse_pos):
+        """Return whether map clicked is true for the current gameplay state."""
         if mouse_pos is None:
             return False
         return self._map_btn_rect.collidepoint(mouse_pos)
 
     def is_laptop_icon_clicked(self, mouse_pos):
+        """Return whether laptop icon clicked is true for the current gameplay state."""
         if not hasattr(self, "_laptop_icons"):
             return None
         for rect, key in self._laptop_icons:
@@ -91,11 +93,13 @@ class UiHitboxesMixin:
         return None
 
     def is_laptop_start_clicked(self, mouse_pos):
+        """Return whether laptop start clicked is true for the current gameplay state."""
         return hasattr(
             self, "_laptop_start_rect"
         ) and self._laptop_start_rect.collidepoint(mouse_pos)
 
     def is_laptop_menu_item_clicked(self, mouse_pos):
+        """Return whether laptop menu item clicked is true for the current gameplay state."""
         if not hasattr(self, "_laptop_menu_items"):
             return None
         for rect, key in self._laptop_menu_items:
@@ -104,21 +108,25 @@ class UiHitboxesMixin:
         return None
 
     def is_laptop_close_clicked(self, mouse_pos):
+        """Return whether laptop close clicked is true for the current gameplay state."""
         return hasattr(
             self, "_laptop_close_btn"
         ) and self._laptop_close_btn.collidepoint(mouse_pos)
 
     def is_laptop_server_btn_clicked(self, mouse_pos):
+        """Return whether laptop server btn clicked is true for the current gameplay state."""
         return hasattr(
             self, "_laptop_server_btn"
         ) and self._laptop_server_btn.collidepoint(mouse_pos)
 
     def is_laptop_reboot_btn_clicked(self, mouse_pos):
+        """Return whether laptop reboot btn clicked is true for the current gameplay state."""
         return hasattr(
             self, "_laptop_reboot_btn"
         ) and self._laptop_reboot_btn.collidepoint(mouse_pos)
 
     def is_laptop_power_clicked(self, mouse_pos):
+        """Return whether laptop power clicked is true for the current gameplay state."""
         return hasattr(
             self, "_laptop_power_btn"
         ) and self._laptop_power_btn.collidepoint(mouse_pos)

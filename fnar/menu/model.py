@@ -1,3 +1,5 @@
+"""Модель состояния главного меню без зависимости от отрисовки."""
+
 from __future__ import annotations
 
 import random
@@ -24,6 +26,7 @@ class MenuModel:
     ALLOWED_BUTTONS = {None, "new_game", "continue", "settings", "exit"}
 
     def __init__(self) -> None:
+        """Выполняет специализированную операцию «init» в подсистеме model."""
         self._hovered_button: str | None = None
 
         self.reload_progress()
@@ -37,33 +40,41 @@ class MenuModel:
 
     @property
     def hovered_button(self) -> str | None:
+        """Возвращает или задаёт кнопку меню, над которой находится курсор."""
         return self._hovered_button
 
     @property
     def game_completed(self) -> bool:
+        """Показывает, пройдена ли финальная ночь и открыт ли финальный экран."""
         return self._game_completed
 
     @property
     def saved_night(self) -> int:
+        """Возвращает максимальную открытую ночь из файла сохранения."""
         return self._saved_night
 
     @property
     def continue_available(self) -> bool:
+        """Проверяет, доступно ли продолжение с сохранённой ночи."""
         return self._continue_available
 
     @property
     def algem_state(self) -> str:
+        """Возвращает состояние фонового Алгема в меню."""
         return self._algem_state
 
     @property
     def glitch_frame_idx(self) -> int:
+        """Возвращает индекс текущего глитч-кадра меню."""
         return self._glitch_frame_idx
 
     @property
     def noise_frame(self) -> int:
+        """Возвращает индекс кадра фонового шума меню."""
         return self._noise_frame
 
     def set_hovered_button(self, button: str | None) -> None:
+        """Обновляет выбранную кнопку меню и сообщает, изменился ли hover."""
         self._hovered_button = button if button in self.ALLOWED_BUTTONS else None
 
     def reload_progress(self) -> None:
@@ -74,6 +85,7 @@ class MenuModel:
         self._continue_available = self._saved_night > 0
 
     def update(self) -> None:
+        """Выполняет один игровой тик модели, таймеров, угроз и состояния ночи."""
         if self._algem_state == self.STATE_NORMAL:
             self._glitch_cooldown -= 1
             if self._glitch_cooldown <= 0:

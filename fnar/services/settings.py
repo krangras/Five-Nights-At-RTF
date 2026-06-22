@@ -1,3 +1,5 @@
+"""Чтение, нормализация и сохранение пользовательских настроек игры."""
+
 import json
 import os
 
@@ -14,6 +16,7 @@ _defaults = {
 
 
 def _default_settings() -> dict:
+    """Создаёт полный набор настроек по умолчанию, включая аудиомикшер."""
     return {
         "fullscreen": _defaults["fullscreen"],
         "audio_mix": default_audio_mix(),
@@ -21,6 +24,7 @@ def _default_settings() -> dict:
 
 
 def load_settings() -> dict:
+    """Load user settings and audio calibration from disk."""
     try:
         with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -33,6 +37,7 @@ def load_settings() -> dict:
 
 
 def save_settings(data: dict) -> None:
+    """Atomically persist user settings and audio calibration to disk."""
     data = dict(data)
     data["audio_mix"] = normalize_audio_mix(data.get("audio_mix"))
     with open(SETTINGS_PATH, "w", encoding="utf-8") as f:

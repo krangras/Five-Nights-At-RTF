@@ -11,6 +11,7 @@ class LaptopRendererMixin:
     """Render every visual state of the office laptop."""
 
     def _draw_hack_bar(self, model) -> None:
+        """Render hack bar for the current frame."""
         bar_w, bar_h = 300, 20
         x = self.screen_w - bar_w - 88
         y = 16
@@ -56,17 +57,7 @@ class LaptopRendererMixin:
         hovered: bool,
         surface: pygame.Surface | None = None,
     ) -> None:
-        """Нарисовать одну иконку рабочего стола в стиле XP.
-
-        Args:
-            ix: Параметр типа ``int``, используемый методом ``_draw_xp_icon``.
-            iy: Параметр типа ``int``, используемый методом ``_draw_xp_icon``.
-            key: Параметр типа ``str``, используемый методом ``_draw_xp_icon``.
-            hovered: Параметр типа ``bool``, используемый методом ``_draw_xp_icon``.
-            surface: Параметр типа ``pygame.Surface | None``, используемый методом ``_draw_xp_icon``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Render xp icon for the current frame."""
         target = surface if surface is not None else self.screen
         icon_s = 48
         pad = 2
@@ -198,6 +189,7 @@ class LaptopRendererMixin:
             )
 
     def _draw_laptop_power_transition(self, model) -> None:
+        """Render laptop power transition for the current frame."""
         sw, sh = self.screen_w, self.screen_h
         phase, phase_t = get_laptop_power_sequence(
             model.laptop_power_state, model.laptop_power_timer
@@ -222,6 +214,7 @@ class LaptopRendererMixin:
     def _render_laptop_phase_surface(
         self, phase: str, phase_t: float, model=None
     ) -> pygame.Surface:
+        """Рисует кадр текущей фазы включения или выключения ноутбука."""
         surface = pygame.Surface((self.screen_w, self.screen_h))
 
         if phase == "boot_wake":
@@ -246,6 +239,7 @@ class LaptopRendererMixin:
     def _draw_laptop_power_button(
         self, power_state: str, rect: pygame.Rect
     ) -> None:
+        """Render laptop power button for the current frame."""
         pulse = {
             "OFF": 0.10,
             "BOOTING": 0.28,
@@ -277,13 +271,16 @@ class LaptopRendererMixin:
         pygame.draw.line(self.screen, symbol_color, (cx, cy - 8), (cx, cy + 1), 2)
 
     def _clamp01(self, value: float) -> float:
+        """Ограничивает число диапазоном от нуля до единицы."""
         return max(0.0, min(1.0, value))
 
     def _ease_out_cubic(self, value: float) -> float:
+        """Возвращает плавную ease-out кривую для визуальных переходов."""
         t = self._clamp01(value)
         return 1.0 - (1.0 - t) ** 3
 
     def _ease_in_out(self, value: float) -> float:
+        """Возвращает симметричную ease-in-out кривую для анимаций."""
         t = self._clamp01(value)
         return t * t * (3.0 - 2.0 * t)
 
@@ -295,6 +292,7 @@ class LaptopRendererMixin:
         height: int,
         alpha: int,
     ) -> None:
+        """Render power scan line for the current frame."""
         sw, _sh = surface.get_size()
         line = pygame.Surface((max(1, width), max(1, height)), pygame.SRCALPHA)
         line.fill((96, 132, 154, alpha))
@@ -306,15 +304,7 @@ class LaptopRendererMixin:
         model=None,
         alpha: int = 255,
     ) -> None:
-        """Draw a non-interactive copy of the normal desktop for boot fade-in.
-
-        Args:
-            surface: Параметр типа ``pygame.Surface``, используемый методом ``_draw_laptop_desktop_preview``.
-            model: Входной параметр метода ``_draw_laptop_desktop_preview``.
-            alpha: Параметр типа ``int``, используемый методом ``_draw_laptop_desktop_preview``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Render laptop desktop preview for the current frame."""
         sw, sh = surface.get_size()
         alpha = max(0, min(255, int(alpha)))
         if alpha <= 0:
@@ -385,6 +375,7 @@ class LaptopRendererMixin:
         progress: float,
         alpha: int,
     ) -> None:
+        """Render boot status panel for the current frame."""
         sw, sh = surface.get_size()
         p = self._clamp01(progress)
         alpha = max(0, min(255, int(alpha)))
@@ -443,6 +434,7 @@ class LaptopRendererMixin:
         title: str,
         lines: list[str],
     ) -> None:
+        """Render plain boot screen for the current frame."""
         sw, sh = surface.get_size()
         surface.fill((0, 0, 0))
 
@@ -535,6 +527,7 @@ class LaptopRendererMixin:
         title: str,
         subtitle: str,
     ) -> None:
+        """Render plain center screen for the current frame."""
         sw, sh = surface.get_size()
         surface.fill((0, 0, 0))
         cx = sw // 2
@@ -552,6 +545,7 @@ class LaptopRendererMixin:
         progress: float,
         model=None,
     ) -> None:
+        """Render boot animation for the current frame."""
         sw, sh = surface.get_size()
         p = self._clamp01(progress)
 
@@ -607,6 +601,7 @@ class LaptopRendererMixin:
         )
 
     def _draw_shutdown_animation(self, surface: pygame.Surface, progress: float) -> None:
+        """Render shutdown animation for the current frame."""
         p = self._clamp01(progress)
 
         if p < 0.62:
@@ -625,6 +620,7 @@ class LaptopRendererMixin:
         top_color: tuple[int, int, int],
         bottom_color: tuple[int, int, int],
     ) -> None:
+        """Заполняет фон экрана ноутбука цветом текущего power-состояния."""
         sw, sh = surface.get_size()
         for y in range(sh):
             t = y / max(1, sh - 1)
@@ -644,6 +640,7 @@ class LaptopRendererMixin:
     ) -> None:
         # Старый метод оставлен для совместимости, но он больше не используется
         # в анимациях питания.
+        """Render panel sheen for the current frame."""
         sw, sh = surface.get_size()
         sheen = pygame.Surface((sw, sh), pygame.SRCALPHA)
         rect = pygame.Rect(sw // 2 - width // 2, sh // 2 - height // 2, width, height)
@@ -657,29 +654,35 @@ class LaptopRendererMixin:
     def _draw_boot_wake_screen(
         self, surface: pygame.Surface, phase_t: float
     ) -> None:
+        """Render boot wake screen for the current frame."""
         self._draw_boot_animation(surface, phase_t * 0.18)
 
     def _draw_boot_post_screen(
         self, surface: pygame.Surface, phase_t: float
     ) -> None:
+        """Render boot post screen for the current frame."""
         self._draw_boot_animation(surface, 0.18 + phase_t * 0.44)
 
     def _draw_boot_loading_screen(
         self, surface: pygame.Surface, phase_t: float
     ) -> None:
+        """Render boot loading screen for the current frame."""
         self._draw_boot_animation(surface, 0.62 + phase_t * 0.38)
 
     def _draw_shutdown_message_screen(
         self, surface: pygame.Surface, phase_t: float
     ) -> None:
+        """Render shutdown message screen for the current frame."""
         self._draw_shutdown_animation(surface, phase_t * 0.48)
 
     def _draw_shutdown_fade_screen(
         self, surface: pygame.Surface, phase_t: float
     ) -> None:
+        """Render shutdown fade screen for the current frame."""
         self._draw_shutdown_animation(surface, 0.48 + phase_t * 0.52)
 
     def _draw_powered_off_screen(self, surface: pygame.Surface) -> None:
+        """Render powered off screen for the current frame."""
         surface.fill((0, 0, 0))
         sw, sh = surface.get_size()
         message = "It is now safe to turn on your computer"
@@ -705,6 +708,7 @@ class LaptopRendererMixin:
         surface.blit(text, (x, y))
 
     def _draw_laptop_screen(self, model) -> None:
+        """Render laptop screen for the current frame."""
         sw, sh = self.screen_w, self.screen_h
         mx, my = (-100, -100)
 

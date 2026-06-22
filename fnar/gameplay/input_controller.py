@@ -10,16 +10,7 @@ class InputControllerMixin:
     """Translate Pygame events into model and presenter commands."""
 
     def handle_event(self, event: pygame.event.Event) -> None:
-        """Обработать одно событие Pygame.
-
-        Вся обработка ввода сосредоточена здесь — Presenter «переводит»
-        пользовательские действия в вызовы модели.
-
-        Args:
-            event: Параметр типа ``pygame.event.Event``, используемый методом ``handle_event``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Route one Pygame event to the correct gameplay interaction handler."""
         if self.model.night_start_ticks > 0:
             return
 
@@ -50,13 +41,7 @@ class InputControllerMixin:
             self._handle_mouse_motion(event.pos)
 
     def _handle_keydown(self, event: pygame.event.Event) -> None:
-        """Обработчик нажатий клавиш.
-
-        Args:
-            event: Параметр типа ``pygame.event.Event``, используемый методом ``_handle_keydown``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Handle gameplay hotkeys: laptop close, tablet toggle, and server shutdown."""
         key = event.key
 
         if key == pygame.K_ESCAPE:
@@ -71,13 +56,7 @@ class InputControllerMixin:
             self._shutdown_server_hotkey()
 
     def _handle_projection_overlay_event(self, event: pygame.event.Event) -> bool:
-        """Handle the live laptop projection editor when it is active.
-
-        Args:
-            event: Параметр типа ``pygame.event.Event``, используемый методом ``_handle_projection_overlay_event``.
-
-        Returns:
-            Значение типа ``bool``."""
+        """Handle the F8 live editor for laptop perspective calibration."""
         if event.type == pygame.KEYDOWN and event.key == pygame.K_F8:
             self._projection_overlay_active = not self._projection_overlay_active
             self._projection_dragging = False
@@ -152,13 +131,7 @@ class InputControllerMixin:
         return False
 
     def _handle_click(self, pos: tuple[int, int]) -> None:
-        """Обработчик кликов мышью (левая кнопка).
-
-        Args:
-            pos: Параметр типа ``tuple[int, int]``, используемый методом ``_handle_click``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Dispatch a left click between office, tablet, laptop, map, and seal UI."""
 
         # 0. Ноутбук открыт — обработка кликов внутри
         if self.model.laptop_open:
@@ -236,13 +209,7 @@ class InputControllerMixin:
                 self.model.laptop_start_menu = self._laptop_saved_menu
 
     def _handle_laptop_click(self, pos: tuple[int, int]) -> None:
-        """Обработка кликов внутри открытого ноутбука.
-
-        Args:
-            pos: Параметр типа ``tuple[int, int]``, используемый методом ``_handle_laptop_click``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Handle laptop click and translate it into game actions."""
         # Клик по крестику рекламы — закрыть
         if self.model.ad_active:
             if self.view.is_ad_close_clicked(pos):
@@ -310,26 +277,14 @@ class InputControllerMixin:
         self.model.laptop_start_menu = False
 
     def _close_laptop(self) -> None:
-        """Закрыть ноутбук и вернуться в офис.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Close the laptop view and restore the app/menu state for the next open."""
         self._laptop_saved_app = self.model.laptop_app
         self._laptop_saved_menu = self.model.laptop_start_menu
         self.model.laptop_open = False
         self.model.laptop_start_menu = False
 
     def _handle_mouse_motion(self, pos: tuple[int, int]) -> None:
-        """Обновить целевой взгляд офиса и обработать ховер кнопки TAB.
-
-        Args:
-            pos: Параметр типа ``tuple[int, int]``, используемый методом ``_handle_mouse_motion``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Update office camera pan, laptop cursor, and TAB hover auto-open behavior."""
         w = self.view.screen_w
         self.model.target_look = max(-1.0, min(1.0, (pos[0] / w) * 2 - 1))
 

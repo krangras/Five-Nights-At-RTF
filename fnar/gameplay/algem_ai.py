@@ -172,6 +172,7 @@ class AlgemAI:
         start_node: int = 1,
         patrol_graph: dict[int, list[int]] | None = None,
     ) -> None:
+        """Выполняет специализированную операцию «init» в подсистеме algem ai."""
         self._graph = graph
         self._patrol_graph = patrol_graph or graph
         self._patrol_graph_is_dedicated = patrol_graph is not None
@@ -255,74 +256,92 @@ class AlgemAI:
 
     @property
     def location(self) -> int:
+        """Возвращает или обновляет текущий узел Алгема на графе камер."""
         return self._location
 
     @location.setter
     def location(self, value: int) -> None:
+        """Возвращает или обновляет текущий узел Алгема на графе камер."""
         self.force_location(int(value), prev_node=self._prev_location, trigger_ticks=self._trigger_timer)
 
     @property
     def prev_location(self) -> int:
+        """Возвращает или обновляет предыдущий узел Алгема для корректной анимации перехода."""
         return self._prev_location
 
     @prev_location.setter
     def prev_location(self, value: int) -> None:
+        """Возвращает или обновляет предыдущий узел Алгема для корректной анимации перехода."""
         self._prev_location = int(value)
 
     @property
     def trigger_timer(self) -> int:
+        """Return the computed trigger timer for the current gameplay state."""
         return self._trigger_timer
 
     @trigger_timer.setter
     def trigger_timer(self, value: int) -> None:
+        """Return the computed trigger timer for the current gameplay state."""
         self._trigger_timer = max(0, int(value))
 
     @property
     def state(self) -> AIState:
+        """Возвращает или устанавливает текущее FSM-состояние Алгема."""
         return self._state
 
     @state.setter
     def state(self, value: AIState) -> None:
+        """Возвращает или устанавливает текущее FSM-состояние Алгема."""
         if not isinstance(value, AIState):
             raise TypeError("state must be AIState")
         self._state = value
 
     @property
     def aggression(self) -> float:
+        """Возвращает или задаёт уровень агрессии, влияющий на частоту атак."""
         return self._aggression
 
     @aggression.setter
     def aggression(self, value: float) -> None:
+        """Возвращает или задаёт уровень агрессии, влияющий на частоту атак."""
         self._aggression = max(0.0, min(1.0, float(value)))
 
     @property
     def attention(self) -> float:
+        """Возвращает или задаёт текущую заинтересованность Алгема игроком."""
         return self._attention
 
     @attention.setter
     def attention(self, value: float) -> None:
+        """Возвращает или задаёт текущую заинтересованность Алгема игроком."""
         self._attention = max(0.0, min(100.0, float(value)))
 
     @property
     def hack_attraction(self) -> float:
+        """Возвращает или задаёт силу приманки от активного взлома ноутбука."""
         return self._hack_attraction
 
     @hack_attraction.setter
     def hack_attraction(self, value: float) -> None:
+        """Возвращает или задаёт силу приманки от активного взлома ноутбука."""
         self.set_hack_attraction(value)
 
     @property
     def main_hall_sprite(self) -> int:
+        """Возвращает или задаёт вариант спрайта Алгема для главного коридора."""
         return self._main_hall_sprite
 
     @main_hall_sprite.setter
     def main_hall_sprite(self, value: int) -> None:
+        """Возвращает или задаёт вариант спрайта Алгема для главного коридора."""
         self._main_hall_sprite = 1 if int(value) else 0
 
     def set_hack_attraction(self, value: float) -> None:
+        """Обновляет силу приманки от взлома и ограничивает её безопасным диапазоном."""
         self._hack_attraction = max(0.0, min(1.0, float(value)))
 
     def ensure_attention_at_least(self, value: float) -> None:
+        """Поднимает внимание Алгема до заданного минимума без резкого сброса текущего давления."""
         self._attention = max(self._attention, min(100.0, float(value)))
 
     def reset_after_office_repel(
@@ -333,6 +352,7 @@ class AlgemAI:
         move_timer: int = 120,
         idle_ticks: int = 120,
     ) -> None:
+        """Сбрасывает офисную угрозу после успешного отпугивания Алгема."""
         self.force_location(node, prev_node=prev_node, trigger_ticks=trigger_ticks)
         self._entry_timer = 0
         self._move_timer = max(1, int(move_timer))
@@ -347,6 +367,7 @@ class AlgemAI:
         graph: Graph,
         patrol_graph: Graph | None = None,
     ) -> None:
+        """Пересобирает граф доступных переходов с учётом закрытых вентиляционных заслонок."""
         signature = graph_signature(graph)
         if signature != self._graph_signature:
             self._graph = graph
@@ -363,11 +384,13 @@ class AlgemAI:
             self._patrol_graph = patrol_graph
 
     def drain_events(self) -> list[AlgemEvent]:
+        """Возвращает накопленные события ИИ и очищает очередь для следующего тика."""
         events = list(self._events)
         self._events.clear()
         return events
 
     def force_location(self, node: int, prev_node: int | None = None, trigger_ticks: int = 30) -> None:
+        """Принудительно переносит Алгема в указанный узел для тестов и сценарных переходов."""
         old = self._location if prev_node is None else prev_node
         self._prev_location = old
         self._location = node
@@ -381,6 +404,7 @@ class AlgemAI:
         self._reset_patrol_memory()
 
     def update_camera_watch(self, watch: dict[int, int]) -> None:
+        """Передаёт ИИ информацию о том, какую камеру сейчас смотрит игрок."""
         self._camera_watch = watch
 
     def update_game_state(
@@ -393,6 +417,7 @@ class AlgemAI:
         vent_error_count: int = 0,
         dt: float = 1 / 60,
     ) -> None:
+        """Синхронизирует ИИ с состоянием ноутбука, камер и серверной нагрузки."""
         old_ad = self._ad_active
         self._server_on = server_on
         self._ad_active = ad_active
@@ -514,6 +539,7 @@ class AlgemAI:
         attention_floor: float = 92.0,
         rage_level: float | None = None,
     ) -> None:
+        """Запускает усиленную фазу поведения Алгема после завершения взлома."""
         self._post_hack_rage_ticks = max(self._post_hack_rage_ticks, int(duration_ticks))
         self._post_hack_rage_attention = max(self._post_hack_rage_attention, float(attention_floor))
         if rage_level is not None:
@@ -530,10 +556,12 @@ class AlgemAI:
             self._move_timer = min(self._move_timer, cap)
 
     def _post_hack_rage_active(self) -> bool:
+        """Проверяет, активна ли фаза пост-взломной агрессии."""
         return self._post_hack_rage_ticks > 0 or self._post_hack_rage_attention >= 25.0
 
     @staticmethod
     def _table_lerp(table: dict[int, float | int], level: float) -> float:
+        """Интерполирует значение по таблице контрольных точек сложности."""
         if not table:
             return 0.0
 
@@ -559,11 +587,13 @@ class AlgemAI:
         return float(table[lo]) + (float(table[hi]) - float(table[lo])) * ratio
 
     def _rage_level(self) -> float:
+        """Рассчитывает текущую прибавку агрессии после взлома."""
         if not self._post_hack_rage_active():
             return float(self._night)
         return max(float(self._night), self._post_hack_rage_level)
 
     def notify_audio_lure(self, target_node: int, duration: int = 480) -> None:
+        """Сообщает ИИ о звуковой приманке, которая может изменить маршрут Алгема."""
         if target_node == self._location:
             return
         path = bfs_path(self._location, target_node, self._graph)
@@ -580,19 +610,14 @@ class AlgemAI:
         self._move_timer = min(self._move_timer, 45)
 
     def cancel_audio_lure(self) -> None:
+        """Отключает активную звуковую приманку и возвращает ИИ к обычному поведению."""
         self._lure_node = -1
         self._lure_ticks_left = 0
         if self._state is AIState.INVESTIGATE and self._investigate_target is not None:
             self._investigate_target = None
 
     def notify_laptop_power_event(self, event: str) -> None:
-        """React to office laptop power sounds with distance-based urgency.
-
-        Args:
-            event: Параметр типа ``str``, используемый методом ``notify_laptop_power_event``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Фиксирует шум включения или выключения ноутбука как возможный источник интереса."""
         if self._night <= 1:
             return
         cooldown_scale = 0.38 if self._laptop_noise_cooldown > 0 else 1.0
@@ -645,6 +670,7 @@ class AlgemAI:
                 self._move_timer = min(self._move_timer, 24 if distance <= 1 else 36)
 
     def _is_leaving_vent(self, vent_node: int) -> bool:
+        """Return whether leaving vent is true for the current gameplay state."""
         if self._location == vent_node:
             return False
         return bool(
@@ -663,24 +689,14 @@ class AlgemAI:
         )
 
     def notify_seal_started(self, vent_node: int, duration_ticks: int = 300) -> None:
+        """Сообщает ИИ о начале закрытия вентиляционной заслонки."""
         if self._is_leaving_vent(vent_node):
             self._seal_knock_suppressed_vents.add(vent_node)
             self._last_vent_leave_source = vent_node
             self._last_vent_leave_ticks = max(self._last_vent_leave_ticks, duration_ticks + 90)
 
     def notify_seal_closed(self, vent_node: int) -> None:
-        """Игровая реакция на полностью закрытый вент.
-
-        Вызывается только после перехода SEALING -> CLOSED, то есть когда на
-        карте уже должна гореть красная полоска. Стук здесь создаётся только
-        если Алгем физически находился в этой vent-камере. Попытки войти в уже
-        закрытый вент ловятся отдельно в _move_to().
-
-        Args:
-            vent_node: Параметр типа ``int``, используемый методом ``notify_seal_closed``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Сообщает ИИ о полностью закрытой заслонке и возможном блокировании пути."""
         # Если игрок закрыл камеру, на которой сейчас видит `algem_is_leaving`,
         # Алгем уже физически уполз с этой vent-камеры. В таком случае стука быть
         # не должно: это не блок, а запоздалая помеха от прошлого положения.
@@ -706,6 +722,7 @@ class AlgemAI:
                 self._vent_interest *= 0.70
 
     def tick(self, hour: int) -> bool:
+        """Выполняет один тик FSM Алгема и обновляет маршрут, таймеры и события."""
         self._current_hour = hour
         self._block_external_teleport_if_needed()
 
@@ -777,6 +794,7 @@ class AlgemAI:
     # ------------------------------------------------------------------
 
     def _step(self, hour: int) -> bool:
+        """Вызывает обработчик текущего FSM-состояния Алгема."""
         if self._state is AIState.IDLE:
             return self._step_idle(hour)
         if self._state is AIState.PATROL:
@@ -790,6 +808,7 @@ class AlgemAI:
         return self._step_patrol()
 
     def _step_idle(self, hour: int) -> bool:
+        """Обрабатывает спокойное ожидание перед выходом Алгема на патруль."""
         self._idle_ticks_left -= 1
         if self._idle_ticks_left > 0 and self._attention < self._investigate_threshold():
             return False
@@ -804,6 +823,7 @@ class AlgemAI:
         return False
 
     def _step_patrol(self) -> bool:
+        """Ведёт Алгема по патрульному маршруту с использованием DFS/BFS-логики выбора."""
         if self._should_attack():
             self._enter_attack_state()
             return False
@@ -817,6 +837,7 @@ class AlgemAI:
         return False
 
     def _step_investigate(self) -> bool:
+        """Двигает Алгема к источнику интереса, пока он не перейдёт к атаке или патрулю."""
         target = self._choose_investigate_target()
         self._investigate_target = target
 
@@ -843,6 +864,7 @@ class AlgemAI:
         return False
 
     def _step_attack(self) -> bool:
+        """Строит и исполняет атакующий маршрут к офису через A* и динамический граф."""
         self._trim_reached_attack_detours()
         self._maybe_start_unpredictable_attack_detour()
 
@@ -884,6 +906,7 @@ class AlgemAI:
         return False
 
     def _current_attack_goal(self) -> int:
+        """Возвращает текущую цель атаки с учётом офисного входа и вентиляции."""
         if self._lure_node >= 0:
             return self._lure_node
         self._trim_reached_attack_detours()
@@ -892,11 +915,13 @@ class AlgemAI:
         return self.OFFICE_NODE
 
     def _current_attack_graph(self, goal: int) -> dict[int, list[int]]:
+        """Возвращает граф, на котором сейчас строится атакующий маршрут."""
         if goal != self.OFFICE_NODE or self._attack_detour_queue:
             return self._graph_with_special_detour_edges()
         return self._graph
 
     def _graph_with_special_detour_edges(self) -> Graph:
+        """Добавляет временные рёбра для честных непредсказуемых обходов без телепортации."""
         if self._detour_graph is not None:
             return self._detour_graph
 
@@ -914,14 +939,17 @@ class AlgemAI:
         return graph
 
     def _node_is_enterable_for_detour(self, node: int) -> bool:
+        """Проверяет, можно ли использовать узел как часть обходного маршрута."""
         return node == self.OFFICE_NODE or node == self._location or node in self._enterable_nodes
 
     def _trim_reached_attack_detours(self) -> None:
+        """Удаляет из очереди обхода цели, до которых Алгем уже дошёл."""
         while self._attack_detour_queue and self._attack_detour_queue[0] == self._location:
             self._attack_detour_queue.popleft()
             self._attack_detour_cooldown = self._DETOUR_COOLDOWN_BY_NIGHT.get(self._night, 2)
 
     def _maybe_start_unpredictable_attack_detour(self) -> None:
+        """Иногда вставляет обходной участок атаки, чтобы движение не было линейным."""
         if self._lure_node >= 0 or self._attack_detour_queue or self._location == self.OFFICE_NODE:
             return
         if self._attack_detour_cooldown > 0:
@@ -943,6 +971,7 @@ class AlgemAI:
         self._move_history.append((self._location, plan[-1], "DETOUR"))
 
     def _unpredictable_route_chance(self) -> float:
+        """Рассчитывает шанс непредсказуемого обхода по ночи и текущему давлению."""
         base = self._UNPREDICTABLE_ROUTE_CHANCE_BY_NIGHT.get(self._night, 0.0)
         hack_bonus = min(0.08, self._hack_attraction * 0.08)
         watch_bonus = 0.0
@@ -956,6 +985,7 @@ class AlgemAI:
         return max(0.0, min(0.82, base + hack_bonus + watch_bonus + rage_bonus - recent_penalty))
 
     def _choose_unpredictable_attack_plan(self) -> tuple[int, ...] | None:
+        """Выбирает допустимый обходной план атаки из доступных узлов графа."""
         options = self._UNPREDICTABLE_ROUTE_OPTIONS.get(self._location, [])
         if not options:
             return None
@@ -995,6 +1025,7 @@ class AlgemAI:
         return self._weighted_choice(candidates, weights)
 
     def _attack_plan_is_reachable(self, plan: tuple[int, ...], graph: Graph) -> bool:
+        """Проверяет, что выбранный план можно пройти без закрытых вентиляционных рёбер."""
         current = self._location
         for target in (*plan, self.OFFICE_NODE):
             if target == current:
@@ -1007,6 +1038,7 @@ class AlgemAI:
         return True
 
     def _step_retreat(self) -> bool:
+        """Уводит Алгема от закрытой вентиляции или после отпугивания игроком."""
         target = self._nearest_patrol_node() or self.PATROL_SAFE_HOME
         if self._location == target:
             self._state = AIState.PATROL
@@ -1024,6 +1056,7 @@ class AlgemAI:
     # ------------------------------------------------------------------
 
     def _enter_attack_state(self) -> None:
+        """Переводит Алгема в атакующее состояние и подготавливает маршрут."""
         if self._state not in (AIState.ATTACK, AIState.VENT_STALK):
             self._attack_route_epoch += 1
             self._last_path = []
@@ -1033,6 +1066,7 @@ class AlgemAI:
         self._state = AIState.ATTACK
 
     def _choose_patrol_node(self) -> int:
+        """Выбирает следующий патрульный узел с весами, памятью посещений и честным графом."""
         neighbors = list(self._patrol_graph.get(self._location, []))
         if not neighbors:
             return self._location
@@ -1099,6 +1133,7 @@ class AlgemAI:
         return picked
 
     def _choose_investigate_target(self) -> int | None:
+        """Выбирает узел расследования по источникам шума и интереса."""
         if self._lure_node >= 0:
             return self._lure_node
 
@@ -1125,6 +1160,7 @@ class AlgemAI:
         return random.choice(best)
 
     def _is_blocked_vent_attempt(self, node: int) -> bool:
+        """Return whether blocked vent attempt is true for the current gameplay state."""
         if node not in self.VENT_NODES:
             return False
         physical_neighbors = set(BASE_GRAPH.get(self._location, []))
@@ -1132,6 +1168,7 @@ class AlgemAI:
         return node in physical_neighbors and node not in self._graph.get(self._location, [])
 
     def _handle_blocked_vent_attempt(self, vent_node: int) -> None:
+        """Handle blocked vent attempt and translate it into game actions."""
         if vent_node in self._blocked_vent_knock_cooldowns:
             return
         if vent_node in self._seal_knock_suppressed_vents or self._is_leaving_vent(vent_node):
@@ -1152,6 +1189,7 @@ class AlgemAI:
         self._vent_interest *= 0.78
 
     def _move_to(self, node: int, graph: dict[int, list[int]] | None = None) -> bool:
+        """Перемещает Алгема в соседний узел, записывает историю и события движения."""
         if node == self._location:
             return True
         active_graph = graph or (self._patrol_graph if self._state is AIState.PATROL else self._graph)
@@ -1198,6 +1236,7 @@ class AlgemAI:
         target: int,
         delay_ticks: int = 0,
     ) -> None:
+        """Добавляет событие ИИ в очередь для Presenter и звуковых контроллеров."""
         self._events.append(
             AlgemEvent(
                 kind=kind,
@@ -1209,13 +1248,7 @@ class AlgemAI:
         )
 
     def _start_breach(self) -> None:
-        """Последний шаг в screamer/BREACH: камера пустеет, скример ещё не мгновенный.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Start breach and initialize its timers/state."""
         source = self._location
         self._prev_location = source
         self._location = self.OFFICE_NODE
@@ -1236,6 +1269,7 @@ class AlgemAI:
         self._emit(AlgemEventType.BREACH_STARTED, source, self.OFFICE_NODE)
 
     def _start_stun_or_retreat(self) -> None:
+        """Start stun or retreat and initialize its timers/state."""
         self._attack_detour_queue.clear()
         self._attack_detour_cooldown = max(self._attack_detour_cooldown, 1)
         self._stun_timer = random.randint(*self._STUN_TICKS_BY_NIGHT.get(self._night, (120, 240)))
@@ -1247,10 +1281,12 @@ class AlgemAI:
         self._emit(AlgemEventType.ROUTE_BLOCKED, self._location, self._retreat_target)
 
     def _reset_patrol_memory(self) -> None:
+        """Очищает память патруля, чтобы новый цикл не наследовал старые веса."""
         self._patrol_stack = [self._location]
         self._patrol_visited = {self._location}
 
     def _nearest_patrol_node(self) -> int | None:
+        """Ищет ближайший безопасный патрульный узел после нестандартного перехода."""
         zone = self._PATROL_ZONES.get(self._night, {1, 2, 3, 4, 5, 6})
         if self._location in zone:
             return self._location
@@ -1270,6 +1306,7 @@ class AlgemAI:
 
 
     def _block_external_teleport_if_needed(self) -> None:
+        """Отменяет внешние телепорты, если они ломают связность или честность маршрута."""
         if self._location == self._last_valid_location:
             return
 
@@ -1299,6 +1336,7 @@ class AlgemAI:
         self._last_path = []
 
     def _vent_motion_hold_ticks(self, prev: int, node: int) -> int:
+        """Определяет длительность удержания вентиляционной анимации после перехода."""
         if prev in self.VENT_NODES and node in self.VENT_NODES:
             return 360 if self._state is AIState.RETREAT else 300
         if prev in self.VENT_NODES and node not in self.VENT_NODES:
@@ -1313,6 +1351,7 @@ class AlgemAI:
 
     def _edge_weight(self, u: int, v: int) -> float:
         # Штрафуем именно узел, куда Алгем хочет зайти, а не тот, откуда он уходит.
+        """Возвращает вес ребра графа для A* и расчёта звукового расстояния."""
         watch = self._camera_watch.get(v, 0)
         observed = min(1.0, watch / 300.0)
         weight = 1.0 + observed * (1.0 + self._profile.watch_penalty_scale * 1.5)
@@ -1354,6 +1393,7 @@ class AlgemAI:
         return max(0.45, weight)
 
     def _stable_edge_noise(self, u: int, v: int) -> float:
+        """Даёт стабильную псевдослучайную поправку к весу ребра без скачков между кадрами."""
         seed = self._attack_route_epoch * 10007 + self._night * 1009 + u * 137 + v * 271
         seed ^= seed << 13
         seed ^= seed >> 17
@@ -1361,14 +1401,17 @@ class AlgemAI:
         return 0.92 + (abs(seed) % 1001) / 1000.0 * 0.20
 
     def _attack_threshold(self, base_threshold: float) -> float:
+        """Рассчитывает порог, после которого Алгем переходит из давления в атаку."""
         hack_cut = self._hack_attraction * (8.0 + self._night * 1.5)
         hour_cut = self._current_hour * self._profile.hour_attack_delta
         return max(35.0, base_threshold - hour_cut - hack_cut)
 
     def _investigate_threshold(self) -> float:
+        """Рассчитывает порог, после которого Алгем начинает проверять источник интереса."""
         return max(10.0, 24.0 - self._night * 1.8 - self._current_hour * 0.9)
 
     def _should_attack(self) -> bool:
+        """Проверяет, достаточно ли агрессии и внимания для начала атаки."""
         if self._lure_node >= 0:
             return False
         if (
@@ -1393,6 +1436,7 @@ class AlgemAI:
         return can_attack and self._attention >= threshold
 
     def _compute_interval(self, hour: int) -> int:
+        """Рассчитывает задержку между шагами Алгема с учётом ночи и режима поведения."""
         if self._post_hack_rage_active():
             rage_speed_level = self._rage_level()
             lo = int(self._table_lerp({k: v[0] for k, v in self._NIGHT_SPEED.items()}, rage_speed_level))
@@ -1435,6 +1479,7 @@ class AlgemAI:
         return max(45, interval)
 
     def _initial_delay(self) -> int:
+        """Возвращает стартовую паузу перед первым появлением Алгема на ночи."""
         if self._night <= 1:
             return random.randint(240, 540)
         lo, hi = self._NIGHT_SPEED.get(self._night, (240, 600))
@@ -1442,12 +1487,14 @@ class AlgemAI:
 
     @staticmethod
     def _compute_enterable_nodes(graph: Graph) -> set[int]:
+        """Собирает узлы, в которые Алгем может честно войти из текущего графа."""
         nodes: set[int] = set()
         for neighbors in graph.values():
             nodes.update(neighbors)
         return nodes
 
     def _heuristic_for(self, graph: Graph, goal: int) -> dict[int, int]:
+        """Возвращает эвристику расстояния до цели для алгоритма A*."""
         signature = graph_signature(graph)
         key = (signature, goal)
         cached = self._heuristic_cache.get(key)
@@ -1460,10 +1507,12 @@ class AlgemAI:
 
     @staticmethod
     def _precompute_heuristic(graph: Graph, goal: int) -> dict[int, int]:
+        """Предварительно считает расстояния BFS для быстрой эвристики маршрута."""
         return single_target_hop_distances(graph, goal)
 
     @staticmethod
     def _weighted_choice(nodes: list[ChoiceT], weights: list[float]) -> ChoiceT:
+        """Выбирает элемент по весам без нарушения вероятностного баланса."""
         total = sum(weights)
         if total <= 0:
             return random.choice(nodes)
@@ -1477,10 +1526,12 @@ class AlgemAI:
 
     @property
     def state_name(self) -> str:
+        """Возвращает человекочитаемое имя текущего состояния Алгема для отладки."""
         return self._state.name
 
     @property
     def debug_target(self) -> int | None:
+        """Возвращает текущую цель Алгема для отладочной панели."""
         if self._state is AIState.INVESTIGATE:
             return self._investigate_target
         if self._state in (AIState.ATTACK, AIState.VENT_STALK):
@@ -1491,26 +1542,32 @@ class AlgemAI:
 
     @property
     def debug_path(self) -> list[int]:
+        """Return the asset path or route for debug."""
         return list(self._last_path)
 
     @property
     def debug_move_history(self) -> list[tuple[int, int, str]]:
+        """Возвращает последние переходы Алгема для проверки маршрутов."""
         return list(self._move_history)
 
     @property
     def debug_detour_queue(self) -> list[int]:
+        """Возвращает очередь обходных целей атаки для отладки ИИ."""
         return list(self._attack_detour_queue)
 
     @property
     def debug_unpredictable_chance(self) -> float:
+        """Возвращает текущий шанс непредсказуемого обхода для проверки баланса."""
         return self._unpredictable_route_chance()
 
     @property
     def vent_motion_ticks(self) -> int:
+        """Возвращает оставшееся время вентиляционной анимации движения."""
         return self._vent_motion_ticks
 
     @property
     def vent_audio_source(self) -> int:
+        """Возвращает источник вентиляционного звука, который должен слышать игрок."""
         if self._location in self.VENT_NODES:
             return self._location
         if self._vent_motion_ticks > 0 and self._vent_audio_source in self.VENT_NODES:
@@ -1519,17 +1576,21 @@ class AlgemAI:
 
     @property
     def last_vent_move(self) -> tuple[int, int]:
+        """Возвращает последний переход по вентиляции для выбора правильного кадра."""
         return self._last_vent_move
 
     @property
     def last_vent_leave_source(self) -> int:
+        """Возвращает узел, из которого Алгем ушёл из вентиляции."""
         return self._last_vent_leave_source if self._last_vent_leave_ticks > 0 else -1
 
     @property
     def pressure_cooldown_ticks(self) -> int:
+        """Возвращает оставшийся кулдаун давления после резкого события."""
         return self._pressure_cooldown_ticks
 
     def __repr__(self) -> str:
+        """Выполняет специализированную операцию «repr» в подсистеме algem ai."""
         return (
             f"AlgemAI(state={self._state.name}, loc={self._location}, "
             f"prev={self._prev_location}, attention={self._attention:.1f}, "

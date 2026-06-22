@@ -1,3 +1,5 @@
+"""Граф камер и вентиляции для маршрутизации Алгема и расчёта доступных путей."""
+
 from __future__ import annotations
 
 from .pathfinding import bfs_path
@@ -103,15 +105,18 @@ for source, targets in SPECIAL_DETOUR_EDGES.items():
             VENT_DIRECTION_GRAPH[source].append(target)
 
 def copy_graph(graph: dict[int, list[int]]) -> dict[int, list[int]]:
+    """Return a shallow copy of a camera graph without sharing neighbor lists."""
     return {node: list(neighbors) for node, neighbors in graph.items()}
 
 
 def distance_to_office(node: int, graph: dict[int, list[int]] | None = None) -> int:
+    """Return the number of graph hops from a node to the office."""
     path = bfs_path(node, OFFICE_NODE, graph or VENT_DIRECTION_GRAPH)
     return 999 if not path else max(0, len(path) - 1)
 
 
 def is_vent_detour_away_from_office(source: int, target: int) -> bool:
+    """Return whether a vent move increases distance from the office."""
     if source not in VENT_CAMERAS or target not in VENT_CAMERAS:
         return False
     return distance_to_office(target) >= distance_to_office(source)

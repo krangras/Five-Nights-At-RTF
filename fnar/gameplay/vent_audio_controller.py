@@ -27,10 +27,21 @@ class VentAudioControllerMixin:
     """Present ventilation threats through the dedicated audio channels."""
 
     def _update_vent_sounds(self) -> None:
+        """Fade the looping crawl sound according to Algem's vent position."""
         loc = self.model.algem_location
-        vent_motion_ticks = self.model.algem_vent_motion_ticks
-        source_node = self.model.algem_vent_audio_source
+        vent_motion_ticks = getattr(self.model, "algem_vent_motion_ticks", 0)
+        source_node = getattr(self.model, "algem_vent_audio_source", -1)
         forced_retreat = False
+        if not hasattr(self, "_closed_vent_retreat_timer"):
+            self._closed_vent_retreat_timer = 0
+        if not hasattr(self, "_closed_vent_retreat_source"):
+            self._closed_vent_retreat_source = -1
+        if not hasattr(self, "_vent_sound_source"):
+            self._vent_sound_source = -1
+        if not hasattr(self, "_vent_sound_volume"):
+            self._vent_sound_volume = 0.0
+        if not hasattr(self, "_vent_sound_timer"):
+            self._vent_sound_timer = 0
 
         if self._closed_vent_retreat_timer > 0:
             self._closed_vent_retreat_timer -= 1
@@ -44,7 +55,7 @@ class VentAudioControllerMixin:
             source_node = loc
 
         seal_id = SEAL_CAMERA_MAP.get(source_node) if source_node in VENT_CAMERAS else None
-        seal_state = self.model.seals.get(seal_id) if seal_id is not None else None
+        seal_state = getattr(self.model, "seals", {}).get(seal_id) if seal_id is not None else None
         closed_without_retreat = seal_state == SealState.CLOSED and not forced_retreat
         active = (
             source_node in VENT_CAMERAS
@@ -106,20 +117,24 @@ class VentAudioControllerMixin:
         self._vent_sound_timer = 0
 
     def _update_vent_block_sound(self) -> None:
-        """Play delayed one-shot knocks from explicit Algem AI events.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Play scheduled knocks when Algem hits a closed ventilation seal."""
+        if not hasattr(self, "_pending_vent_knocks"):
+            self._pending_vent_knocks = []
+        if not hasattr(self, "_vent_seal_just_closed"):
+            self._vent_seal_just_closed = 0
         if self._vent_seal_just_closed > 0:
             self._vent_seal_just_closed -= 1
         if not self._pending_vent_knocks:
+            signature = self._current_vent_block_signature()
+            if signature is None or signature == getattr(self, "_vent_block_signature", None):
+                return
+            self._vent_block_signature = signature
+            if self.snd_knock:
+                self.snd_knock.play()
             return
         remaining: list[tuple[int, int, int]] = []
-        leave_source = self.model.algem_last_vent_leave_source
-        vent_audio_source = self.model.algem_vent_audio_source
+        leave_source = getattr(self.model, "algem_last_vent_leave_source", -1)
+        vent_audio_source = getattr(self.model, "algem_vent_audio_source", -1)
         for item in self._pending_vent_knocks:
             if isinstance(item, tuple):
                 timer, vent_node, source_node = item
@@ -133,9 +148,9 @@ class VentAudioControllerMixin:
                         leave_source == vent_node
                         or (vent_audio_source == vent_node and self.model.algem_location != vent_node)
                         or (
-                            self.model.algem_prev_location == vent_node
+                            getattr(self.model, "algem_prev_location", -1) == vent_node
                             and self.model.algem_location != vent_node
-                            and self.model.algem_trigger > 0
+                            and getattr(self.model, "algem_trigger", 0) > 0
                         )
                     )
                 )
@@ -146,6 +161,7 @@ class VentAudioControllerMixin:
         self._pending_vent_knocks = remaining
 
     def _start_closed_vent_retreat_audio(self, vent_node: int) -> None:
+        """Keep crawl audio audible briefly while Algem retreats from a sealed vent."""
         if vent_node not in VENT_CAMERAS:
             return
         self._closed_vent_retreat_source = vent_node
@@ -156,25 +172,12 @@ class VentAudioControllerMixin:
         self._vent_sound_source = vent_node
 
     def _current_audio_distance(self, source_node: int) -> int:
-        """Bucket 0..4 from the active listening point to a source node.
-
-        Args:
-            source_node: Параметр типа ``int``, используемый методом ``_current_audio_distance``.
-
-        Returns:
-            Значение типа ``int``."""
+        """Return the 0..4 audible distance bucket from listener to source."""
         listener_node = self._current_listener_audio_node()
         return self._camera_audio_distance(listener_node, source_node)
 
     def _current_audio_volume(self, source_node: int, channel_key: str) -> float:
-        """Continuous volume from the active listening point to a source node.
-
-        Args:
-            source_node: Параметр типа ``int``, используемый методом ``_current_audio_volume``.
-            channel_key: Параметр типа ``str``, используемый методом ``_current_audio_volume``.
-
-        Returns:
-            Значение типа ``float``."""
+        """Return calibrated continuous volume for a sound source in the map."""
         listener_node = self._current_listener_audio_node()
         dist = self._audio_weighted_distance(listener_node, source_node)
         if listener_node == 0 and source_node != 0:
@@ -188,28 +191,21 @@ class VentAudioControllerMixin:
         return self._apply_channel_volume(base, channel_key)
 
     def _current_listener_audio_node(self) -> int:
+        """Resolve the node currently used as the player's listening point."""
         return self._listener_audio_node(
-            camera_idx=self.model.camera_idx,
-            tablet_open=self.model.tablet_open,
-            tablet_animating=self.model.tablet_animating,
+            camera_idx=getattr(self.model, "camera_idx", 1),
+            tablet_open=getattr(self.model, "tablet_open", False),
+            tablet_animating=getattr(self.model, "tablet_animating", False),
         )
 
     def _current_audio_graph(self) -> dict[int, list[int]]:
+        """Return a copy of the weighted audio graph for distance calculations."""
         return {node: list(neighbors) for node, neighbors in BASE_AUDIO_GRAPH.items()}
 
     def _source_seal_audio_gain(self, source_node: int) -> float:
-        """Return muffling gain for a vent source behind an active seal.
-
-        The seal must not disconnect the source from the diagnostic audio map:
-        otherwise every listener gets the same unreachable distance and the
-        sandbox appears frozen. A closed/sealing vent should make Algem quieter,
-        but nearby cameras still have to be louder than distant cameras.
-
-        Args:
-            source_node: Параметр типа ``int``, используемый методом ``_source_seal_audio_gain``.
-
-        Returns:
-            Значение типа ``float``."""
+        """Muffle a vent source without breaking distance differences between cameras."""
+        if not hasattr(self, "model"):
+            return 1.0
         if source_node not in VENT_CAMERAS:
             return 1.0
         seal_id = SEAL_CAMERA_MAP.get(source_node)
@@ -223,22 +219,25 @@ class VentAudioControllerMixin:
         return 1.0
 
     def _is_vent_map_open(self) -> bool:
+        """Return whether the tablet shows the abstract vent map instead of a feed."""
         return bool(
-            self.model.tablet_open
-            and not self.model.tablet_animating
+            getattr(self.model, "tablet_open", False)
+            and not getattr(self.model, "tablet_animating", False)
             and getattr(self.view, "vent_map_mode", False)
         )
 
     def _is_direct_vent_camera_view(self, source_node: int) -> bool:
+        """Return whether the player is looking directly at this vent camera."""
         if source_node not in VENT_CAMERAS:
             return False
         return bool(
-            self.model.tablet_open
-            and not self.model.tablet_animating
-            and self.model.camera_idx == source_node
+            getattr(self.model, "tablet_open", False)
+            and not getattr(self.model, "tablet_animating", False)
+            and getattr(self.model, "camera_idx", -1) == source_node
         )
 
     def _is_any_active_vent_camera_view(self, source_node: int) -> bool:
+        """Return whether any active vent camera view is true for the current gameplay state."""
         if not (
             self.model.tablet_open
             and not self.model.tablet_animating
@@ -260,6 +259,7 @@ class VentAudioControllerMixin:
         return False
 
     def _suppress_algem_leave_static(self) -> bool:
+        """Suppress static when a closed seal hides the vent that triggered it."""
         cam_idx = self.model.camera_idx
         if cam_idx not in VENT_CAMERAS:
             return False
@@ -275,16 +275,19 @@ class VentAudioControllerMixin:
         tablet_open: bool,
         tablet_animating: bool,
     ) -> int:
+        """Определяет узел, из которого игрок сейчас слушает вентиляцию."""
         if tablet_open and not tablet_animating:
             return camera_idx
         return 0
 
     @staticmethod
     def _camera_audio_distance(listener_node: int, source_node: int) -> int:
+        """Return the computed camera audio distance for the current gameplay state."""
         dist = _weighted_audio_distance(listener_node, source_node, BASE_AUDIO_GRAPH)
         return _bucket_from_weighted_distance(dist)
 
     def _audio_weighted_distance(self, listener_node: int, source_node: int) -> float:
+        """Calculate weighted acoustic distance on the current audio graph."""
         return _weighted_audio_distance(listener_node, source_node, self._current_audio_graph())
 
     @staticmethod
@@ -295,17 +298,7 @@ class VentAudioControllerMixin:
         tablet_open: bool,
         tablet_animating: bool,
     ) -> int:
-        """Bucketed vent distance kept for demos/tests.
-
-        Args:
-            algem_node: Параметр типа ``int``, используемый методом ``_vent_listen_distance``.
-            camera_idx: Параметр типа ``int``, используемый методом ``_vent_listen_distance``.
-            last_regular_cam: Параметр типа ``int``, используемый методом ``_vent_listen_distance``.
-            tablet_open: Параметр типа ``bool``, используемый методом ``_vent_listen_distance``.
-            tablet_animating: Параметр типа ``bool``, используемый методом ``_vent_listen_distance``.
-
-        Returns:
-            Значение типа ``int``."""
+        """Return a test-friendly 0..4 distance bucket for vent crawl audio."""
         _ = last_regular_cam
         if algem_node not in VENT_CAMERAS:
             return AUDIO_MAX_BUCKET
@@ -324,6 +317,7 @@ class VentAudioControllerMixin:
         tablet_open: bool,
         tablet_animating: bool,
     ) -> float:
+        """Return exact weighted distance used by the continuous vent volume curve."""
         _ = last_regular_cam
         if algem_node not in VENT_CAMERAS:
             return AUDIO_UNREACHABLE_DISTANCE
@@ -342,22 +336,12 @@ class VentAudioControllerMixin:
         tablet_open: bool,
         tablet_animating: bool,
     ) -> float:
-        """Continuous vent volume for the current listening mode.
-
-        Args:
-            algem_node: Параметр типа ``int``, используемый методом ``_vent_listen_volume``.
-            camera_idx: Параметр типа ``int``, используемый методом ``_vent_listen_volume``.
-            last_regular_cam: Параметр типа ``int``, используемый методом ``_vent_listen_volume``.
-            tablet_open: Параметр типа ``bool``, используемый методом ``_vent_listen_volume``.
-            tablet_animating: Параметр типа ``bool``, используемый методом ``_vent_listen_volume``.
-
-        Returns:
-            Значение типа ``float``."""
+        """Return the calibrated crawl-loop volume for the current tablet state."""
         _ = last_regular_cam
         if algem_node not in VENT_CAMERAS:
             return 0.0
         seal_id = SEAL_CAMERA_MAP.get(algem_node)
-        seal_state = self.model.seals.get(seal_id) if seal_id is not None else None
+        seal_state = getattr(self.model, "seals", {}).get(seal_id) if seal_id is not None else None
         if (
             tablet_open
             and not tablet_animating
@@ -382,13 +366,7 @@ class VentAudioControllerMixin:
         return self._apply_channel_volume(base, "vent")
 
     def _current_vent_block_signature(self) -> tuple | None:
-        """Detect a sealed vent near a moving Algem.
-
-        Args:
-            Нет.
-
-        Returns:
-            Значение типа ``tuple | None``."""
+        """Describe the closed vent Algem is inside or adjacent to, if any."""
         blocked_nodes = {
             vent_node
             for seal_id, vent_node in VENT_SEALS.items()
@@ -410,13 +388,7 @@ class VentAudioControllerMixin:
         return None
 
     def _update_danger_sound(self) -> None:
-        """Звук danger2b.wav когда Алгем дошёл до честной предофисной камеры.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Loop the danger cue only while Algem is on the fair-warning camera."""
         on_last = self.model.algem_location == DANGER_CAMERA_NODE
         if on_last and not self._danger_playing:
             if self.snd_danger2b:
@@ -431,13 +403,7 @@ class VentAudioControllerMixin:
             self._danger_playing = False
 
     def _play_seal_sound(self) -> None:
-        """Запустить звук блокировки (сейчас используем snd_wait).
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Start the repeated seal-progress sound while a shutter is moving."""
         if not self._seal_playing and self.snd_wait:
             self._seal_playing = True
             self._seal_timer = 0
@@ -447,13 +413,7 @@ class VentAudioControllerMixin:
         self,
         prev_seals: dict[str, SealState],
     ) -> None:
-        """Проиграть звук заслонки, если ранее закрытый seal открылся.
-
-        Args:
-            prev_seals: Параметр типа ``dict[str, SealState]``, используемый методом ``_play_reopened_viewed_seal_sound``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Play the nearby shutter sound when a watched closed seal reopens."""
         for seal_id, prev_state in prev_seals.items():
             seal_now = self.model.seals.get(seal_id)
             if prev_state == SealState.CLOSED and seal_now == SealState.OPEN:
@@ -461,6 +421,7 @@ class VentAudioControllerMixin:
                 return
 
     def _play_vent_close_sound_for_node(self, vent_node: int) -> None:
+        """Play a shutter one-shot with volume based on the vent position."""
         if not self.snd_vent_close:
             return
         volume = self._current_audio_volume(vent_node, "snd_vent_close") if vent_node > 0 else self._apply_channel_volume(SOUND_BASE_VOLUMES["snd_vent_close"], "snd_vent_close")
@@ -469,13 +430,7 @@ class VentAudioControllerMixin:
             channel.set_volume(max(0.0, min(1.0, volume)))
 
     def _update_seal_sound(self) -> None:
-        """Обновить циклическое воспроизведение звука блокировки.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Synchronize seal progress/reopen/close sounds with seal state changes."""
         for seal_id, prev_state in self._prev_seal_states.items():
             seal_now = self.model.seals.get(seal_id)
             vent_node = VENT_SEALS.get(seal_id, -1)
@@ -495,6 +450,9 @@ class VentAudioControllerMixin:
             if self.snd_wait:
                 self.snd_wait.stop()
             self._seal_playing = False
+
+        if not hasattr(self, "_seal_timer"):
+            self._seal_timer = 0
 
         if self._seal_playing:
             self._seal_timer += 1

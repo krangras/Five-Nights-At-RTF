@@ -416,17 +416,7 @@ HACK_LOG_SEQUENCES: dict[int, list[tuple[float, str]]] = {
 
 
 class HackLogPlayer:
-    """Последовательно выдаёт строки терминала по прогрессу взлома.
-
-    Args:
-        sequences: Таблица ``night -> [(threshold, message)]``. Если не
-            передана, используется стандартный набор ``HACK_LOG_SEQUENCES``.
-
-    Returns:
-        Экземпляр с внутренним индексом текущей строки. Индекс скрыт внутри
-        объекта, поэтому ``GameModel`` больше не управляет деталями вывода
-        логов напрямую.
-    """
+    """Releases terminal log lines as hacking progress crosses scripted milestones."""
 
     def __init__(
         self,
@@ -446,25 +436,11 @@ class HackLogPlayer:
 
     @property
     def index(self) -> int:
-        """Вернуть индекс следующей строки сценария.
-
-        Args:
-            Нет аргументов.
-
-        Returns:
-            Номер следующей записи, которую надо проверить по прогрессу.
-        """
+        """Return the current position inside the scripted sequence."""
         return self._index
 
     def reset(self) -> None:
-        """Сбросить выдачу логов к началу сценария.
-
-        Args:
-            Нет аргументов.
-
-        Returns:
-            ``None``. Используется при полном рестарте ночи.
-        """
+        """Сбрасывает внутреннее состояние компонента к началу нового сценария."""
         self._index = 0
 
     def append_available(
@@ -475,19 +451,7 @@ class HackLogPlayer:
         hour: int,
         minute: int,
     ) -> None:
-        """Добавить в терминал все строки, открытые текущим прогрессом.
-
-        Args:
-            logs: Список строк терминала, куда добавляются новые сообщения.
-            night: Номер ночи.
-            progress: Текущий прогресс взлома от ``0.0`` до ``1.0``.
-            hour: Игровой час для временной метки.
-            minute: Игровая минута для временной метки.
-
-        Returns:
-            ``None``. Метод изменяет переданный список логов на месте и
-            продвигает внутренний индекс.
-        """
+        """Добавляет в лог взлома строки, которые стали доступны на текущем прогрессе."""
         sequence = self._sequences.get(night, self._sequences[1])
         while self._index < len(sequence):
             threshold, message = sequence[self._index]

@@ -1,3 +1,5 @@
+"""Отрисовка главного меню и его визуальных переходов."""
+
 import random
 
 import pygame
@@ -18,8 +20,8 @@ class MenuView:
     выбора пунктов меню остаётся в MenuPresenter/MenuModel.
     """
 
-    DESIGN_WIDTH = 1024
-    DESIGN_HEIGHT = 768
+    DESIGN_WIDTH = 1280
+    DESIGN_HEIGHT = 720
     MENU_LEFT_X = 100
     TITLE_TOP_Y = 120
     TITLE_BOTTOM_Y = 195
@@ -40,6 +42,7 @@ class MenuView:
     STATE_NORMAL = "NORMAL"
 
     def __init__(self, screen):
+        """Выполняет специализированную операцию «init» в подсистеме view."""
         self.screen = screen
         self.btn_fullscreen_rect = pygame.Rect(0, 0, 0, 0)
         self.btn_back_rect = pygame.Rect(0, 0, 0, 0)
@@ -48,19 +51,20 @@ class MenuView:
         self._update_button_rects()
 
     def update_screen(self, screen):
+        """Пересоздаёт поверхности меню при изменении размера окна."""
         self.screen = screen
         self._configure_screen_metrics()
         self._load_visual_state()
         self._update_button_rects()
 
     def _configure_screen_metrics(self):
-        info = pygame.display.Info()
-        self.w = info.current_w
-        self.h = info.current_h
+        """Read the active render surface size instead of the desktop resolution."""
+        self.w, self.h = self.screen.get_size()
         self.scale_x = self.w / self.DESIGN_WIDTH
         self.scale_y = self.h / self.DESIGN_HEIGHT
 
     def _load_visual_state(self):
+        """Load visual state and fall back safely when project assets are missing."""
         fonts = load_menu_fonts(self.scale_y)
         backgrounds = load_menu_backgrounds((self.w, self.h))
         self.title_font = fonts.title
@@ -73,6 +77,7 @@ class MenuView:
         self.star_image = load_menu_star(self.scale_x, self.scale_y)
 
     def _update_button_rects(self):
+        """Пересчитывает hitbox-кнопки меню по текущему масштабу."""
         sx, sy = self.scale_x, self.scale_y
         btn_x = int(self.MENU_LEFT_X * sx)
         surf_ng = self.button_font.render(">> New Game", True, self.COLOR_WHITE)
@@ -85,6 +90,7 @@ class MenuView:
         self.btn_exit_rect = pygame.Rect(btn_x, int(self.EXIT_Y * sy), surf_ex.get_width(), surf_ex.get_height())
 
     def _draw_menu_bg(self, model, draw_star=True):
+        """Render menu bg for the current frame."""
         sx, sy = self.scale_x, self.scale_y
 
         if model.algem_state == self.STATE_NORMAL:
@@ -106,6 +112,7 @@ class MenuView:
         self.screen.blit(self.vignette, (0, 0))
 
     def draw_menu(self, model):
+        """Render menu for the current frame."""
         self._draw_menu_bg(model)
         sx, sy = self.scale_x, self.scale_y
         title_x = int(self.MENU_LEFT_X * sx)
@@ -145,9 +152,8 @@ class MenuView:
         surf_exit = self.button_font.render(text_exit, True, color_exit)
         self.screen.blit(surf_exit, (btn_x, int(self.EXIT_Y * sy)))
 
-        pygame.display.flip()
-
     def draw_settings(self, is_fullscreen: bool, hovered: str | None = None, model=None):
+        """Render settings for the current frame."""
         if model:
             self._draw_menu_bg(model, draw_star=False)
         else:
@@ -171,4 +177,3 @@ class MenuView:
         self.screen.blit(surf_back, (btn_x, int(self.BACK_Y * sy)))
         self.btn_back_rect = pygame.Rect(btn_x, int(self.BACK_Y * sy), surf_back.get_width(), surf_back.get_height())
 
-        pygame.display.flip()

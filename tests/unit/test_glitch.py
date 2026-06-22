@@ -38,7 +38,9 @@ def _make_presenter(night: int = 1) -> GamePresenter:
     view.font = pygame.font.Font(None, 30)
     view.font_small = pygame.font.Font(None, 18)
     view.font_very_small = pygame.font.Font(None, 11)
-    return GamePresenter(model, view)
+    presenter = GamePresenter(model, view)
+    model.night_start_ticks = 0
+    return presenter
 
 
 # ── 1. Инициализация ──────────────────────────────────────────────────────

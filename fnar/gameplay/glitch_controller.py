@@ -11,6 +11,7 @@ class GlitchControllerMixin:
     """Coordinate ad audio and glitch presentation state."""
 
     def _update_ad(self) -> None:
+        """Обновляет состояние рекламного окна и его таймеров."""
         volume = self._mix_volume("ad_loop", CHANNEL_MASTERS["ad"])
         if self.model.ad_active:
             if self._ad_sound:
@@ -24,13 +25,7 @@ class GlitchControllerMixin:
                 self._ad_playing = False
 
     def _update_glitch(self) -> None:
-        """Случайный визуальный глитч: раз в секунду шанс ~0.4%.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Обновляет случайные глитчи интерфейса во время игры."""
         m = self.model
         if m.game_over or m.night_complete:
             return
@@ -59,13 +54,7 @@ class GlitchControllerMixin:
                 self._glitch_channel = None
 
     def _close_ad(self) -> None:
-        """Закрыть рекламу и остановить звук.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Close ad and clear related transient state."""
         if self.model.ad_active:
             self.model.ad_active = False
             self.model.ad_image_key = None

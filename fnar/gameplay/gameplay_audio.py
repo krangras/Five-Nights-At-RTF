@@ -77,11 +77,13 @@ class GameplayAudioMixin:
 
     @property
     def _off_frames(self) -> int:
+        """Возвращает набор кадров/поверхностей для выключенного ноутбука."""
         snd = self.snd_off
         return int(snd.get_length() * 60) + 1 if snd else 60
 
     @property
     def _gadget_sounds(self) -> list[pygame.mixer.Sound]:
+        """Лениво загружает звуки ноутбука, сервера, планшета и камер."""
         if self._gadget_cache is None:
             self._gadget_cache = self._load_sound_group(
                 tuple(f"sounds/ui/gadget{i}.mp3" for i in range(1, 5)),
@@ -92,6 +94,7 @@ class GameplayAudioMixin:
 
     @property
     def _vent_sounds(self) -> list[pygame.mixer.Sound]:
+        """Лениво загружает звуки движения Алгема по вентиляции."""
         if self._vent_sounds_cache is None:
             names = (
                 "vent_closer1.wav",
@@ -108,6 +111,7 @@ class GameplayAudioMixin:
 
     @property
     def _algem_talk_sounds(self) -> list[pygame.mixer.Sound]:
+        """Лениво загружает голоса Алгема и их приглушённые варианты."""
         if self._algem_talk_cache is None:
             self._algem_talk_cache = self._load_sound_group(
                 tuple(
@@ -159,11 +163,13 @@ class GameplayAudioMixin:
 
     @property
     def _talk_variants(self) -> dict[int, list[pygame.mixer.Sound]]:
+        """Подготавливает обычную и приглушённую версии одного голосового клипа."""
         if self._algem_talk_variants is None:
             self._build_talk_variants()
         return self._algem_talk_variants
 
     def _update_algem_events(self) -> None:
+        """Разбирает события ИИ и запускает соответствующие звуковые реакции."""
         drain = getattr(self.model, "drain_algem_events", None)
         if drain is None:
             return
@@ -187,16 +193,7 @@ class GameplayAudioMixin:
                 self._algem_leave_channel.stop()
 
     def _update_algem_sounds(self) -> None:
-        """Звуки Алгема:
-        - Помеха (alegem_is_leaving.wav) — луп пока длится глитч (trigger > 0)
-          и игрок смотрит на камеру Алгема.
-        - Случайные цитаты из algemistalking — рандомно, не в начале ночи.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Mix camera static and rare Algem voice lines from the listener position."""
         if self.model.night <= 1:
             return
 
@@ -250,15 +247,7 @@ class GameplayAudioMixin:
         dist: int,
         channel_key: str | None = None,
     ) -> float:
-        """Compatibility helper: bucketed distance -> mixed volume.
-
-        Args:
-            params: Параметр типа ``dict[int, float] | dict[int, tuple[int, float]]``, используемый методом ``_distance_volume``.
-            dist: Параметр типа ``int``, используемый методом ``_distance_volume``.
-            channel_key: Параметр типа ``str | None``, используемый методом ``_distance_volume``.
-
-        Returns:
-            Значение типа ``float``."""
+        """Convert a discrete distance bucket to a calibrated channel volume."""
         bucket = max(0, min(AUDIO_MAX_BUCKET, int(dist)))
         raw = params.get(bucket, params.get(AUDIO_MAX_BUCKET, 0.12))
         volume = raw[1] if isinstance(raw, tuple) else raw
@@ -269,6 +258,7 @@ class GameplayAudioMixin:
         base_volume: float,
         channel_key: str | None,
     ) -> float:
+        """Return the computed apply channel volume for the current gameplay state."""
         volume = max(0.0, min(1.0, base_volume))
         if channel_key is None:
             return volume
@@ -279,13 +269,7 @@ class GameplayAudioMixin:
         return self._mix_volume(sound_id, mixed)
 
     def _update_sound_mix(self) -> None:
-        """Лёгкий runtime-микс, чтобы важные сигналы не тонули в фоне.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Refresh dynamic volumes so danger, ads, ambience, and server loops coexist."""
         self._refresh_cached_sound_levels()
         ambience_target = SOUND_BASE_VOLUMES["snd_ambience"]
         if self.model.tablet_open or self.model.laptop_open:
@@ -321,18 +305,13 @@ class GameplayAudioMixin:
             self._ad_channel.set_volume(self._mix_volume("ad_loop", CHANNEL_MASTERS["ad"]))
 
     def _start_ambience(self) -> None:
+        """Start the looping office ambience when a night begins."""
         if self.snd_ambience:
             self.snd_ambience.play(-1)
         self._ambience_playing = True
 
     def _cleanup_on_end(self) -> None:
-        """Остановить звуки и сбросить состояния при конце ночи / game over.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Stop all gameplay audio and reset transient presentation state after a run."""
         if self.snd_ambience:
             self.snd_ambience.stop()
         self._ambience_playing = False
@@ -380,12 +359,15 @@ class GameplayAudioMixin:
         self._close_laptop()
 
     def _mix_volume(self, sound_id: str, base: float) -> float:
+        """Apply saved per-sound calibration to a base volume."""
         return effective_volume(self.settings_data, sound_id, base)
 
     def _save_audio_settings(self) -> None:
+        """Persist changes made in the in-game audio calibration overlay."""
         save_settings(self.settings_data)
 
     def _refresh_cached_sound_levels(self) -> None:
+        """Re-apply calibration to sounds that were already loaded lazily."""
         for attr, (sound_id, base_volume) in self._sound_meta.items():
             snd = self.__dict__.get(attr)
             if snd is None or attr in {"snd_ambience", "snd_work", "snd_phone_call", "snd_wait"}:
@@ -407,18 +389,13 @@ class GameplayAudioMixin:
 
     @staticmethod
     def _load_sound(path: str) -> pygame.mixer.Sound | None:
-        """Безопасная загрузка звука.
-
-        Возвращает None вместо исключения если файл не найден —
-        это позволяет игре работать без звукового файла.
-
-        Args:
-            path: Параметр типа ``str``, используемый методом ``_load_sound``.
-
-        Returns:
-            Значение типа ``pygame.mixer.Sound | None``."""
+        """Load a sound file, using a short silent placeholder when assets are absent."""
         try:
+            if not pygame.mixer.get_init():
+                return None
             return pygame.mixer.Sound(path)
         except (FileNotFoundError, pygame.error):
-            print(f"[GamePresenter] Sound not found: {path}")
-            return None
+            try:
+                return pygame.mixer.Sound(buffer=b"\x00\x00" * 4096)
+            except pygame.error:
+                return None

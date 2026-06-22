@@ -324,12 +324,16 @@ class TestNight2Profile:
         ai.tick(hour=2)
         assert ai.location != loc_before or ai._entry_timer > 0
 
-    def test_entry_timer_on_office_approach(self):
+    def test_office_approach_starts_breach_state(self):
         ai = AlgemAI(copy.deepcopy(GRAPH), night=3, start_node=7)
         ai.state = AIState.ATTACK
         ai._move_timer = 0
+
         ai.tick(hour=2)
-        assert ai._entry_timer == 90
+
+        assert ai.state == AIState.BREACH
+        assert ai.location == 0
+        assert ai.prev_location == 7
 
     def test_entry_timer_counts_down(self):
         ai = AlgemAI(copy.deepcopy(GRAPH), night=3, start_node=7)

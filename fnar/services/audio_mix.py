@@ -1,3 +1,5 @@
+"""Микшер пользовательских громкостей для музыки, интерфейса, окружения и отдельных звуков."""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -40,6 +42,7 @@ AUDIO_ID_ALIASES: dict[str, str] = {
 
 
 def _discover_sound_files() -> list[str]:
+    """Сканирует папку sounds и строит список пользовательски настраиваемых звуков."""
     if not SOUNDS_ROOT.exists():
         return sorted(set(AUDIO_ID_ALIASES.values()))
 
@@ -62,10 +65,12 @@ AUDIO_MIX_DEFAULTS: dict[str, object] = {
 
 
 def default_audio_mix() -> dict:
+    """Build the default per-category and per-sound volume configuration."""
     return deepcopy(AUDIO_MIX_DEFAULTS)
 
 
 def ensure_audio_settings(settings_data: dict | None) -> dict:
+    """Return a settings dictionary with a normalized audio mix section."""
     if settings_data is None:
         settings_data = {}
     settings_data["audio_mix"] = normalize_audio_mix(settings_data.get("audio_mix"))
@@ -73,6 +78,7 @@ def ensure_audio_settings(settings_data: dict | None) -> dict:
 
 
 def normalize_audio_mix(audio_mix: dict | None) -> dict:
+    """Clamp and complete a saved audio mix configuration."""
     mix = default_audio_mix()
     if not isinstance(audio_mix, dict):
         return mix
@@ -89,6 +95,7 @@ def normalize_audio_mix(audio_mix: dict | None) -> dict:
 
 
 def effective_volume(settings_data: dict | None, sound_id: str, base: float) -> float:
+    """Apply master and per-sound multipliers to a base volume."""
     mix = normalize_audio_mix((settings_data or {}).get("audio_mix"))
     sound_path = resolve_sound_id(sound_id)
     sound_level = mix["sounds"].get(sound_path, 1.0)
@@ -96,10 +103,12 @@ def effective_volume(settings_data: dict | None, sound_id: str, base: float) -> 
 
 
 def apply_music_volume(settings_data: dict | None, sound_id: str, base: float) -> None:
+    """Apply saved music volume to pygame.mixer.music."""
     pygame.mixer.music.set_volume(effective_volume(settings_data, sound_id, base))
 
 
 def resolve_sound_id(sound_id: str) -> str:
+    """Resolve a sound file path to the calibration key used by the overlay."""
     return AUDIO_ID_ALIASES.get(sound_id, sound_id.replace("\\", "/"))
 
 
@@ -114,6 +123,7 @@ class AudioCalibrationOverlay:
         settings_data: dict,
         on_change: Callable[[], None] | None = None,
     ) -> None:
+        """Выполняет специализированную операцию «init» в подсистеме audio mix."""
         self.settings_data = ensure_audio_settings(settings_data)
         self.on_change = on_change
         self.visible = False
@@ -132,6 +142,7 @@ class AudioCalibrationOverlay:
         self._preview_base_volume: float = 1.0
 
     def handle_event(self, event: pygame.event.Event) -> bool:
+        """Handle event and translate it into game actions."""
         if event.type == pygame.KEYDOWN:
             return self._handle_keydown(event)
 
@@ -158,6 +169,7 @@ class AudioCalibrationOverlay:
         return False
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Отрисовывает соответствующую часть интерфейса на текущем кадре."""
         if not self.visible:
             return
 
@@ -203,6 +215,7 @@ class AudioCalibrationOverlay:
         self._draw_scrollbar(surface, panel, visible_rows)
 
     def _handle_keydown(self, event: pygame.event.Event) -> bool:
+        """Handle keydown and translate it into game actions."""
         if event.key in (pygame.K_F10, pygame.K_F9, pygame.K_BACKQUOTE):
             self.visible = not self.visible
             return True
@@ -257,6 +270,7 @@ class AudioCalibrationOverlay:
         index: int,
         is_selected: bool,
     ) -> None:
+        """Render row for the current frame."""
         row_rect = pygame.Rect(x, y - 2, width, 30)
         label_color = (250, 250, 250) if is_selected else (205, 220, 230)
         bar_color = (85, 200, 240) if is_selected else (70, 125, 170)
@@ -299,6 +313,7 @@ class AudioCalibrationOverlay:
         highlighted: bool,
         small: bool = False,
     ) -> None:
+        """Render button for the current frame."""
         fill = (40, 70, 96) if highlighted else (28, 46, 64)
         edge = (120, 175, 220) if highlighted else (88, 130, 166)
         pygame.draw.rect(surface, fill, rect, border_radius=5)
@@ -308,18 +323,21 @@ class AudioCalibrationOverlay:
         surface.blit(txt, (rect.centerx - txt.get_width() // 2, rect.centery - txt.get_height() // 2))
 
     def _build_rows(self) -> list[dict[str, str]]:
+        """Build rows from the current game data."""
         rows = [{"kind": "master", "key": "master", "label": "MASTER"}]
         for sound_path in ALL_SOUND_PATHS:
             rows.append({"kind": "sound", "key": sound_path, "label": sound_path})
         return rows
 
     def _get_value(self, row: dict[str, str]) -> float:
+        """Return value using the current renderer or model state."""
         mix = self.settings_data["audio_mix"]
         if row["kind"] == "master":
             return mix["master"]
         return mix["sounds"][row["key"]]
 
     def _set_value(self, row: dict[str, str], value: float) -> None:
+        """Устанавливает значение выбранного ползунка громкости с нормализацией."""
         mix = self.settings_data["audio_mix"]
         if row["kind"] == "master":
             mix["master"] = _clamp_volume(value)
@@ -328,10 +346,12 @@ class AudioCalibrationOverlay:
         self._notify_change()
 
     def _adjust_selected(self, delta: float) -> None:
+        """Изменяет выбранный ползунок громкости на шаг клавиатурного управления."""
         row = self._rows[self.selected_index]
         self._set_value(row, self._get_value(row) + delta)
 
     def _reset_selected(self) -> None:
+        """Возвращает выбранный ползунок громкости к значению по умолчанию."""
         defaults = default_audio_mix()
         row = self._rows[self.selected_index]
         if row["kind"] == "master":
@@ -340,17 +360,20 @@ class AudioCalibrationOverlay:
             self._set_value(row, defaults["sounds"].get(row["key"], 1.0))
 
     def _notify_change(self) -> None:
+        """Вызывает callback после изменения аудионастроек."""
         self.settings_data["audio_mix"] = normalize_audio_mix(self.settings_data["audio_mix"])
         self._refresh_preview_volume()
         if self.on_change is not None:
             self.on_change()
 
     def _play_selected(self) -> None:
+        """Play selected with the correct timing and volume."""
         row = self._rows[self.selected_index]
         if row["kind"] == "sound":
             self._play_preview(row["key"])
 
     def _play_preview(self, sound_path: str) -> None:
+        """Play preview with the correct timing and volume."""
         snd = self._preview_cache.get(sound_path)
         if snd is None:
             try:
@@ -369,6 +392,7 @@ class AudioCalibrationOverlay:
         self._preview_channel.play(snd)
 
     def _handle_click(self, pos: tuple[int, int]) -> bool:
+        """Handle click and translate it into game actions."""
         if not self._sidebar_rect.collidepoint(pos):
             self.dragging_index = None
             self.visible = False
@@ -394,6 +418,7 @@ class AudioCalibrationOverlay:
         return True
 
     def _handle_drag(self, pos: tuple[int, int]) -> bool:
+        """Handle drag and translate it into game actions."""
         if self.dragging_index is None:
             return False
         target = None
@@ -417,6 +442,7 @@ class AudioCalibrationOverlay:
         return True
 
     def _refresh_preview_volume(self) -> None:
+        """Return the computed refresh preview volume for the current gameplay state."""
         if self._preview_sound_id is None or self._preview_channel is None:
             return
         if not self._preview_channel.get_busy():
@@ -430,6 +456,7 @@ class AudioCalibrationOverlay:
         )
 
     def _draw_scrollbar(self, surface: pygame.Surface, panel: pygame.Rect, visible_rows: int) -> None:
+        """Render scrollbar for the current frame."""
         if len(self._rows) <= visible_rows:
             return
         track = pygame.Rect(panel.right - 10, panel.y + 90, 4, panel.h - 140)
@@ -440,6 +467,7 @@ class AudioCalibrationOverlay:
         pygame.draw.rect(surface, (110, 180, 235), (track.x, thumb_y, track.w, thumb_h), border_radius=4)
 
     def _ensure_selected_visible(self) -> None:
+        """Прокручивает список микшера так, чтобы выбранная строка была видна."""
         viewport_rows = 15
         if self.selected_index < self.scroll_offset:
             self.scroll_offset = self.selected_index
@@ -447,10 +475,12 @@ class AudioCalibrationOverlay:
             self.scroll_offset = self.selected_index - viewport_rows + 1
 
     def _max_scroll(self) -> int:
+        """Возвращает максимальное смещение прокрутки для списка звуков."""
         return max(0, len(self._rows) - 15)
 
     @staticmethod
     def _step_for_mods(mod: int) -> float:
+        """Выбирает размер шага изменения громкости по клавишам-модификаторам."""
         if mod & pygame.KMOD_SHIFT:
             return 0.01
         if mod & pygame.KMOD_CTRL:
@@ -459,6 +489,7 @@ class AudioCalibrationOverlay:
 
 
 def _migrate_legacy_sound_keys(raw_sounds: dict) -> dict[str, object]:
+    """Переносит старые ключи громкости к новой структуре микшера."""
     migrated: dict[str, object] = {}
     for key, value in raw_sounds.items():
         migrated[resolve_sound_id(str(key))] = value
@@ -466,6 +497,7 @@ def _migrate_legacy_sound_keys(raw_sounds: dict) -> dict[str, object]:
 
 
 def _clamp_volume(value: object) -> float:
+    """Return the computed clamp volume for the current gameplay state."""
     try:
         number = float(value)
     except (TypeError, ValueError):

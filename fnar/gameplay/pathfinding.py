@@ -24,6 +24,7 @@ def _reconstruct_path(
     parents: dict[int, int | None],
     goal: int,
 ) -> list[int]:
+    """Return the asset path or route for reconstruct."""
     path: list[int] = []
     current: int | None = goal
     while current is not None:
@@ -34,15 +35,7 @@ def _reconstruct_path(
 
 
 def bfs_path(start: int, goal: int, graph: Graph) -> list[int] | None:
-    """Кратчайший путь в невзвешенном графе. Сложность O(V + E).
-
-    Args:
-        start: Параметр типа ``int``, используемый методом ``bfs_path``.
-        goal: Параметр типа ``int``, используемый методом ``bfs_path``.
-        graph: Параметр типа ``Graph``, используемый методом ``bfs_path``.
-
-    Returns:
-        Значение типа ``list[int] | None``."""
+    """Return the shortest unweighted path between two graph nodes using BFS."""
     if start == goal:
         return [start]
 
@@ -62,15 +55,7 @@ def bfs_path(start: int, goal: int, graph: Graph) -> list[int] | None:
 
 
 def dfs_path(start: int, goal: int, graph: Graph) -> list[int] | None:
-    """Один физически допустимый маршрут через DFS. Сложность O(V + E).
-
-    Args:
-        start: Параметр типа ``int``, используемый методом ``dfs_path``.
-        goal: Параметр типа ``int``, используемый методом ``dfs_path``.
-        graph: Параметр типа ``Graph``, используемый методом ``dfs_path``.
-
-    Returns:
-        Значение типа ``list[int] | None``."""
+    """Return one valid depth-first route between two graph nodes."""
     if start == goal:
         return [start]
 
@@ -101,17 +86,7 @@ def astar_path(
     edge_weight_fn: Callable[[int, int], float],
     heuristic: dict[int, int],
 ) -> list[int] | None:
-    """A* для взвешенного графа. Сложность O((V + E) log V).
-
-    Args:
-        start: Параметр типа ``int``, используемый методом ``astar_path``.
-        goal: Параметр типа ``int``, используемый методом ``astar_path``.
-        graph: Параметр типа ``Graph``, используемый методом ``astar_path``.
-        edge_weight_fn: Параметр типа ``Callable[[int, int], float]``, используемый методом ``astar_path``.
-        heuristic: Параметр типа ``dict[int, int]``, используемый методом ``astar_path``.
-
-    Returns:
-        Значение типа ``list[int] | None``."""
+    """Return a weighted A* route toward the office while avoiding watched cameras."""
     if start == goal:
         return [start]
 
@@ -140,6 +115,7 @@ def astar_path(
 
 
 def graph_signature(graph: Graph) -> GraphSignature:
+    """Create a stable tuple representation of a graph for cache keys."""
     return tuple(
         (node, tuple(neighbors))
         for node, neighbors in sorted(graph.items())
@@ -147,6 +123,7 @@ def graph_signature(graph: Graph) -> GraphSignature:
 
 
 def single_target_hop_distances(graph: Graph, goal: int) -> dict[int, int]:
+    """Precompute BFS hop distances from every node to one target."""
     reverse_graph: dict[int, list[int]] = {node: [] for node in graph}
     for node, neighbors in graph.items():
         for neighbor in neighbors:

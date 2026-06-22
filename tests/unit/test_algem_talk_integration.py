@@ -34,6 +34,7 @@ def game():
     m = GameModel(night=2)
     v = GameView(screen)
     p = GamePresenter(m, v)
+    m.night_start_ticks = 0
     return m, v, p
 
 

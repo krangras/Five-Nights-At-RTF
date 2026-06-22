@@ -47,10 +47,12 @@ AUDIO_BUCKET_THRESHOLDS: tuple[float, float, float, float] = (
 )
 
 def _audio_edge_key(node: int, neighbor: int) -> tuple[int, int]:
+    """Нормализует пару узлов графа в ключ ребра для аудиовесов."""
     return (node, neighbor) if node < neighbor else (neighbor, node)
 
 
 def _build_audio_graph() -> dict[int, list[int]]:
+    """Build audio graph from the current game data."""
     graph: dict[int, set[int]] = {node: set() for node in BASE_GRAPH}
     for node_a, node_b in AUDIO_EDGE_WEIGHTS:
         graph.setdefault(node_a, set()).add(node_b)
@@ -62,6 +64,7 @@ BASE_AUDIO_GRAPH: dict[int, list[int]] = _build_audio_graph()
 
 
 def _edge_audio_weight(node: int, neighbor: int) -> float:
+    """Возвращает вес перехода для расчёта слышимой дистанции."""
     return AUDIO_EDGE_WEIGHTS.get(_audio_edge_key(node, neighbor), 6.40)
 
 
@@ -70,6 +73,7 @@ def _weighted_audio_distance(
     goal: int,
     graph: dict[int, list[int]],
 ) -> float:
+    """Return the computed weighted audio distance for the current gameplay state."""
     if start == goal:
         return 0.0
 
@@ -90,6 +94,7 @@ def _weighted_audio_distance(
 
 
 def _precompute_weighted_distances() -> dict[tuple[int, int], float]:
+    """Предварительно считает кратчайшие звуковые расстояния между узлами."""
     result: dict[tuple[int, int], float] = {}
     for start in BASE_AUDIO_GRAPH:
         for end in BASE_AUDIO_GRAPH:
@@ -101,6 +106,7 @@ WEIGHTED_DISTANCES: dict[tuple[int, int], float] = _precompute_weighted_distance
 
 
 def _volume_from_distance(dist: float) -> float:
+    """Return the computed volume from distance for the current gameplay state."""
     if dist <= 0.0:
         return AUDIO_DIRECT_GAIN
     if dist >= AUDIO_UNREACHABLE_DISTANCE:
@@ -117,6 +123,7 @@ def _volume_from_distance(dist: float) -> float:
 
 
 def _bucket_from_weighted_distance(dist: float) -> int:
+    """Return the computed bucket from weighted distance for the current gameplay state."""
     if dist <= AUDIO_BUCKET_THRESHOLDS[0]:
         return 0
     if dist <= AUDIO_BUCKET_THRESHOLDS[1]:

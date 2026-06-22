@@ -13,6 +13,7 @@ class OfficeRendererMixin:
     """Compose the office, laptop, tablet, camera, and overlay layers."""
 
     def draw(self, model):
+        """Отрисовывает соответствующую часть интерфейса на текущем кадре."""
         offset = int((model.current_look + 1) / 2 * self.max_offset)
 
         # ── Зум на ноутбук ──────────────────────────────────────────
@@ -48,8 +49,6 @@ class OfficeRendererMixin:
         ) or getattr(model, "post_hack_active", False):
             self._draw_hack_bar(model)
 
-        if model.server_state != "OFF":
-            pass  # двери нет
 
         # ── Экран ноутбука на столе (перспективный рендеринг) ───────
         if model.show_real_screen and not model.laptop_open:

@@ -1,3 +1,5 @@
+"""Звуковая подсистема главного меню."""
+
 import pygame
 
 from fnar.services.audio_mix import apply_music_volume, effective_volume, ensure_audio_settings
@@ -16,11 +18,13 @@ class MenuAudio:
     чтобы Presenter не работал напрямую с путями к аудиофайлам.
     """
     def __init__(self, settings_data=None):
+        """Выполняет специализированную операцию «init» в подсистеме audio."""
         self.settings_data = ensure_audio_settings(settings_data)
         self._blip_sound = None
         self._music_loaded = False
 
     def ensure_music(self):
+        """Запускает музыку меню, если она ещё не играет."""
         if pygame.mixer.music.get_busy():
             apply_music_volume(self.settings_data, "menu_music", MENU_MUSIC_DEFAULT_VOLUME)
             return
@@ -37,9 +41,11 @@ class MenuAudio:
             pass
 
     def stop_music(self):
+        """Останавливает музыку меню при переходе в игру или выходе."""
         pygame.mixer.music.stop()
 
     def play_hover(self):
+        """Play hover with the correct timing and volume."""
         if self._blip_sound is None:
             try:
                 self._blip_sound = pygame.mixer.Sound(MENU_BLIP_PATH)

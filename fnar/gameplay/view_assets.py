@@ -22,6 +22,7 @@ class ViewAssetsMixin:
     """Initialize immutable assets and reusable rendering surfaces."""
 
     def __init__(self, screen):
+        """Выполняет специализированную операцию «init» в подсистеме view assets."""
         self.screen = screen
         try:
             screen_w, screen_h = screen.get_size()
@@ -292,6 +293,7 @@ class ViewAssetsMixin:
         self._algem_room_surf = None
 
         def _load_cam(path):
+            """Load one camera background and apply the CCTV dark-purple grade."""
             try:
                 raw = _safe_load_image(path)
                 if path.startswith("assets/vents_cameras"):
@@ -312,6 +314,7 @@ class ViewAssetsMixin:
                 return None
 
         def _cache_laptop_gradients():
+            """Pre-render Windows-like gradients reused by the laptop renderer."""
             sw, sh = self.screen_w, self.screen_h
             tb_h = 40
             tb_top = sh - tb_h
@@ -447,10 +450,9 @@ class ViewAssetsMixin:
         }
         for cam_idx, fname in closed_cam_files.items():
             path = f"assets/vents_cameras/{fname}"
-            if os.path.exists(path):
-                surf = _load_cam(path)
-                if surf is not None:
-                    self._closed_vent_surfaces[cam_idx] = surf
+            surf = _load_cam(path)
+            if surf is not None:
+                self._closed_vent_surfaces[cam_idx] = surf
 
         retreat_name_roots = {
             8: ["cam_8", "cam8", "cam11"],

@@ -1,3 +1,5 @@
+"""Фоновый захват области экрана и проекция изображения на ноутбук в офисе."""
+
 import threading
 import time
 import pygame
@@ -59,6 +61,7 @@ class ScreenCapture:
         self._thread.start()
 
     def _capture_loop(self):
+        """В фоне считывает экран и обновляет последний кадр для проекции ноутбука."""
         sct = mss.mss()
         monitor = sct.monitors[1]  # primary monitor
         while self._running:
@@ -82,6 +85,7 @@ class ScreenCapture:
             time.sleep(self._interval)
 
     def stop(self):
+        """Останавливает фоновый поток захвата экрана."""
         self._running = False
         if self._thread.is_alive():
             self._thread.join(timeout=2.0)

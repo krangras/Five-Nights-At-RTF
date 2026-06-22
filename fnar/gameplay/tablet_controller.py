@@ -7,13 +7,7 @@ class TabletControllerMixin:
     """Control tablet state without owning domain data."""
 
     def _update_tablet_anim(self) -> None:
-        """Покадровая анимация открытия/закрытия планшета.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Advance the tablet open/close animation one frame at a fixed cadence."""
         if not self.model.tablet_animating:
             return
 
@@ -35,16 +29,7 @@ class TabletControllerMixin:
             self._anim_timer = 2
 
     def _update_bait_anim(self) -> None:
-        """Анимация прогресса аудио-приманки.
-
-        6 шагов × 80 тиков ≈ 8 секунд воспроизведения.
-        bait_cam_step управляет анимацией audio-иконки на мини-карте.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Advance the lure progress bar and pulsing audio icon while PLAY AUDIO runs."""
         if not self.model.bait_active:
             return
 
@@ -64,13 +49,7 @@ class TabletControllerMixin:
                 self.model.bait_cam_step += 1
 
     def _toggle_tablet(self) -> None:
-        """Открыть или закрыть планшет (с анимацией и звуком).
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Request a tablet open/close transition, respecting seal locks and game over."""
         self._check_node5_attack()
         if self.model.game_over:
             return
@@ -83,13 +62,7 @@ class TabletControllerMixin:
             self._close_tablet()
 
     def _open_tablet(self) -> None:
-        """Начать анимацию открытия планшета.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Start tablet opening, initialize cameras once, and play the UI cue."""
         self.model.tablet_open = True
         self.model.tablet_animating = True
         self._anim_dir = 1
@@ -107,13 +80,7 @@ class TabletControllerMixin:
             self.snd_tablet.play()
 
     def _close_tablet(self) -> None:
-        """Начать анимацию закрытия планшета.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Start tablet closing and mute the camera boot channel during the drop."""
         self.model.tablet_animating = True
         self._anim_dir = -1
         self.model.tablet_anim_frame = 9
@@ -124,13 +91,7 @@ class TabletControllerMixin:
             self.snd_tablet.play()
 
     def _switch_camera(self, idx: int) -> None:
-        """Переключить активную камеру с звуком.
-
-        Args:
-            idx: Параметр типа ``int``, используемый методом ``_switch_camera``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Switch the selected camera and suppress static when a closed vent hides Algem."""
         if self.model.camera_idx == idx:
             return
         self.model.camera_idx = idx

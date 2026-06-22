@@ -58,6 +58,7 @@ class GamePresenter(
     """
 
     def __init__(self, model: GameModel, view, settings_data: dict | None = None) -> None:
+        """Выполняет специализированную операцию «init» в подсистеме presenter."""
         self.model: GameModel = model
         self.view = view
         self.settings_data = ensure_audio_settings(settings_data)
@@ -140,6 +141,8 @@ class GamePresenter(
         self._gadget_cache: list[pygame.mixer.Sound] | None = None
         self._algem_talk_cache: list[pygame.mixer.Sound] | None = None
         self._vent_sounds_cache: list[pygame.mixer.Sound] | None = None
+        if pygame.mixer.get_init() and pygame.mixer.get_num_channels() < 16:
+            pygame.mixer.set_num_channels(16)
         self._algem_talk_channel: pygame.mixer.Channel = pygame.mixer.Channel(5)
         self._algem_leave_channel: pygame.mixer.Channel = pygame.mixer.Channel(4)
         self._cam_init_channel: pygame.mixer.Channel = pygame.mixer.Channel(6)
@@ -219,15 +222,7 @@ class GamePresenter(
     # ──────────────────────────────────────────────────────────────────────
 
     def update(self) -> None:
-        """Обновить логику Presenter на один тик.
-
-        Вызывается игровым циклом ПОСЛЕ model.update().
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Выполняет один игровой тик модели, таймеров, угроз и состояния ночи."""
         if self.model.night_start_ticks > 0:
             if not self._start_played and self.snd_startnight:
                 self.snd_startnight.play()
@@ -282,13 +277,7 @@ class GamePresenter(
 
 
     def _update_phone(self) -> None:
-        """Запуск/отслеживание телефонного звонка.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Start and monitor the first-night phone call without blocking gameplay."""
         if self.model.phone_call_active and self._phone_channel is None:
             if self.snd_phone_call:
                 self._phone_channel = self.snd_phone_call.play()
@@ -306,13 +295,7 @@ class GamePresenter(
 
 
     def _activate_bait(self) -> None:
-        """Активировать аудио-приманку на текущей камере.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Trigger the lure on the selected camera and play a short gadget sound."""
         if self._gadget_sounds:
             random.choice(self._gadget_sounds).play()
         self.model.activate_bait(self.model.camera_idx)
@@ -320,37 +303,23 @@ class GamePresenter(
         self._bait_cam_timer = 0
 
     def _check_node5_attack(self) -> None:
-        """Legacy hook: раньше скример привязывался к закрытию планшета.
-
-        Теперь убийство считается моделью/ИИ через BREACH + random kill-window,
-        поэтому переключение планшета само по себе не должно вызывать game_over.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Проверяет специальную угрозу из пятого узла и запускает последствия."""
         return
 
     def _update_danger_camera_grace(self) -> None:
-        """Обновить счётчик времени Алгема на предофисной камере.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Track how long Algem stays on the final fair-warning camera."""
         if self.model.algem_location == DANGER_CAMERA_NODE:
             self._on_danger_camera_grace += 1
         else:
             self._on_danger_camera_grace = 0
 
 
-    _GLITCH_PER_SECOND_CHANCE = 0.00083
+    _GLITCH_PER_SECOND_CHANCE = 0.004
     _GLITCH_CHECK_INTERVAL = 60
 
 
     def draw_overlays(self, surface: pygame.Surface) -> None:
+        """Render overlays for the current frame."""
         self.audio_overlay.draw(surface)
         if self._projection_overlay_active:
             offset = int((self.model.current_look + 1) / 2 * self.view.max_offset)

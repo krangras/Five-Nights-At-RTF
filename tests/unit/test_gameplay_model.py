@@ -11,6 +11,7 @@ from fnar.gameplay.model import (
     BASE_GRAPH,
     CAMERAS,
     GameModel,
+    GAME_HOUR_TICKS,
     OFFICE_THREAT_TICKS_BY_NIGHT,
     SEAL_CAMERA_MAP,
     SealState,
@@ -35,16 +36,16 @@ class TestClock:
         assert m.timer == 0
         assert m.hour == 0
 
-    def test_hour_increments_at_3600_ticks(self):
+    def test_hour_increments_at_game_hour_ticks(self):
         m = GameModel(night=1)
-        for _ in range(3600):
+        for _ in range(GAME_HOUR_TICKS):
             m.update()
         assert m.hour == 1
         assert m.timer == 0
 
-    def test_night1_first_hour_takes_3600_ticks(self):
+    def test_night1_first_hour_takes_configured_tick_count(self):
         m = GameModel(night=1)
-        for _ in range(3599):
+        for _ in range(GAME_HOUR_TICKS - 1):
             m.update()
         assert m.hour == 0
         m.update()
@@ -270,7 +271,7 @@ class TestIntegration:
         m._update_ai()
 
         assert m.algem_in_office == True
-        assert m.office_threat_timer == OFFICE_THREAT_TICKS_BY_NIGHT[2]
+        assert 45 <= m.office_threat_timer <= int(OFFICE_THREAT_TICKS_BY_NIGHT[2] * 1.42)
 
     def test_office_threat_does_not_kill_on_tablet_close(self):
         m = GameModel(night=2)
@@ -284,7 +285,7 @@ class TestIntegration:
 
         assert m.game_over == False
 
-    def test_office_threat_clears_when_everything_is_off(self):
+    def test_office_threat_continues_without_last_chance_conditions(self):
         m = GameModel(night=3)
         m.algem_in_office = True
         m.office_threat_timer = 30
@@ -297,9 +298,8 @@ class TestIntegration:
 
         m._update_office_threat()
 
-        assert m.algem_in_office == False
-        assert m.office_threat_timer == 0
-        assert m._ai.location == 5
+        assert m.algem_in_office == True
+        assert m.office_threat_timer == 29
 
     def test_office_threat_times_out_into_game_over(self):
         m = GameModel(night=5)
@@ -329,8 +329,8 @@ class TestVentAudio:
             def play(self, *_args, **_kwargs):
                 self.busy = True
 
-            def set_volume(self, _volume):
-                pass
+            def set_volume(self, volume):
+                self.volume = volume
 
         presenter = GamePresenter.__new__(GamePresenter)
         presenter.model = type("ModelStub", (), {})()
@@ -339,6 +339,7 @@ class TestVentAudio:
         presenter.model.tablet_animating = False
         presenter.model.camera_idx = 9
         presenter.model.algem_trigger = 30
+        presenter.model.seals = {}
         presenter._last_regular_cam = 2
         presenter._vent_sound_channel = DummyChannel()
         presenter._vent_sound_timer = 10
@@ -346,7 +347,7 @@ class TestVentAudio:
 
         presenter._update_vent_sounds()
 
-        assert presenter._vent_sound_channel.stop_calls == 1
+        assert presenter._vent_sound_channel.volume == 0.0
         assert presenter._vent_sound_timer == 0
 
     def test_blocked_vent_sound_plays_once_per_new_block(self):

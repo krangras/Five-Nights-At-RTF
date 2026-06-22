@@ -22,7 +22,7 @@ from fnar.gameplay.view import GameView
 from fnar.gameplay.presenter import GamePresenter
 from fnar.services.save import load_save, save_progress
 from fnar.services.settings import load_settings, save_settings
-from fnar.services.screen_scaler import VIRTUAL_SIZE, compute_windowed_size, present_canvas, scale_mouse_event, screen_to_virtual
+from fnar.services.screen_scaler import VIRTUAL_SIZE, compute_windowed_size, present_canvas, scale_mouse_event
 from fnar.gameplay.screamer import ScreamerPlayer
 
 LOADING_FONT_CACHE: dict[int, pygame.font.Font] = {}
@@ -77,7 +77,7 @@ def _blit_or_scale(src, dst):
 def toggle_fullscreen(screen, is_fullscreen):
     global _settings
     if is_fullscreen:
-        screen = pygame.display.set_mode(compute_windowed_size(_monitor_size))
+        screen = pygame.display.set_mode(compute_windowed_size(_monitor_size), pygame.RESIZABLE)
         _settings["fullscreen"] = False
     else:
         screen = pygame.display.set_mode(_monitor_size, pygame.FULLSCREEN)
@@ -196,7 +196,7 @@ def main():
         screen = pygame.display.set_mode(_monitor_size, pygame.FULLSCREEN)
         is_fullscreen = True
     else:
-        screen = pygame.display.set_mode(compute_windowed_size(_monitor_size))
+        screen = pygame.display.set_mode(compute_windowed_size(_monitor_size), pygame.RESIZABLE)
         is_fullscreen = False
     pygame.display.set_caption("Five Nights At RTF")
     _apply_window_icon()
@@ -213,7 +213,7 @@ def main():
         try:
             _snd_cache[_key] = pygame.mixer.Sound(_path)
             if _key == "screamer":
-                _snd_cache[_key].set_volume(0.5)
+                _snd_cache[_key].set_volume(0.25)
             elif _key == "night_ends":
                 _snd_cache[_key].set_volume(0.55)
             elif _key == "disclaimer":
@@ -238,11 +238,9 @@ def main():
 
     game_surface = pygame.Surface(GAME_SIZE)
 
-    def _virtual_mouse_pos():
-        return screen_to_virtual(pygame.mouse.get_pos(), screen.get_size())
-
-    menu_m, menu_v = MenuModel(), MenuView(game_surface)
-    menu_p = MenuPresenter(menu_m, menu_v, _settings, pointer_provider=_virtual_mouse_pos)
+    menu_m, menu_v = MenuModel(), MenuView(screen)
+    menu_p = MenuPresenter(menu_m, menu_v, _settings)
+    _menu_screen_size = screen.get_size()
 
     game_m, game_v, game_p = None, None, None
     load_start = 0
@@ -371,10 +369,12 @@ def main():
             pygame.display.flip()
             clock.tick(60)
         elif state == "MENU":
+            if screen.get_size() != _menu_screen_size:
+                _menu_screen_size = screen.get_size()
+                menu_v.update_screen(screen)
             state = menu_p.handle_events()
             menu_m.update()
             menu_v.draw_menu(menu_m)
-            _blit_or_scale(game_surface, screen)
             pygame.display.flip()
             clock.tick(60)
         elif state == "START_GAME":
@@ -382,14 +382,17 @@ def main():
             state = "LOADING"
             _continue_night = 1
         elif state == "SETTINGS":
+            if screen.get_size() != _menu_screen_size:
+                _menu_screen_size = screen.get_size()
+                menu_v.update_screen(screen)
             result, is_fullscreen, settings_hovered = menu_p.handle_settings_events(is_fullscreen)
             if result == "BACK":
                 state = "MENU"
             elif result == "TOGGLE_FS":
                 screen, is_fullscreen = toggle_fullscreen(screen, is_fullscreen)
-                menu_v.update_screen(game_surface)
+                _menu_screen_size = screen.get_size()
+                menu_v.update_screen(screen)
             menu_v.draw_settings(is_fullscreen, settings_hovered, menu_m)
-            _blit_or_scale(game_surface, screen)
             pygame.display.flip()
             clock.tick(60)
         elif state == "START_CONTINUE":
@@ -497,10 +500,10 @@ def main():
                 state = "GAME_OVER"
                 if _lecture_sounds_cache:
                     lecture_sound = random.choice(_lecture_sounds_cache)
-                    lecture_sound.set_volume(0.62)
+                    lecture_sound.set_volume(0.85)
                     lecture_sound.play()
                     def _echo():
-                        lecture_sound.set_volume(0.28)
+                        lecture_sound.set_volume(0.50)
                         lecture_sound.play()
                     threading.Timer(0.3, _echo).start()
         elif state == "GAME_OVER":

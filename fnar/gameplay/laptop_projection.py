@@ -23,13 +23,7 @@ class LaptopProjectionMixin:
     """Provide projection persistence, geometry, and editor rendering."""
 
     def load_laptop_projection(self) -> None:
-        """Load laptop projection corners from a JSON config if it exists.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Load laptop projection and fall back safely when project assets are missing."""
         if not os.path.exists(self._projection_config_path):
             return
         try:
@@ -48,13 +42,7 @@ class LaptopProjectionMixin:
             pass
 
     def save_laptop_projection(self) -> None:
-        """Save current laptop projection corners to disk.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Persist laptop projection without disturbing the running game state."""
         data = {
             "corners": [
                 [int(round(x)), int(round(y))]
@@ -65,24 +53,12 @@ class LaptopProjectionMixin:
             json.dump(data, fh, ensure_ascii=True, indent=2)
 
     def reset_laptop_projection(self) -> None:
-        """Reset the laptop projection to the default tuned trapezoid.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Возвращает координаты проекции ноутбука к значениям по умолчанию."""
         self._lp_base_corners = np.float32(DEFAULT_LAPTOP_PROJECTION_CORNERS)
         self._rebuild_laptop_projection()
 
     def _rebuild_laptop_projection(self) -> None:
-        """Recompute the perspective transform after any corner edit.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Пересчитывает матрицу перспективы и поверхность экрана ноутбука."""
         dst = self._lp_base_corners * self.scale
         x_min, y_min = dst.min(axis=0).astype(int)
         x_max, y_max = dst.max(axis=0).astype(int)
@@ -104,13 +80,7 @@ class LaptopProjectionMixin:
     def get_laptop_projection_corners_screen(
         self, offset: int = 0
     ) -> list[tuple[int, int]]:
-        """Return projection corners in active screen coordinates.
-
-        Args:
-            offset: Параметр типа ``int``, используемый методом ``get_laptop_projection_corners_screen``.
-
-        Returns:
-            Значение типа ``list[tuple[int, int]]``."""
+        """Return laptop projection corners screen using the current renderer or model state."""
         return [
             (int(round(x * self.scale)) - offset, int(round(y * self.scale)))
             for x, y in self._lp_base_corners.tolist()
@@ -119,15 +89,7 @@ class LaptopProjectionMixin:
     def get_laptop_projection_corner_hit(
         self, mouse_pos: tuple[int, int], offset: int = 0, radius: int = 18
     ) -> int | None:
-        """Return the nearest projection corner index under the mouse.
-
-        Args:
-            mouse_pos: Параметр типа ``tuple[int, int]``, используемый методом ``get_laptop_projection_corner_hit``.
-            offset: Параметр типа ``int``, используемый методом ``get_laptop_projection_corner_hit``.
-            radius: Параметр типа ``int``, используемый методом ``get_laptop_projection_corner_hit``.
-
-        Returns:
-            Значение типа ``int | None``."""
+        """Return laptop projection corner hit using the current renderer or model state."""
         mx, my = mouse_pos
         best_idx = None
         best_dist_sq = radius * radius
@@ -145,15 +107,7 @@ class LaptopProjectionMixin:
     def move_laptop_projection_corner(
         self, corner_idx: int, mouse_pos: tuple[int, int], offset: int = 0
     ) -> None:
-        """Move one projection corner using current screen coordinates.
-
-        Args:
-            corner_idx: Параметр типа ``int``, используемый методом ``move_laptop_projection_corner``.
-            mouse_pos: Параметр типа ``tuple[int, int]``, используемый методом ``move_laptop_projection_corner``.
-            offset: Параметр типа ``int``, используемый методом ``move_laptop_projection_corner``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Перемещает выбранный угол проекции ноутбука мышью."""
         x = (mouse_pos[0] + offset) / self.scale
         y = mouse_pos[1] / self.scale
         self._lp_base_corners[corner_idx] = [x, y]
@@ -162,15 +116,7 @@ class LaptopProjectionMixin:
     def nudge_laptop_projection_corner(
         self, corner_idx: int, dx: float, dy: float
     ) -> None:
-        """Fine-tune one projection corner in source-image pixels.
-
-        Args:
-            corner_idx: Параметр типа ``int``, используемый методом ``nudge_laptop_projection_corner``.
-            dx: Параметр типа ``float``, используемый методом ``nudge_laptop_projection_corner``.
-            dy: Параметр типа ``float``, используемый методом ``nudge_laptop_projection_corner``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Сдвигает выбранный угол проекции ноутбука с клавиатуры."""
         self._lp_base_corners[corner_idx][0] += dx
         self._lp_base_corners[corner_idx][1] += dy
         self._rebuild_laptop_projection()
@@ -182,16 +128,7 @@ class LaptopProjectionMixin:
         active_corner: int | None,
         dragging: bool,
     ) -> None:
-        """Draw an in-game overlay for live laptop projection editing.
-
-        Args:
-            surface: Параметр типа ``pygame.Surface``, используемый методом ``draw_laptop_projection_editor``.
-            offset: Параметр типа ``int``, используемый методом ``draw_laptop_projection_editor``.
-            active_corner: Параметр типа ``int | None``, используемый методом ``draw_laptop_projection_editor``.
-            dragging: Параметр типа ``bool``, используемый методом ``draw_laptop_projection_editor``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Render laptop projection editor for the current frame."""
         corners = self.get_laptop_projection_corners_screen(offset)
         if len(corners) == 4:
             pygame.draw.lines(surface, (70, 220, 255), True, corners, 2)

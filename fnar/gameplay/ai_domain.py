@@ -44,15 +44,7 @@ class AlgemEventType(str, Enum):
 
 @dataclass(frozen=True)
 class AlgemEvent:
-    """Одно доменное событие, созданное ИИ Алгема.
-
-    Args:
-        kind: Категория события для Presenter.
-        source: Узел, из которого началось действие.
-        target: Узел, в который направлено действие.
-        state: Название FSM-состояния после события.
-        delay_ticks: Задержка до опасного последствия, если она нужна событию.
-    """
+    """Immutable event emitted by the AI for presenter-side sound and UI reactions."""
     kind: AlgemEventType
     source: int
     target: int

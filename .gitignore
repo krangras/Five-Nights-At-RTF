@@ -16,3 +16,6 @@ save.json
 settings.json
 assets/.cache/
 tools/*_debug.png
+.pytest_cache/
+*.pyc
+FiveNightsAtRTF/

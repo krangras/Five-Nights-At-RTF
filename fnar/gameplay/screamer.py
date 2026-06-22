@@ -1,3 +1,5 @@
+"""Проигрыватель покадрового скримера с дверной анимацией и красным финальным затемнением."""
+
 import pygame
 import glob
 import os
@@ -43,6 +45,7 @@ class ScreamerPlayer:
                  door_speed=DEFAULT_DOOR_SPEED, scream_frame=DEFAULT_SCREAM_FRAME,
                  delay_default=DEFAULT_FRAME_DELAY_SECONDS, red_start=DEFAULT_RED_START_FRAME,
                  hold_last=DEFAULT_HOLD_LAST_SECONDS, red_duration=DEFAULT_RED_DURATION_SECONDS):
+        """Выполняет специализированную операцию «init» в подсистеме screamer."""
         self.screen_size = screen_size
         sw, sh = screen_size
         self._frames: list[tuple[pygame.Surface, float]] = []
@@ -57,6 +60,7 @@ class ScreamerPlayer:
         files = sorted(glob.glob(png_pattern) + glob.glob(jpg_pattern))
 
         def _sort_key(path):
+            """Извлекает числовой индекс кадра для правильной сортировки файлов скримера."""
             base = os.path.basename(path)
             m = re.search(r"frame[_-](\d+)", base)
             return int(m.group(1)) if m else FRAME_INDEX_FALLBACK
@@ -89,9 +93,11 @@ class ScreamerPlayer:
 
     @property
     def done(self):
+        """Return whether the animation has finished."""
         return self._done
 
     def update(self, dt: float):
+        """Выполняет один игровой тик модели, таймеров, угроз и состояния ночи."""
         if self._done or not self._frames:
             return
         if self._hold_timer > 0.0:
@@ -117,6 +123,7 @@ class ScreamerPlayer:
             self.scream_triggered = True
 
     def draw(self, surface: pygame.Surface):
+        """Отрисовывает соответствующую часть интерфейса на текущем кадре."""
         if self._frames:
             surface.blit(self._frames[self._idx][0], (0, 0))
             if self._red_elapsed > 0.0:
@@ -126,6 +133,7 @@ class ScreamerPlayer:
                 surface.blit(self._red_overlay, (0, 0))
 
     def reset(self):
+        """Сбрасывает внутреннее состояние компонента к началу нового сценария."""
         self._idx = 0
         self._elapsed = 0.0
         self._done = False

@@ -1,3 +1,5 @@
+"""Presenter главного меню, связывающий ввод пользователя, модель и представление."""
+
 import sys
 
 import pygame
@@ -11,13 +13,24 @@ class MenuPresenter:
     Обрабатывает события мыши/клавиатуры, обновляет MenuModel и вызывает
     MenuView. Геймплейные данные ночи сюда не попадают.
     """
-    def __init__(self, model, view, settings_data=None):
+    def __init__(self, model, view, settings_data=None, pointer_provider=None):
+        """Создаёт presenter меню и задаёт источник координат мыши.
+
+        Args:
+            model: Состояние главного меню.
+            view: Представление меню с актуальными hitbox-кнопками.
+            settings_data: Настройки громкости и полноэкранного режима.
+            pointer_provider: Функция, возвращающая позицию мыши в виртуальных
+                координатах меню. По умолчанию используются координаты окна.
+        """
         self.model = model
         self.view = view
         self.audio = MenuAudio(settings_data)
         self._prev_hover = None
+        self._pointer_provider = pointer_provider or pygame.mouse.get_pos
 
     def handle_events(self, global_event_handler=None):
+        """Handle events and translate it into game actions."""
         self.audio.ensure_music()
         self._update_menu_hover()
         self._play_hover_if_changed()
@@ -44,6 +57,7 @@ class MenuPresenter:
         return "MENU"
 
     def handle_settings_events(self, is_fullscreen: bool, global_event_handler=None):
+        """Handle settings events and translate it into game actions."""
         hovered = self._get_settings_hover()
         if hovered != self._prev_hover and hovered is not None:
             self.audio.play_hover()
@@ -66,7 +80,8 @@ class MenuPresenter:
         return None, is_fullscreen, hovered
 
     def _update_menu_hover(self):
-        mouse_pos = pygame.mouse.get_pos()
+        """Обновляет hover-кнопку меню по текущей позиции мыши."""
+        mouse_pos = self._pointer_provider()
         if self.view.btn_new_game_rect.collidepoint(mouse_pos):
             self.model.set_hovered_button("new_game")
         elif self.model.continue_available and self.view.btn_continue_rect.collidepoint(mouse_pos):
@@ -79,7 +94,8 @@ class MenuPresenter:
             self.model.set_hovered_button(None)
 
     def _get_settings_hover(self):
-        mouse_pos = pygame.mouse.get_pos()
+        """Return settings hover using the current renderer or model state."""
+        mouse_pos = self._pointer_provider()
         if self.view.btn_fullscreen_rect.collidepoint(mouse_pos):
             return "fullscreen"
         if self.view.btn_back_rect.collidepoint(mouse_pos):
@@ -87,6 +103,7 @@ class MenuPresenter:
         return None
 
     def _play_hover_if_changed(self):
+        """Play hover if changed with the correct timing and volume."""
         if self.model.hovered_button != self._prev_hover and self.model.hovered_button is not None:
             self.audio.play_hover()
         self._prev_hover = self.model.hovered_button

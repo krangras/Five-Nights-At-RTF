@@ -16,13 +16,7 @@ class LaptopControllerMixin:
     """Coordinate laptop/server transitions while the model owns state."""
 
     def _update_server_anim(self) -> None:
-        """Анимация включения/выключения сервера.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Advance server power transitions and hand off to stable ON/OFF states."""
         if self.model.server_state == "TURNING_ON":
             self._on_phase_frames -= 1
             if self._on_phase_frames <= 0:
@@ -65,13 +59,7 @@ class LaptopControllerMixin:
                     try_last_chance()
 
     def _shutdown_server_hotkey(self) -> None:
-        """Выключить сервер клавишей S независимо от приложения и угрозы Алгема.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Handle the emergency S hotkey used for manual server shutdown saves."""
         if self.model.game_over:
             return
         if self.model.server_state == "ON":
@@ -89,13 +77,7 @@ class LaptopControllerMixin:
                 self.snd_off.play()
 
     def _toggle_server(self) -> None:
-        """Включить или выключить сервер.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Toggle server power or restart it after overload when the button is clicked."""
         self._check_node5_attack()
         if self.model.game_over:
             return
@@ -121,13 +103,7 @@ class LaptopControllerMixin:
                 self.snd_on.play()
 
     def _update_laptop(self) -> None:
-        """Состояния питания ноутбука без промежуточного zoom-режима.
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Advance laptop boot/shutdown timers and keep its app state consistent."""
         self.model.laptop_zoom = 1.0 if self.model.laptop_open else 0.0
 
         if self.model.laptop_power_state == "BOOTING":
@@ -153,13 +129,7 @@ class LaptopControllerMixin:
                 self.model.laptop_boot_stage = "boot_black"
 
     def _update_hack(self) -> None:
-        """Прогресс взлома через ноутбук (Claude Mythos).
-
-        Args:
-            Нет.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Продвигает взлом, лог строк и окончание ночного задания."""
         # Взлом запускается из Claude Mythos и продвигается только пока сервер ON.
         # Во время ребута, перегрузки или выключенного сервера прогресс стоит.
         if self.model.laptop_app == "claude_mythos" and self.model.server_state == "ON" and not self.model.server_rebooting and not self.model.server_overload:
@@ -175,6 +145,7 @@ class LaptopControllerMixin:
                     start_post_hack()
 
     def _update_reboot_sound(self) -> None:
+        """Синхронизирует звук перезагрузки с текущей фазой ноутбука."""
         if self.model.server_rebooting and not self._wait_playing:
             self._wait_playing = True
             self._wait_timer = 0
@@ -193,6 +164,7 @@ class LaptopControllerMixin:
                     self.snd_wait.play()
 
     def _start_laptop_boot(self) -> None:
+        """Start a full laptop boot sequence from the powered-off state."""
         if self.model.laptop_power_state != "OFF":
             return
         self.model.laptop_power_state = "BOOTING"
@@ -214,6 +186,7 @@ class LaptopControllerMixin:
         self._trigger_laptop_power_noise("on")
 
     def _start_laptop_shutdown(self) -> None:
+        """Start laptop shutdown and initialize its timers/state."""
         if self.model.laptop_power_state != "ON":
             return
         self._trigger_laptop_power_noise("off")
@@ -231,18 +204,13 @@ class LaptopControllerMixin:
             self.snd_laptop_off.play()
 
     def _trigger_laptop_power_noise(self, event: str) -> None:
-        """Forward laptop on/off sounds to Algem with distance-based reaction.
-
-        Args:
-            event: Параметр типа ``str``, используемый методом ``_trigger_laptop_power_noise``.
-
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта."""
+        """Создаёт шум от питания ноутбука и передаёт его ИИ как источник интереса."""
         if self.model.night <= 1:
             return
         self.model.notify_laptop_power_event(event)
 
     def _sync_server_with_laptop_shutdown(self) -> None:
+        """Согласует выключение ноутбука с состоянием сервера и звуковыми каналами."""
         self.model.server_overload = False
         self.model.server_overload_warn = 0
         self.model.server_rebooting = False
