@@ -202,9 +202,15 @@ class MenuView:
         self.screen.blit(self.vignette, (0, 0))
 
     def draw_menu(self, model):
+        sx, sy = self.scale_x, self.scale_y
+
+        if model.game_completed and self.star_image is not None:
+            star_x = self.w - self.star_image.get_width() - int(30 * sx)
+            star_y = int(30 * sy)
+            self.screen.blit(self.star_image, (star_x, star_y))
+
         self._draw_menu_bg(model)
 
-        sx, sy = self.scale_x, self.scale_y
         title_x = int(100 * sx)
         title_top = self.title_font.render("FIVE NIGHTS", True, (255, 255, 255))
         title_bot = self.title_font.render("AT RTF", True, (255, 255, 255))
@@ -241,11 +247,6 @@ class MenuView:
         text_exit = ">> Exit" if model.hovered_button == "exit" else "   Exit"
         surf_exit = self.button_font.render(text_exit, True, color_exit)
         self.screen.blit(surf_exit, (btn_x, int(510 * sy)))
-
-        if model.game_completed and self.star_image is not None:
-            star_x = self.w - self.star_image.get_width() - int(30 * sx)
-            star_y = int(30 * sy)
-            self.screen.blit(self.star_image, (star_x, star_y))
 
         pygame.display.flip()
 
