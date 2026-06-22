@@ -418,7 +418,6 @@ def main():
                 hold_last=0.8,
             )
             screamer = None
-            _preload_night_transfer()
             state = "GAME"
         elif state == "GAME":
             for e in pygame.event.get():
@@ -587,6 +586,8 @@ def main():
             night_complete_tick += 1
             completed_night = game_m.night
 
+            if not _nt_video_frames:
+                _preload_night_transfer()
             video_done = True
             if _nt_video_frames:
                 frame_idx = min(
