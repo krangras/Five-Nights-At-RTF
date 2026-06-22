@@ -1,0 +1,22 @@
+[project]
+name = "five-nights-at-rtf"
+version = "0.1.0"
+description = "Five Nights At RTF — survival horror game"
+requires-python = ">=3.14"
+dependencies = [
+    "pygame-ce>=2.5.7",
+    "numpy>=2.4.6",
+    "opencv-python>=4.13.0.92",
+    "mss>=10.2.0",
+    "Pillow>=11.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.21.0",
+    "pytest>=8.3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+python_files = ["test_*.py"]

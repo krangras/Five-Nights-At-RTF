@@ -1,0 +1,21 @@
+.gitignore
+venv
+.venv
+AGENTS.md
+opencode.json
+__pycache__
+save.txt
+FiveNights At RTF.zip
+build/
+dist/
+*.spec
+tests/algem_ai_realtime_test.py
+algem_ai_realtime_test*.py
+Five Nights At RTF.zip
+save.json
+settings.json
+assets/.cache/
+tools/*_debug.png
+.pytest_cache/
+*.pyc
+FiveNightsAtRTF/
