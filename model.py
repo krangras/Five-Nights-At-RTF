@@ -7,7 +7,7 @@ class MenuModel:
 
         self.saved_night = load_save()
         self.continue_available = self.saved_night > 0
-        self.game_completed = self.saved_night >= 5
+        self.game_completed = self.saved_night > 5
         
         # Состояния анимации Кошмарного Алгема
         self.algem_state = "NORMAL"

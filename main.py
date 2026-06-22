@@ -395,7 +395,7 @@ def main():
             clock.tick(60)
         elif state == "START_CONTINUE":
             load_start = pygame.time.get_ticks()
-            _continue_night = load_save()
+            _continue_night = min(load_save(), 5)
             state = "LOADING"
         elif state == "LOADING":
             draw_loading(screen, pygame.time.get_ticks() - load_start)
@@ -454,7 +454,7 @@ def main():
                     game_over_tick = 0
                 continue
             elif game_m.night_complete:
-                save_progress(min(game_m.night + 1, 5))
+                save_progress(min(game_m.night + 1, 6))
                 pygame.mixer.stop()
                 night_complete_tick = 0
                 if "night_ends" in _snd_cache:
@@ -478,6 +478,7 @@ def main():
                     lecture_sound = None
                     menu_m.saved_night = load_save()
                     menu_m.continue_available = menu_m.saved_night > 0
+                    menu_m.game_completed = menu_m.saved_night > 5
                     state = "MENU"
 
             screamer.update(dt)
@@ -513,6 +514,7 @@ def main():
                     lecture_sound = None
                     menu_m.saved_night = load_save()
                     menu_m.continue_available = menu_m.saved_night > 0
+                    menu_m.game_completed = menu_m.saved_night > 5
                     state = "MENU"
 
             game_surface.fill((0, 0, 0))
@@ -548,6 +550,7 @@ def main():
                     hack_timeout_sound = None
                     menu_m.saved_night = load_save()
                     menu_m.continue_available = menu_m.saved_night > 0
+                    menu_m.game_completed = menu_m.saved_night > 5
                     state = "MENU"
 
             game_surface.fill((0, 0, 0))
@@ -584,6 +587,7 @@ def main():
                     pygame.mixer.stop()
                     menu_m.saved_night = load_save()
                     menu_m.continue_available = menu_m.saved_night > 0
+                    menu_m.game_completed = menu_m.saved_night > 5
                     state = "MENU"
                     continue
 
@@ -607,6 +611,7 @@ def main():
                 pygame.mixer.stop()
                 menu_m.saved_night = load_save()
                 menu_m.continue_available = menu_m.saved_night > 0
+                menu_m.game_completed = menu_m.saved_night > 5
                 if completed_night >= 5:
                     final_scene_tick = 0
                     final_scene_phase = "FADE_IN"
@@ -683,6 +688,7 @@ def main():
                     final_scene_speech_chan = None
                     menu_m.saved_night = load_save()
                     menu_m.continue_available = menu_m.saved_night > 0
+                    menu_m.game_completed = menu_m.saved_night > 5
                     state = "MENU"
 
             _blit_or_scale(game_surface, screen)
