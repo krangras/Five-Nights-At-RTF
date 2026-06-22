@@ -924,13 +924,14 @@ class GamePresenter:
                 self.model.algem_location, self.model.algem_prev_location
             )
         )
+        play_leave_static = cam_visible and not self._suppress_algem_leave_static()
 
         if trigger_now > 0 and self._prev_algem_trigger == 0:
-            if self.snd_algem_leave and cam_visible:
+            if self.snd_algem_leave and play_leave_static:
                 self._algem_leave_channel.play(self.snd_algem_leave, loops=-1)
-        elif trigger_now > 0 and cam_visible and self.snd_algem_leave and not self._algem_leave_channel.get_busy():
+        elif trigger_now > 0 and play_leave_static and self.snd_algem_leave and not self._algem_leave_channel.get_busy():
             self._algem_leave_channel.play(self.snd_algem_leave, loops=-1)
-        elif trigger_now > 0 and not cam_visible:
+        elif trigger_now > 0 and not play_leave_static:
             self._algem_leave_channel.stop()
         elif trigger_now == 0 and self._prev_algem_trigger > 0:
             self._algem_leave_channel.stop()
@@ -1105,13 +1106,32 @@ class GamePresenter:
         )
 
     def _is_direct_vent_camera_view(self, source_node: int) -> bool:
+        if source_node not in VENT_CAMERAS:
+            return False
+        seal_id = SEAL_CAMERA_MAP.get(source_node)
+        if seal_id is not None and self.model.seals.get(seal_id) == SealState.CLOSED:
+            # Door is closed: the player sees the metal cover, not Algem.
+            # Crawl audio must stay audible behind the door.
+            return False
         return bool(
-            source_node in VENT_CAMERAS
-            and self.model.tablet_open
+            self.model.tablet_open
             and not self.model.tablet_animating
             and not getattr(self.view, "vent_map_mode", False)
             and self.model.camera_idx == source_node
         )
+
+    def _suppress_algem_leave_static(self) -> bool:
+        cam_idx = self.model.camera_idx
+        if cam_idx not in VENT_CAMERAS:
+            return False
+        seal_id = SEAL_CAMERA_MAP.get(cam_idx)
+        seal_state = self.model.seals.get(seal_id) if seal_id is not None else None
+        algem_here = cam_idx in (self.model.algem_location, self.model.algem_prev_location)
+
+        # Помеха/alegem_is_leaving должна пропадать только когда железная
+        # дверка уже реально CLOSED. Пока идёт SEALING, вент ещё открыт,
+        # значит обычная камера может честно показывать/звучать как движение.
+        return bool(seal_state == SealState.CLOSED and algem_here)
 
     @staticmethod
     def _listener_audio_node(
@@ -1180,11 +1200,14 @@ class GamePresenter:
         _ = last_regular_cam
         if algem_node not in VENT_CAMERAS:
             return 0.0
+        seal_id = SEAL_CAMERA_MAP.get(algem_node)
+        seal_state = self.model.seals.get(seal_id) if seal_id is not None else None
         if (
             tablet_open
             and not tablet_animating
             and not self._is_vent_map_open()
             and camera_idx == algem_node
+            and seal_state != SealState.CLOSED
         ):
             return 0.0
         listener_node = self._listener_audio_node(
@@ -1293,7 +1316,13 @@ class GamePresenter:
             self._last_vent_cam = idx
         else:
             self._last_regular_cam = idx
-        if self.snd_cam_switch:
+        play_switch_sound = True
+        if idx in VENT_CAMERAS:
+            seal_id = SEAL_CAMERA_MAP.get(idx)
+            seal_state = self.model.seals.get(seal_id) if seal_id is not None else None
+            if seal_state == SealState.CLOSED and idx == self.model.algem_location:
+                play_switch_sound = False
+        if play_switch_sound and self.snd_cam_switch:
             self._cam_switch_channel.play(self.snd_cam_switch)
 
     def _toggle_server(self) -> None:
@@ -1400,13 +1429,23 @@ class GamePresenter:
     def _update_seal_sound(self) -> None:
         """Обновить циклическое воспроизведение звука блокировки."""
         for seal_id, prev_state in self._prev_seal_states.items():
-            if (
-                prev_state == SealState.SEALING
-                and self.model.seals.get(seal_id) == SealState.CLOSED
-                and self.snd_vent_close
-            ):
-                self.snd_vent_close.play()
+            seal_now = self.model.seals.get(seal_id)
+            if prev_state == SealState.SEALING and seal_now == SealState.CLOSED:
+                if self.snd_vent_close:
+                    self.snd_vent_close.play()
                 self._vent_seal_just_closed = 60
+
+                # Если дверка закрылась прямо перед Алгемом, должен быть
+                # отдельный удар/стук по металлу. Это не camera-switch и не
+                # alemem_is_leaving glitch, а реакция на успешный блок.
+                vent_node = VENT_SEALS.get(seal_id)
+                if (
+                    vent_node is not None
+                    and vent_node in (self.model.algem_location, self.model.algem_prev_location)
+                    and self.snd_knock
+                ):
+                    self.snd_knock.play()
+                    self._vent_block_signature = ("closed-hit", vent_node)
 
         active = any(
             self.model.seals.get(s) == SealState.SEALING
