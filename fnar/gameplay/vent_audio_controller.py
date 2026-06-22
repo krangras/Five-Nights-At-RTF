@@ -11,10 +11,12 @@ from fnar.services.spatial_audio import (
     AUDIO_OFFICE_FLOOR,
     AUDIO_SEALING_SOURCE_GAIN,
     AUDIO_UNREACHABLE_DISTANCE,
+    AUDIO_MAX_BUCKET,
     AUDIO_VENT_MAP_GAIN,
     BASE_AUDIO_GRAPH,
     _bucket_from_weighted_distance,
     _weighted_audio_distance,
+    _volume_from_distance,
 )
 
 
@@ -307,12 +309,12 @@ class VentAudioControllerMixin:
         _ = last_regular_cam
         if algem_node not in VENT_CAMERAS:
             return AUDIO_MAX_BUCKET
-        listener_node = GamePresenter._listener_audio_node(
+        listener_node = VentAudioControllerMixin._listener_audio_node(
             camera_idx=camera_idx,
             tablet_open=tablet_open,
             tablet_animating=tablet_animating,
         )
-        return GamePresenter._camera_audio_distance(listener_node, algem_node)
+        return VentAudioControllerMixin._camera_audio_distance(listener_node, algem_node)
 
     def _vent_listen_weighted_distance(
         self,

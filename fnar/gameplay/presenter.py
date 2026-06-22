@@ -38,7 +38,7 @@ from .laptop_controller import LaptopControllerMixin
 from .model import GameModel, SealState
 from .tablet_controller import TabletControllerMixin
 from .vent_audio_controller import DANGER_CAMERA_NODE, VentAudioControllerMixin
-from fnar.services.spatial_audio import CHANNEL_MASTERS, TALK_DIST_PARAMS
+from fnar.services.spatial_audio import CHANNEL_MASTERS, TALK_DIST_PARAMS, _volume_from_distance
 
 
 class GamePresenter(

@@ -6,6 +6,8 @@ import random
 import numpy as np
 import pygame
 
+from .camera_graph import is_vent_detour_away_from_office
+
 
 class CameraRendererMixin:
     """Render CCTV effects, camera UI, maps, and ventilation seals."""

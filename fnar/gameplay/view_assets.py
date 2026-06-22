@@ -23,7 +23,13 @@ class ViewAssetsMixin:
 
     def __init__(self, screen):
         self.screen = screen
-        screen_w, screen_h = screen.get_size()
+        try:
+            screen_w, screen_h = screen.get_size()
+        except pygame.error:
+            pygame.display.init()
+            screen = pygame.display.set_mode((1280, 720))
+            self.screen = screen
+            screen_w, screen_h = screen.get_size()
 
         raw_off = _safe_load_image(
             "assets/office/server_is_off.png"
@@ -511,6 +517,7 @@ class ViewAssetsMixin:
         if os.path.exists(crt_path):
             self.crt_mask = _safe_load_image(crt_path, alpha=True)
         else:
+            os.makedirs(os.path.dirname(crt_path), exist_ok=True)
             cx, cy = screen_w / 2, screen_h / 2
             max_dist = ((cx) ** 2 + (cy) ** 2) ** 0.5
             for y in range(screen_h):
@@ -536,7 +543,7 @@ class ViewAssetsMixin:
 
         # Glitch frames для Алгема (старые noice*.png)
         self._glitch_frames = []
-        for fname in sorted(os.listdir("assets/cctv")):
+        for fname in sorted(os.listdir("assets/cctv") if os.path.isdir("assets/cctv") else ()):
             if fname.lower().startswith("noice") and (
                 fname.lower().endswith(".png")
                 or fname.lower().endswith(".jpg")

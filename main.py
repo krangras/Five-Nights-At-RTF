@@ -229,13 +229,13 @@ def main():
                 _snd_cache[_key].set_volume(0.55)
             elif _key == "disclaimer":
                 _snd_cache[_key].set_volume(0.65)
-        except pygame.error:
+        except (FileNotFoundError, pygame.error):
             pass
     _lecture_sounds_cache: list[pygame.mixer.Sound] = []
     for i in range(1, 7):
         try:
             _lecture_sounds_cache.append(pygame.mixer.Sound(f"sounds/lectures/lecture{i}.mp3"))
-        except pygame.error:
+        except (FileNotFoundError, pygame.error):
             pass
     _final_scene_sounds: dict[str, pygame.mixer.Sound] = {}
     for _key, _path in [
@@ -244,7 +244,7 @@ def main():
     ]:
         try:
             _final_scene_sounds[_key] = pygame.mixer.Sound(_path)
-        except pygame.error:
+        except (FileNotFoundError, pygame.error):
             pass
 
     menu_m, menu_v = MenuModel(), MenuView(screen)
@@ -322,7 +322,7 @@ def main():
         bright = pygame.Surface((sw, sh), pygame.SRCALPHA)
         bright.fill((18, 18, 18, 0))
         disclaimer_surf.blit(bright, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
-    except pygame.error:
+    except (FileNotFoundError, pygame.error):
         disclaimer_surf = None
 
     game_surface = pygame.Surface(GAME_SIZE)

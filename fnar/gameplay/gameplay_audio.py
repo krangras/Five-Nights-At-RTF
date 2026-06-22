@@ -6,6 +6,8 @@ import numpy as np
 import pygame
 
 from .algem_ai import AlgemEventType
+from .camera_graph import SEAL_CAMERA_MAP, VENT_CAMERAS
+from .vent_seal import SealState
 from fnar.services.audio_mix import effective_volume
 from fnar.services.settings import save_settings
 from fnar.services.spatial_audio import (
@@ -417,6 +419,6 @@ class GameplayAudioMixin:
             Значение типа ``pygame.mixer.Sound | None``."""
         try:
             return pygame.mixer.Sound(path)
-        except pygame.error:
+        except (FileNotFoundError, pygame.error):
             print(f"[GamePresenter] Sound not found: {path}")
             return None

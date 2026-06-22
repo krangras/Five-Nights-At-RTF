@@ -1,5 +1,8 @@
 """Tablet animation, camera switching, and bait presentation."""
 
+from .camera_graph import SEAL_CAMERA_MAP, VENT_CAMERAS
+from .vent_seal import SealState
+
 class TabletControllerMixin:
     """Control tablet state without owning domain data."""
 

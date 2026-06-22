@@ -2,7 +2,8 @@
 
 import pygame
 
-from .model import SealState
+from .camera_graph import VENT_CAMERAS
+from .vent_seal import SealState
 
 
 class InputControllerMixin:

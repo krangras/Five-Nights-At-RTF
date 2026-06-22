@@ -1,5 +1,7 @@
 """Gameplay view facade assembled from focused rendering components."""
 
+from fnar.services.laptop_power import get_laptop_power_sequence
+
 from .camera_renderer import CameraRendererMixin
 from .laptop_projection import LaptopProjectionMixin
 from .laptop_renderer import LaptopRendererMixin
