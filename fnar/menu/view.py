@@ -13,6 +13,14 @@ from .effects import (
 
 class MenuView:
     def __init__(self, screen):
+        """Выполнить ``init``.
+        
+        Args:
+            screen: Входной параметр метода ``__init__``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         self.screen = screen
         self.btn_fullscreen_rect = pygame.Rect(0, 0, 0, 0)
         self.btn_back_rect = pygame.Rect(0, 0, 0, 0)
@@ -21,12 +29,28 @@ class MenuView:
         self._update_button_rects()
 
     def update_screen(self, screen):
+        """Выполнить ``update screen``.
+        
+        Args:
+            screen: Входной параметр метода ``update_screen``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         self.screen = screen
         self._configure_screen_metrics()
         self._load_visual_state()
         self._update_button_rects()
 
     def _configure_screen_metrics(self):
+        """Выполнить ``configure screen metrics``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         info = pygame.display.Info()
         self.w = info.current_w
         self.h = info.current_h
@@ -34,6 +58,14 @@ class MenuView:
         self.scale_y = self.h / 768
 
     def _load_visual_state(self):
+        """Выполнить ``load visual state``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         fonts = load_menu_fonts(self.scale_y)
         backgrounds = load_menu_backgrounds((self.w, self.h))
         self.title_font = fonts.title
@@ -46,6 +78,14 @@ class MenuView:
         self.star_image = load_menu_star(self.scale_x, self.scale_y)
 
     def _update_button_rects(self):
+        """Выполнить ``update button rects``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         sx, sy = self.scale_x, self.scale_y
         btn_x = int(100 * sx)
         surf_ng = self.button_font.render(">> New Game", True, (255, 255, 255))
@@ -58,6 +98,15 @@ class MenuView:
         self.btn_exit_rect = pygame.Rect(btn_x, int(510 * sy), surf_ex.get_width(), surf_ex.get_height())
 
     def _draw_menu_bg(self, model, draw_star=True):
+        """Выполнить ``draw menu bg``.
+        
+        Args:
+            model: Входной параметр метода ``_draw_menu_bg``.
+            draw_star: Входной параметр метода ``_draw_menu_bg``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         sx, sy = self.scale_x, self.scale_y
 
         if model.algem_state == "NORMAL":
@@ -79,6 +128,14 @@ class MenuView:
         self.screen.blit(self.vignette, (0, 0))
 
     def draw_menu(self, model):
+        """Выполнить ``draw menu``.
+        
+        Args:
+            model: Входной параметр метода ``draw_menu``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         self._draw_menu_bg(model)
         sx, sy = self.scale_x, self.scale_y
         title_x = int(100 * sx)
@@ -121,6 +178,16 @@ class MenuView:
         pygame.display.flip()
 
     def draw_settings(self, is_fullscreen: bool, hovered: str | None = None, model=None):
+        """Выполнить ``draw settings``.
+        
+        Args:
+            is_fullscreen: Входной параметр метода ``draw_settings``.
+            hovered: Входной параметр метода ``draw_settings``.
+            model: Входной параметр метода ``draw_settings``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         if model:
             self._draw_menu_bg(model, draw_star=False)
         else:

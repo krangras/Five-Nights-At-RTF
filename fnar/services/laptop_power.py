@@ -11,6 +11,15 @@ LAPTOP_SHUTDOWN_TICKS = 150
 
 
 def get_laptop_power_sequence(power_state: str, power_timer: int) -> tuple[str, float]:
+    """Выполнить ``get laptop power sequence``.
+    
+    Args:
+        power_state: Входной параметр метода ``get_laptop_power_sequence``.
+        power_timer: Входной параметр метода ``get_laptop_power_sequence``.
+    
+    Returns:
+        Значение типа ``tuple[str, float]``.
+    """
     if power_state == "BOOTING":
         progress = max(0.0, min(1.0, 1.0 - power_timer / LAPTOP_BOOT_TICKS))
         if progress < 0.18:

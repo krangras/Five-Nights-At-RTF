@@ -12,6 +12,16 @@ import pygame
 
 
 def safe_load_image(path: str, alpha: bool = False, fallback_size: tuple[int, int] = (1280, 720)) -> pygame.Surface:
+    """Выполнить ``safe load image``.
+    
+    Args:
+        path: Входной параметр метода ``safe_load_image``.
+        alpha: Входной параметр метода ``safe_load_image``.
+        fallback_size: Входной параметр метода ``safe_load_image``.
+    
+    Returns:
+        Значение типа ``pygame.Surface``.
+    """
     try:
         raw = pygame.image.load(path)
         return raw.convert_alpha() if alpha else raw.convert()
@@ -29,6 +39,15 @@ def safe_load_image(path: str, alpha: bool = False, fallback_size: tuple[int, in
 
 
 def safe_font(path: str, size: int) -> pygame.font.Font:
+    """Выполнить ``safe font``.
+    
+    Args:
+        path: Входной параметр метода ``safe_font``.
+        size: Входной параметр метода ``safe_font``.
+    
+    Returns:
+        Значение типа ``pygame.font.Font``.
+    """
     try:
         return pygame.font.Font(path, size)
     except (FileNotFoundError, pygame.error):
@@ -36,6 +55,15 @@ def safe_font(path: str, size: int) -> pygame.font.Font:
 
 
 def normalize_brightness(surfaces_with_paths, target=25):
+    """Выполнить ``normalize brightness``.
+    
+    Args:
+        surfaces_with_paths: Входной параметр метода ``normalize_brightness``.
+        target: Входной параметр метода ``normalize_brightness``.
+    
+    Returns:
+        Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+    """
     cache_dir = os.path.join(os.environ.get("APPDATA", "."), "FiveNightsAtRTF", "cache", "norm")
     for img, src_path in surfaces_with_paths:
         if src_path:

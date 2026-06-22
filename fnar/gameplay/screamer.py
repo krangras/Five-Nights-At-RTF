@@ -10,6 +10,23 @@ class ScreamerPlayer:
     def __init__(self, frames_dir="assets/screamer", screen_size=(1280, 720),
                  speed=1.0, door_frames=15, door_speed=8.0, scream_frame=40,
                  delay_default=0.04, red_start=60, hold_last=0.0, red_duration=1.5):
+        """Выполнить ``init``.
+        
+        Args:
+            frames_dir: Входной параметр метода ``__init__``.
+            screen_size: Входной параметр метода ``__init__``.
+            speed: Входной параметр метода ``__init__``.
+            door_frames: Входной параметр метода ``__init__``.
+            door_speed: Входной параметр метода ``__init__``.
+            scream_frame: Входной параметр метода ``__init__``.
+            delay_default: Входной параметр метода ``__init__``.
+            red_start: Входной параметр метода ``__init__``.
+            hold_last: Входной параметр метода ``__init__``.
+            red_duration: Входной параметр метода ``__init__``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         self.screen_size = screen_size
         sw, sh = screen_size
         self._frames: list[tuple[pygame.Surface, float]] = []
@@ -24,6 +41,14 @@ class ScreamerPlayer:
         files = sorted(glob.glob(png_pattern) + glob.glob(jpg_pattern))
 
         def _sort_key(path):
+            """Выполнить ``sort key``.
+            
+            Args:
+                path: Входной параметр метода ``_sort_key``.
+            
+            Returns:
+                Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+            """
             base = os.path.basename(path)
             m = re.search(r"frame[_-](\d+)", base)
             return int(m.group(1)) if m else 0
@@ -56,9 +81,25 @@ class ScreamerPlayer:
 
     @property
     def done(self):
+        """Выполнить ``done``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         return self._done
 
     def update(self, dt: float):
+        """Выполнить ``update``.
+        
+        Args:
+            dt: Входной параметр метода ``update``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         if self._done or not self._frames:
             return
         if self._hold_timer > 0.0:
@@ -84,6 +125,14 @@ class ScreamerPlayer:
             self.scream_triggered = True
 
     def draw(self, surface: pygame.Surface):
+        """Выполнить ``draw``.
+        
+        Args:
+            surface: Входной параметр метода ``draw``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         if self._frames:
             surface.blit(self._frames[self._idx][0], (0, 0))
             if self._red_elapsed > 0.0:
@@ -93,6 +142,14 @@ class ScreamerPlayer:
                 surface.blit(self._red_overlay, (0, 0))
 
     def reset(self):
+        """Выполнить ``reset``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         self._idx = 0
         self._elapsed = 0.0
         self._done = False

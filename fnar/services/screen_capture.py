@@ -55,6 +55,14 @@ class ScreenCapture:
         self._thread.start()
 
     def _capture_loop(self):
+        """Выполнить ``capture loop``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         sct = mss.mss()
         monitor = sct.monitors[1]  # primary monitor
         while self._running:
@@ -78,6 +86,14 @@ class ScreenCapture:
             time.sleep(self._interval)
 
     def stop(self):
+        """Выполнить ``stop``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         self._running = False
         if self._thread.is_alive():
             self._thread.join(timeout=2.0)

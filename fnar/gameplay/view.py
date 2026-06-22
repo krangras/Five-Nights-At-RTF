@@ -28,6 +28,15 @@ LAPTOP_PROJECTION_CONFIG_PATH = os.path.join(
 )
 class GameView:
     def _should_show_directional_vent_leave(self, model, cam_idx: int) -> bool:
+        """Выполнить ``should show directional vent leave``.
+        
+        Args:
+            model: Входной параметр метода ``_should_show_directional_vent_leave``.
+            cam_idx: Входной параметр метода ``_should_show_directional_vent_leave``.
+        
+        Returns:
+            Значение типа ``bool``.
+        """
         if cam_idx not in (8, 9, 10, 11):
             return False
         if model.algem_location != cam_idx or model.algem_trigger <= 0:
@@ -43,6 +52,14 @@ class GameView:
         return is_vent_detour_away_from_office(source, target)
 
     def __init__(self, screen):
+        """Выполнить ``init``.
+        
+        Args:
+            screen: Входной параметр метода ``__init__``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         self.screen = screen
         screen_w, screen_h = screen.get_size()
 
@@ -307,6 +324,14 @@ class GameView:
         self._algem_room_surf = None
 
         def _load_cam(path):
+            """Выполнить ``load cam``.
+            
+            Args:
+                path: Входной параметр метода ``_load_cam``.
+            
+            Returns:
+                Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+            """
             try:
                 raw = _safe_load_image(path)
                 if path.startswith("assets/vents_cameras"):
@@ -327,6 +352,14 @@ class GameView:
                 return None
 
         def _cache_laptop_gradients():
+            """Выполнить ``cache laptop gradients``.
+            
+            Args:
+                Нет аргументов.
+            
+            Returns:
+                Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+            """
             sw, sh = self.screen_w, self.screen_h
             tb_h = 40
             tb_top = sh - tb_h
@@ -819,6 +852,16 @@ class GameView:
         return surf
 
     def _ctext(self, font, text, color):
+        """Выполнить ``ctext``.
+        
+        Args:
+            font: Входной параметр метода ``_ctext``.
+            text: Входной параметр метода ``_ctext``.
+            color: Входной параметр метода ``_ctext``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         key = (id(font), text, color)
         cached = self._text_cache.get(key)
         if cached is None:
@@ -827,16 +870,42 @@ class GameView:
         return cached
 
     def is_server_clicked(self, mouse_pos, offset):
+        """Выполнить ``is server clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_server_clicked``.
+            offset: Входной параметр метода ``is_server_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         img_x = (mouse_pos[0] + offset) / self.scale
         img_y = mouse_pos[1] / self.scale
         return self.server_hotspot.collidepoint(img_x, img_y)
 
     def is_laptop_clicked(self, mouse_pos, offset):
+        """Выполнить ``is laptop clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_laptop_clicked``.
+            offset: Входной параметр метода ``is_laptop_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         img_x = (mouse_pos[0] + offset) / self.scale
         img_y = mouse_pos[1] / self.scale
         return self.laptop_hotspot.collidepoint(img_x, img_y)
 
     def is_tabbutton_clicked(self, mouse_pos):
+        """Выполнить ``is tabbutton clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_tabbutton_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         if mouse_pos is None:
             return False
         tx = (
@@ -853,21 +922,53 @@ class GameView:
         return rect.collidepoint(mouse_pos)
 
     def is_mutecall_clicked(self, mouse_pos):
+        """Выполнить ``is mutecall clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_mutecall_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         if mouse_pos is None:
             return False
         return self._mutecall_rect.collidepoint(mouse_pos)
 
     def is_bait_clicked(self, mouse_pos):
+        """Выполнить ``is bait clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_bait_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         if mouse_pos is None:
             return False
         return self._bait_btn_rect.collidepoint(mouse_pos)
 
     def is_map_clicked(self, mouse_pos):
+        """Выполнить ``is map clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_map_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         if mouse_pos is None:
             return False
         return self._map_btn_rect.collidepoint(mouse_pos)
 
     def is_laptop_icon_clicked(self, mouse_pos):
+        """Выполнить ``is laptop icon clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_laptop_icon_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         if not hasattr(self, "_laptop_icons"):
             return None
         for rect, key in self._laptop_icons:
@@ -876,11 +977,27 @@ class GameView:
         return None
 
     def is_laptop_start_clicked(self, mouse_pos):
+        """Выполнить ``is laptop start clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_laptop_start_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         return hasattr(
             self, "_laptop_start_rect"
         ) and self._laptop_start_rect.collidepoint(mouse_pos)
 
     def is_laptop_menu_item_clicked(self, mouse_pos):
+        """Выполнить ``is laptop menu item clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_laptop_menu_item_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         if not hasattr(self, "_laptop_menu_items"):
             return None
         for rect, key in self._laptop_menu_items:
@@ -889,26 +1006,66 @@ class GameView:
         return None
 
     def is_laptop_close_clicked(self, mouse_pos):
+        """Выполнить ``is laptop close clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_laptop_close_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         return hasattr(
             self, "_laptop_close_btn"
         ) and self._laptop_close_btn.collidepoint(mouse_pos)
 
     def is_laptop_server_btn_clicked(self, mouse_pos):
+        """Выполнить ``is laptop server btn clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_laptop_server_btn_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         return hasattr(
             self, "_laptop_server_btn"
         ) and self._laptop_server_btn.collidepoint(mouse_pos)
 
     def is_laptop_reboot_btn_clicked(self, mouse_pos):
+        """Выполнить ``is laptop reboot btn clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_laptop_reboot_btn_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         return hasattr(
             self, "_laptop_reboot_btn"
         ) and self._laptop_reboot_btn.collidepoint(mouse_pos)
 
     def is_laptop_power_clicked(self, mouse_pos):
+        """Выполнить ``is laptop power clicked``.
+        
+        Args:
+            mouse_pos: Входной параметр метода ``is_laptop_power_clicked``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         return hasattr(
             self, "_laptop_power_btn"
         ) and self._laptop_power_btn.collidepoint(mouse_pos)
 
     def _draw_hack_bar(self, model) -> None:
+        """Выполнить ``draw hack bar``.
+        
+        Args:
+            model: Входной параметр метода ``_draw_hack_bar``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         bar_w, bar_h = 300, 20
         x = self.screen_w - bar_w - 88
         y = 16
@@ -1086,6 +1243,14 @@ class GameView:
             )
 
     def _draw_laptop_power_transition(self, model) -> None:
+        """Выполнить ``draw laptop power transition``.
+        
+        Args:
+            model: Входной параметр метода ``_draw_laptop_power_transition``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         sw, sh = self.screen_w, self.screen_h
         phase, phase_t = get_laptop_power_sequence(
             model.laptop_power_state, model.laptop_power_timer
@@ -1110,6 +1275,16 @@ class GameView:
     def _render_laptop_phase_surface(
         self, phase: str, phase_t: float, model=None
     ) -> pygame.Surface:
+        """Выполнить ``render laptop phase surface``.
+        
+        Args:
+            phase: Входной параметр метода ``_render_laptop_phase_surface``.
+            phase_t: Входной параметр метода ``_render_laptop_phase_surface``.
+            model: Входной параметр метода ``_render_laptop_phase_surface``.
+        
+        Returns:
+            Значение типа ``pygame.Surface``.
+        """
         surface = pygame.Surface((self.screen_w, self.screen_h))
 
         if phase == "boot_wake":
@@ -1134,6 +1309,15 @@ class GameView:
     def _draw_laptop_power_button(
         self, power_state: str, rect: pygame.Rect
     ) -> None:
+        """Выполнить ``draw laptop power button``.
+        
+        Args:
+            power_state: Входной параметр метода ``_draw_laptop_power_button``.
+            rect: Входной параметр метода ``_draw_laptop_power_button``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         pulse = {
             "OFF": 0.10,
             "BOOTING": 0.28,
@@ -1165,13 +1349,37 @@ class GameView:
         pygame.draw.line(self.screen, symbol_color, (cx, cy - 8), (cx, cy + 1), 2)
 
     def _clamp01(self, value: float) -> float:
+        """Выполнить ``clamp01``.
+        
+        Args:
+            value: Входной параметр метода ``_clamp01``.
+        
+        Returns:
+            Значение типа ``float``.
+        """
         return max(0.0, min(1.0, value))
 
     def _ease_out_cubic(self, value: float) -> float:
+        """Выполнить ``ease out cubic``.
+        
+        Args:
+            value: Входной параметр метода ``_ease_out_cubic``.
+        
+        Returns:
+            Значение типа ``float``.
+        """
         t = self._clamp01(value)
         return 1.0 - (1.0 - t) ** 3
 
     def _ease_in_out(self, value: float) -> float:
+        """Выполнить ``ease in out``.
+        
+        Args:
+            value: Входной параметр метода ``_ease_in_out``.
+        
+        Returns:
+            Значение типа ``float``.
+        """
         t = self._clamp01(value)
         return t * t * (3.0 - 2.0 * t)
 
@@ -1183,6 +1391,18 @@ class GameView:
         height: int,
         alpha: int,
     ) -> None:
+        """Выполнить ``draw power scan line``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_power_scan_line``.
+            y: Входной параметр метода ``_draw_power_scan_line``.
+            width: Входной параметр метода ``_draw_power_scan_line``.
+            height: Входной параметр метода ``_draw_power_scan_line``.
+            alpha: Входной параметр метода ``_draw_power_scan_line``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         sw, _sh = surface.get_size()
         line = pygame.Surface((max(1, width), max(1, height)), pygame.SRCALPHA)
         line.fill((96, 132, 154, alpha))
@@ -1265,6 +1485,16 @@ class GameView:
         progress: float,
         alpha: int,
     ) -> None:
+        """Выполнить ``draw boot status panel``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_boot_status_panel``.
+            progress: Входной параметр метода ``_draw_boot_status_panel``.
+            alpha: Входной параметр метода ``_draw_boot_status_panel``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         sw, sh = surface.get_size()
         p = self._clamp01(progress)
         alpha = max(0, min(255, int(alpha)))
@@ -1323,6 +1553,16 @@ class GameView:
         title: str,
         lines: list[str],
     ) -> None:
+        """Выполнить ``draw plain boot screen``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_plain_boot_screen``.
+            title: Входной параметр метода ``_draw_plain_boot_screen``.
+            lines: Входной параметр метода ``_draw_plain_boot_screen``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         sw, sh = surface.get_size()
         surface.fill((0, 0, 0))
 
@@ -1415,6 +1655,16 @@ class GameView:
         title: str,
         subtitle: str,
     ) -> None:
+        """Выполнить ``draw plain center screen``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_plain_center_screen``.
+            title: Входной параметр метода ``_draw_plain_center_screen``.
+            subtitle: Входной параметр метода ``_draw_plain_center_screen``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         sw, sh = surface.get_size()
         surface.fill((0, 0, 0))
         cx = sw // 2
@@ -1432,6 +1682,16 @@ class GameView:
         progress: float,
         model=None,
     ) -> None:
+        """Выполнить ``draw boot animation``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_boot_animation``.
+            progress: Входной параметр метода ``_draw_boot_animation``.
+            model: Входной параметр метода ``_draw_boot_animation``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         sw, sh = surface.get_size()
         p = self._clamp01(progress)
 
@@ -1487,6 +1747,15 @@ class GameView:
         )
 
     def _draw_shutdown_animation(self, surface: pygame.Surface, progress: float) -> None:
+        """Выполнить ``draw shutdown animation``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_shutdown_animation``.
+            progress: Входной параметр метода ``_draw_shutdown_animation``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         p = self._clamp01(progress)
 
         if p < 0.62:
@@ -1505,6 +1774,16 @@ class GameView:
         top_color: tuple[int, int, int],
         bottom_color: tuple[int, int, int],
     ) -> None:
+        """Выполнить ``fill power background``.
+        
+        Args:
+            surface: Входной параметр метода ``_fill_power_background``.
+            top_color: Входной параметр метода ``_fill_power_background``.
+            bottom_color: Входной параметр метода ``_fill_power_background``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         sw, sh = surface.get_size()
         for y in range(sh):
             t = y / max(1, sh - 1)
@@ -1524,6 +1803,17 @@ class GameView:
     ) -> None:
         # Старый метод оставлен для совместимости, но он больше не используется
         # в анимациях питания.
+        """Выполнить ``draw panel sheen``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_panel_sheen``.
+            alpha: Входной параметр метода ``_draw_panel_sheen``.
+            width: Входной параметр метода ``_draw_panel_sheen``.
+            height: Входной параметр метода ``_draw_panel_sheen``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         sw, sh = surface.get_size()
         sheen = pygame.Surface((sw, sh), pygame.SRCALPHA)
         rect = pygame.Rect(sw // 2 - width // 2, sh // 2 - height // 2, width, height)
@@ -1537,29 +1827,82 @@ class GameView:
     def _draw_boot_wake_screen(
         self, surface: pygame.Surface, phase_t: float
     ) -> None:
+        """Выполнить ``draw boot wake screen``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_boot_wake_screen``.
+            phase_t: Входной параметр метода ``_draw_boot_wake_screen``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         self._draw_boot_animation(surface, phase_t * 0.18)
 
     def _draw_boot_post_screen(
         self, surface: pygame.Surface, phase_t: float
     ) -> None:
+        """Выполнить ``draw boot post screen``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_boot_post_screen``.
+            phase_t: Входной параметр метода ``_draw_boot_post_screen``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         self._draw_boot_animation(surface, 0.18 + phase_t * 0.44)
 
     def _draw_boot_loading_screen(
         self, surface: pygame.Surface, phase_t: float
     ) -> None:
+        """Выполнить ``draw boot loading screen``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_boot_loading_screen``.
+            phase_t: Входной параметр метода ``_draw_boot_loading_screen``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         self._draw_boot_animation(surface, 0.62 + phase_t * 0.38)
 
     def _draw_shutdown_message_screen(
         self, surface: pygame.Surface, phase_t: float
     ) -> None:
+        """Выполнить ``draw shutdown message screen``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_shutdown_message_screen``.
+            phase_t: Входной параметр метода ``_draw_shutdown_message_screen``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         self._draw_shutdown_animation(surface, phase_t * 0.48)
 
     def _draw_shutdown_fade_screen(
         self, surface: pygame.Surface, phase_t: float
     ) -> None:
+        """Выполнить ``draw shutdown fade screen``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_shutdown_fade_screen``.
+            phase_t: Входной параметр метода ``_draw_shutdown_fade_screen``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         self._draw_shutdown_animation(surface, 0.48 + phase_t * 0.52)
 
     def _draw_powered_off_screen(self, surface: pygame.Surface) -> None:
+        """Выполнить ``draw powered off screen``.
+        
+        Args:
+            surface: Входной параметр метода ``_draw_powered_off_screen``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         surface.fill((0, 0, 0))
         sw, sh = surface.get_size()
         message = "It is now safe to turn on your computer"
@@ -1585,6 +1928,14 @@ class GameView:
         surface.blit(text, (x, y))
 
     def _draw_laptop_screen(self, model) -> None:
+        """Выполнить ``draw laptop screen``.
+        
+        Args:
+            model: Входной параметр метода ``_draw_laptop_screen``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         sw, sh = self.screen_w, self.screen_h
         mx, my = (-100, -100)
 
@@ -2049,6 +2400,16 @@ class GameView:
         pygame.draw.polygon(self.screen, (0, 0, 0), cursor_pts, 1)
 
     def _draw_cctv_effects(self, camera_idx, model, suppress_algem_glitch: bool = False):
+        """Выполнить ``draw cctv effects``.
+        
+        Args:
+            camera_idx: Входной параметр метода ``_draw_cctv_effects``.
+            model: Входной параметр метода ``_draw_cctv_effects``.
+            suppress_algem_glitch: Входной параметр метода ``_draw_cctv_effects``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         sw, sh = self.screen_w, self.screen_h
 
         # ── 1. Процедурный шум (numpy, low-res) ───────────────────────
@@ -2095,6 +2456,15 @@ class GameView:
 
     def _draw_camera_ui(self, display_id, cam_name):
         # RECORD light (blinking)
+        """Выполнить ``draw camera ui``.
+        
+        Args:
+            display_id: Входной параметр метода ``_draw_camera_ui``.
+            cam_name: Входной параметр метода ``_draw_camera_ui``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         blink = (pygame.time.get_ticks() // 600) % 2 == 0
         if blink:
             pygame.draw.circle(
@@ -2128,6 +2498,14 @@ class GameView:
                 self.screen.set_at((cx, cy), c)
 
     def _draw_minimap(self, model):
+        """Выполнить ``draw minimap``.
+        
+        Args:
+            model: Входной параметр метода ``_draw_minimap``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         mx, my = self._minimap_pos
 
         if self.vent_map_mode:
@@ -2322,6 +2700,14 @@ class GameView:
         return None
 
     def get_minimap_hotspot(self, screen_pos):
+        """Выполнить ``get minimap hotspot``.
+        
+        Args:
+            screen_pos: Входной параметр метода ``get_minimap_hotspot``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         from .model import CAMERAS
 
         display_ids = {idx: disp for idx, disp, _name, _fname in CAMERAS}
@@ -2344,6 +2730,14 @@ class GameView:
         return None
 
     def draw(self, model):
+        """Выполнить ``draw``.
+        
+        Args:
+            model: Входной параметр метода ``draw``.
+        
+        Returns:
+            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
+        """
         offset = int((model.current_look + 1) / 2 * self.max_offset)
 
         # ── Зум на ноутбук ──────────────────────────────────────────

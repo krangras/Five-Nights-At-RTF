@@ -84,6 +84,14 @@ DANGER_CAMERA_NODE = 7
 
 
 def _phone_call_sound_path(night: int) -> str:
+    """Выполнить ``phone call sound path``.
+    
+    Args:
+        night: Входной параметр метода ``_phone_call_sound_path``.
+    
+    Returns:
+        Значение типа ``str``.
+    """
     night_idx = max(1, min(5, night))
     return f"sounds/ui/callnight{night_idx}.mp3"
 
@@ -97,6 +105,16 @@ class GamePresenter:
     """
 
     def __init__(self, model: GameModel, view, settings_data: dict | None = None) -> None:
+        """Выполнить ``init``.
+        
+        Args:
+            model: Входной параметр метода ``__init__``.
+            view: Входной параметр метода ``__init__``.
+            settings_data: Входной параметр метода ``__init__``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         self.model: GameModel = model
         self.view = view
         self.settings_data = ensure_audio_settings(settings_data)
@@ -281,19 +299,51 @@ class GamePresenter:
 
     @property
     def _off_frames(self) -> int:
+        """Выполнить ``off frames``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Значение типа ``int``.
+        """
         snd = self.snd_off
         return int(snd.get_length() * 60) + 1 if snd else 60
 
     @property
     def _gadget_sounds(self) -> list[pygame.mixer.Sound]:
+        """Выполнить ``gadget sounds``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Значение типа ``list[pygame.mixer.Sound]``.
+        """
         return self.__gadget_cache
 
     @property
     def _vent_sounds(self) -> list[pygame.mixer.Sound]:
+        """Выполнить ``vent sounds``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Значение типа ``list[pygame.mixer.Sound]``.
+        """
         return self.__vent_sounds_cache
 
     @property
     def _algem_talk_sounds(self) -> list[pygame.mixer.Sound]:
+        """Выполнить ``algem talk sounds``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Значение типа ``list[pygame.mixer.Sound]``.
+        """
         return self.__algem_talk_cache
 
     @staticmethod
@@ -320,6 +370,14 @@ class GamePresenter:
 
     @property
     def _talk_variants(self) -> dict[int, list[pygame.mixer.Sound]]:
+        """Выполнить ``talk variants``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Значение типа ``dict[int, list[pygame.mixer.Sound]]``.
+        """
         if self._algem_talk_variants is None:
             self._build_talk_variants()
         return self._algem_talk_variants
@@ -795,6 +853,14 @@ class GamePresenter:
             self.model.phone_call_active = False
 
     def _update_algem_events(self) -> None:
+        """Выполнить ``update algem events``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         drain = getattr(self.model, "drain_algem_events", None)
         if drain is None:
             return
@@ -871,6 +937,14 @@ class GamePresenter:
         self._algem_talk_timer = random.randint(3600, 5400)
 
     def _update_vent_sounds(self) -> None:
+        """Выполнить ``update vent sounds``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         loc = self.model.algem_location
         ai = getattr(self.model, "_ai", None)
         vent_motion_ticks = getattr(ai, "vent_motion_ticks", 0)
@@ -986,6 +1060,14 @@ class GamePresenter:
         self._pending_vent_knocks = remaining
 
     def _start_closed_vent_retreat_audio(self, vent_node: int) -> None:
+        """Выполнить ``start closed vent retreat audio``.
+        
+        Args:
+            vent_node: Входной параметр метода ``_start_closed_vent_retreat_audio``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         if vent_node not in VENT_CAMERAS:
             return
         self._closed_vent_retreat_source = vent_node
@@ -1012,6 +1094,15 @@ class GamePresenter:
         base_volume: float,
         channel_key: str | None,
     ) -> float:
+        """Выполнить ``apply channel volume``.
+        
+        Args:
+            base_volume: Входной параметр метода ``_apply_channel_volume``.
+            channel_key: Входной параметр метода ``_apply_channel_volume``.
+        
+        Returns:
+            Значение типа ``float``.
+        """
         volume = max(0.0, min(1.0, base_volume))
         if channel_key is None:
             return volume
@@ -1041,6 +1132,14 @@ class GamePresenter:
         return self._apply_channel_volume(base, channel_key)
 
     def _current_listener_audio_node(self) -> int:
+        """Выполнить ``current listener audio node``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Значение типа ``int``.
+        """
         return self._listener_audio_node(
             camera_idx=self.model.camera_idx,
             tablet_open=self.model.tablet_open,
@@ -1048,6 +1147,14 @@ class GamePresenter:
         )
 
     def _current_audio_graph(self) -> dict[int, list[int]]:
+        """Выполнить ``current audio graph``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Значение типа ``dict[int, list[int]]``.
+        """
         return {node: list(neighbors) for node, neighbors in BASE_AUDIO_GRAPH.items()}
 
     def _source_seal_audio_gain(self, source_node: int) -> float:
@@ -1071,6 +1178,14 @@ class GamePresenter:
         return 1.0
 
     def _is_vent_map_open(self) -> bool:
+        """Выполнить ``is vent map open``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Значение типа ``bool``.
+        """
         return bool(
             self.model.tablet_open
             and not self.model.tablet_animating
@@ -1078,6 +1193,14 @@ class GamePresenter:
         )
 
     def _is_direct_vent_camera_view(self, source_node: int) -> bool:
+        """Выполнить ``is direct vent camera view``.
+        
+        Args:
+            source_node: Входной параметр метода ``_is_direct_vent_camera_view``.
+        
+        Returns:
+            Значение типа ``bool``.
+        """
         if source_node not in VENT_CAMERAS:
             return False
         return bool(
@@ -1087,6 +1210,14 @@ class GamePresenter:
         )
 
     def _is_any_active_vent_camera_view(self, source_node: int) -> bool:
+        """Выполнить ``is any active vent camera view``.
+        
+        Args:
+            source_node: Входной параметр метода ``_is_any_active_vent_camera_view``.
+        
+        Returns:
+            Значение типа ``bool``.
+        """
         if not (
             self.model.tablet_open
             and not self.model.tablet_animating
@@ -1109,6 +1240,14 @@ class GamePresenter:
         return False
 
     def _suppress_algem_leave_static(self) -> bool:
+        """Выполнить ``suppress algem leave static``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            Значение типа ``bool``.
+        """
         cam_idx = self.model.camera_idx
         if cam_idx not in VENT_CAMERAS:
             return False
@@ -1124,16 +1263,44 @@ class GamePresenter:
         tablet_open: bool,
         tablet_animating: bool,
     ) -> int:
+        """Выполнить ``listener audio node``.
+        
+        Args:
+            camera_idx: Входной параметр метода ``_listener_audio_node``.
+            tablet_open: Входной параметр метода ``_listener_audio_node``.
+            tablet_animating: Входной параметр метода ``_listener_audio_node``.
+        
+        Returns:
+            Значение типа ``int``.
+        """
         if tablet_open and not tablet_animating:
             return camera_idx
         return 0
 
     @staticmethod
     def _camera_audio_distance(listener_node: int, source_node: int) -> int:
+        """Выполнить ``camera audio distance``.
+        
+        Args:
+            listener_node: Входной параметр метода ``_camera_audio_distance``.
+            source_node: Входной параметр метода ``_camera_audio_distance``.
+        
+        Returns:
+            Значение типа ``int``.
+        """
         dist = _weighted_audio_distance(listener_node, source_node, BASE_AUDIO_GRAPH)
         return _bucket_from_weighted_distance(dist)
 
     def _audio_weighted_distance(self, listener_node: int, source_node: int) -> float:
+        """Выполнить ``audio weighted distance``.
+        
+        Args:
+            listener_node: Входной параметр метода ``_audio_weighted_distance``.
+            source_node: Входной параметр метода ``_audio_weighted_distance``.
+        
+        Returns:
+            Значение типа ``float``.
+        """
         return _weighted_audio_distance(listener_node, source_node, self._current_audio_graph())
 
     @staticmethod
@@ -1163,6 +1330,18 @@ class GamePresenter:
         tablet_open: bool,
         tablet_animating: bool,
     ) -> float:
+        """Выполнить ``vent listen weighted distance``.
+        
+        Args:
+            algem_node: Входной параметр метода ``_vent_listen_weighted_distance``.
+            camera_idx: Входной параметр метода ``_vent_listen_weighted_distance``.
+            last_regular_cam: Входной параметр метода ``_vent_listen_weighted_distance``.
+            tablet_open: Входной параметр метода ``_vent_listen_weighted_distance``.
+            tablet_animating: Входной параметр метода ``_vent_listen_weighted_distance``.
+        
+        Returns:
+            Значение типа ``float``.
+        """
         _ = last_regular_cam
         if algem_node not in VENT_CAMERAS:
             return AUDIO_UNREACHABLE_DISTANCE
@@ -1398,6 +1577,14 @@ class GamePresenter:
                     start_post_hack()
 
     def _update_reboot_sound(self) -> None:
+        """Выполнить ``update reboot sound``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         if self.model.server_rebooting and not self._wait_playing:
             self._wait_playing = True
             self._wait_timer = 0
@@ -1434,6 +1621,14 @@ class GamePresenter:
                 return
 
     def _play_vent_close_sound_for_node(self, vent_node: int) -> None:
+        """Выполнить ``play vent close sound for node``.
+        
+        Args:
+            vent_node: Входной параметр метода ``_play_vent_close_sound_for_node``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         if not self.snd_vent_close:
             return
         volume = self._current_audio_volume(vent_node, "snd_vent_close") if vent_node > 0 else self._apply_channel_volume(SOUND_BASE_VOLUMES["snd_vent_close"], "snd_vent_close")
@@ -1497,6 +1692,14 @@ class GamePresenter:
             self._on_danger_camera_grace = 0
 
     def _update_ad(self) -> None:
+        """Выполнить ``update ad``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         volume = self._mix_volume("ad_loop", CHANNEL_MASTERS["ad"])
         if self.model.ad_active:
             if self._ad_sound:
@@ -1599,6 +1802,14 @@ class GamePresenter:
                 self._ad_playing = False
 
     def _start_ambience(self) -> None:
+        """Выполнить ``start ambience``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         if self.snd_ambience:
             self.snd_ambience.play(-1)
         self._ambience_playing = True
@@ -1652,6 +1863,14 @@ class GamePresenter:
         self._close_laptop()
 
     def draw_overlays(self, surface: pygame.Surface) -> None:
+        """Выполнить ``draw overlays``.
+        
+        Args:
+            surface: Входной параметр метода ``draw_overlays``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         self.audio_overlay.draw(surface)
         if self._projection_overlay_active:
             offset = int((self.model.current_look + 1) / 2 * self.view.max_offset)
@@ -1663,6 +1882,14 @@ class GamePresenter:
             )
 
     def _start_laptop_boot(self) -> None:
+        """Выполнить ``start laptop boot``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         if self.model.laptop_power_state != "OFF":
             return
         self.model.laptop_power_state = "BOOTING"
@@ -1684,6 +1911,14 @@ class GamePresenter:
         self._trigger_laptop_power_noise("on")
 
     def _start_laptop_shutdown(self) -> None:
+        """Выполнить ``start laptop shutdown``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         if self.model.laptop_power_state != "ON":
             return
         self._trigger_laptop_power_noise("off")
@@ -1710,6 +1945,14 @@ class GamePresenter:
         ai.notify_laptop_power_event(event)
 
     def _sync_server_with_laptop_shutdown(self) -> None:
+        """Выполнить ``sync server with laptop shutdown``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         self.model.server_overload = False
         self.model.server_overload_warn = 0
         self.model.server_rebooting = False
@@ -1725,12 +1968,37 @@ class GamePresenter:
                 self.snd_off.play()
 
     def _mix_volume(self, sound_id: str, base: float) -> float:
+        """Выполнить ``mix volume``.
+        
+        Args:
+            sound_id: Входной параметр метода ``_mix_volume``.
+            base: Входной параметр метода ``_mix_volume``.
+        
+        Returns:
+            Значение типа ``float``.
+        """
         return effective_volume(self.settings_data, sound_id, base)
 
     def _save_audio_settings(self) -> None:
+        """Выполнить ``save audio settings``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         save_settings(self.settings_data)
 
     def _refresh_cached_sound_levels(self) -> None:
+        """Выполнить ``refresh cached sound levels``.
+        
+        Args:
+            Нет аргументов.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
         for attr, (sound_id, base_volume) in self._sound_meta.items():
             snd = getattr(self, attr, None)
             if snd is None or attr in {"snd_ambience", "snd_work", "snd_phone_call", "snd_wait"}:

@@ -1,0 +1,497 @@
+"""Сценарные логи взлома по ночам.
+
+Большие таблицы строк вынесены из ``GameModel``, чтобы модель не была
+перегружена контентом. Теперь модель отвечает за состояние ночи, а этот
+модуль — за данные терминала и последовательную выдачу логов.
+"""
+
+from __future__ import annotations
+
+
+NIGHT_APPS: dict[int, dict[str, str]] = {
+        1: {"name": "Claude Mythos", "title": "Claude Mythos v2.1 — Neural Hack Engine",
+            "header": "Claude Mythos — Terminal Output"},
+        2: {"name": "Artemis", "title": "Artemis — Лабораторные по программированию",
+            "header": "Artemis — Vibecode Engine"},
+        3: {"name": "Moodle", "title": "Moodle — Курс по АГиТДУ",
+            "header": "Moodle — Task Completion"},
+        4: {"name": "exam1", "title": "exam1 — Система сдачи экзаменов",
+            "header": "exam1 — Auto-Submit Module"},
+        5: {"name": "БРС", "title": "БРС — Бально-Рейтинговая Система",
+            "header": "БРС — Debt Closure Engine"},
+    }
+
+HACK_LOG_SEQUENCES: dict[int, list[tuple[float, str]]] = {
+        1: [
+            (0.00, "> GRADEBOOK ACCESS MODULE v1.4"),
+            (0.00, "> Initializing terminal session..."),
+            (0.01, "> Loading network profile: RTF-INTERNAL"),
+            (0.02, "> Resolving host: rtf-storage.local"),
+            (0.03, "> Host resolved"),
+            (0.04, "> Opening SMB session..."),
+            (0.05, "> SMB dialect: 3.1.1"),
+            (0.06, "> Negotiating security context..."),
+            (0.08, "> Kerberos cache detected"),
+            (0.09, "> Requesting service ticket: cifs/rtf-storage.local"),
+            (0.10, "> Service ticket accepted"),
+            (0.12, "> Session established"),
+
+            (0.14, "> Enumerating shares..."),
+            (0.16, "> Share mounted: \\\\rtf-storage.local\\statements"),
+            (0.18, "> Checking ACL: /statements/2024/"),
+            (0.20, "> Effective permissions: READ, LIST"),
+            (0.22, "> Write permission: denied"),
+            (0.24, "> Searching cached workbook copies..."),
+            (0.26, "> Temp workspace available"),
+            (0.28, "> Creating shadow copy... OK"),
+
+            (0.30, "> Scanning gradebook directory..."),
+            (0.32, "> Found: statement_2024_draft.xlsx"),
+            (0.34, "> Found: statement_2024_final.xlsx"),
+            (0.36, "> Found: statement_2024_final_rev2.xlsx"),
+            (0.38, "> Found: statement_2024_signed.xlsx"),
+            (0.40, "> Comparing metadata and revision IDs..."),
+            (0.42, "> Selected target: statement_2024_signed.xlsx"),
+            (0.44, "> File lock: inactive"),
+            (0.46, "> Copying target workbook... OK"),
+
+            (0.48, "> Parsing XLSX container..."),
+            (0.50, "> Reading workbook.xml... OK"),
+            (0.52, "> Reading sharedStrings.xml... OK"),
+            (0.54, "> Reading worksheet relations... OK"),
+            (0.56, "> Sheet: attendance"),
+            (0.58, "> Sheet: labs"),
+            (0.60, "> Sheet: practice"),
+            (0.62, "> Sheet: final_statement"),
+            (0.64, "> Workbook protection: enabled"),
+            (0.66, "> Extracting cell references..."),
+
+            (0.68, "> Locating student record..."),
+            (0.70, "> Match: group_id + student_id"),
+            (0.72, "> Target row: 18"),
+            (0.74, "> Current final status: PENDING"),
+            (0.76, "> Checking linked cells..."),
+            (0.78, "> Labs: PASSED"),
+            (0.80, "> Practice: PASSED"),
+            (0.82, "> Attendance: ACCEPTED"),
+            (0.84, "> Final mark: EMPTY"),
+
+            (0.86, "> Building worksheet patch..."),
+            (0.88, "> Updating final_mark cell..."),
+            (0.90, "> Updating final_status cell: PASSED"),
+            (0.92, "> Recalculating formulas..."),
+            (0.94, "> Updating workbook checksum..."),
+            (0.96, "> Repacking XLSX archive..."),
+            (0.97, "> Verifying patched workbook... OK"),
+            (0.98, "> Replacing cached workbook revision..."),
+            (0.99, "> Syncing modified copy to gradebook storage..."),
+            (1.00, "> GRADEBOOK PATCH COMPLETE — statement_2024_signed.xlsx updated"),
+        ],
+        2: [
+            (0.00, "> ARTEMIS — semester recovery module"),
+            (0.00, "> Подключение к artemis.xetren.com..."),
+            (0.01, "> Проверка сессии... OK"),
+            (0.03, "> Курс: Практика Python"),
+            (0.05, "> Сканирование прошедших заданий..."),
+            (0.07, "> Найдено заданий: 41"),
+            (0.09, "> Диапазон: Feb 22, 2024 — Jun 6, 2024"),
+            (0.11, "> Режим: восстановление прогресса"),
+
+            (0.13, "> [1.x] Устройство ПК / CPU / RAM / Memory..."),
+            (0.15, "> 1.1 Устройство ПК... 92.9%"),
+            (0.17, "> 1.2 Работа CPU и RAM... 87.5%"),
+            (0.19, "> 1.3 Хранение данных в памяти... 83.3%"),
+            (0.21, "> 1.4 Стек вызовов... 60%"),
+            (0.23, "> 1.5 Объекты в Python... 71.4%"),
+            (0.25, "> 1.6 Адреса и карты памяти... 81%"),
+            (0.27, "> 1.7 Типизация и сборка мусора... 55.6%"),
+            (0.29, "> Модуль 1: требуется добор баллов"),
+
+            (0.31, "> [2.x] Массивы, списки, LinkedList, Queue..."),
+            (0.33, "> 2.1 Массивы и листы... 75%"),
+            (0.35, "> 2.2 Связные списки... 100%"),
+            (0.37, "> 2.3-2.4 LinkedList и Queue... 66.7%"),
+            (0.39, "> Memory Map Pt1... 83.3%"),
+            (0.41, "> Remember everything 0... 60%, Сборка не удалась"),
+            (0.43, "> Brain workout Pt1... 100%"),
+            (0.45, "> Модуль 2: найдено 2 слабых места"),
+
+            (0.47, "> [3.x] Алгоритмическая сложность..."),
+            (0.49, "> 3.1 Введение... 93.3%"),
+            (0.51, "> 3.2 Асимптотический анализ... 84.6%"),
+            (0.53, "> 3.3 Основы оценки сложности... 100%"),
+            (0.55, "> 3.4 Нюансы асимптотики... 100%"),
+            (0.57, "> 3.5 Практический подход к оценке... 42.9%"),
+            (0.59, "> 3.6 Исключения в анализе сложности... 66.7%"),
+            (0.61, "> 3.7-3.8 Продолжаем погружение... 100%"),
+            (0.63, "> Algrorithmic Complexity Pt0... 75%, Сборка не удалась"),
+            (0.65, "> Algorithmic Complexity Pt1... 100%, Сборка не удалась"),
+            (0.67, "> Аномалия Artemis: баллы есть, сборка красная"),
+            (0.69, "> Статус помечен как конфликт автопроверки"),
+
+            (0.71, "> [4.x-5.x] Рекурсия и divide and conquer..."),
+            (0.73, "> 4.1 Рекурсия... 100%"),
+            (0.75, "> Recursion Pt0... 100%"),
+            (0.77, "> 5.1 Оптимизация рекурсии... 100%"),
+            (0.79, "> 5.2 Разделяй и властвуй... 80%"),
+            (0.81, "> 5.3 Сортировка слиянием... 83.3%"),
+            (0.83, "> Explore and make 0... 70%"),
+            (0.85, "> Brain Workout Pt0... 100%"),
+            (0.87, "> LinkedLists and Co Pt0... 100%"),
+
+            (0.89, "> [6.x] Хеши и словари..."),
+            (0.90, "> 6.1 Поиск без поиска. Хеши... 100%"),
+            (0.91, "> 6.2 Придумываем хеш-функцию... 75%"),
+            (0.92, "> 6.3 Полиномиальный хеш... 100%"),
+            (0.93, "> 6.4 Устройство словарей и хеш-таблиц... 100%"),
+            (0.94, "> 6.5 __hash__ и __eq__... 100%"),
+            (0.95, "> Hashes Pt0... 100%"),
+
+            (0.96, "> [Final] Sort and Search block..."),
+            (0.97, "> Sort and Search Pt0... 100%"),
+            (0.98, "> Sort and Search Pt1... 99.6%"),
+            (0.985, "> Sort and Search Pt2... 100%"),
+            (0.99, "> Синхронизация итогового прогресса..."),
+            (0.995, "> Проверка итоговых процентов..."),
+            (1.00, "> ARTEMIS COMPLETE — 41 задание обработано"),
+        ],
+        3: [
+            (0.00, "> MOODLE QUIZ INJECTION MODULE v2.6"),
+            (0.00, "> Controlled session initialization..."),
+            (0.01, "> Target host: moodle.agitdu.local"),
+            (0.02, "> HTTPS connection established"),
+            (0.03, "> Moodle sesskey loaded"),
+            (0.04, "> Session context: student"),
+            (0.05, "> Course scan started"),
+            (0.07, "> Course matched: АГиТДУ"),
+            (0.09, "> Educational program: ОП \"Алгоритмы ИИ\""),
+
+            (0.11, "> Quiz target list prepared"),
+            (0.13, "> 01: Евклидовы пространства (ДР-II-1)"),
+            (0.15, "> 02: Линейные операторы (ДР-II-2)"),
+            (0.17, "> 03: Дифференциальные уравнения (КР-II-1)"),
+
+            (0.19, "> Reading access policy..."),
+            (0.21, "> Attempt duration: 60 minutes"),
+            (0.23, "> Attempt limit: unlimited"),
+            (0.25, "> Deadline: 31 May 2024"),
+            (0.27, "> Navigation policy: sequential"),
+            (0.29, "> Reverse navigation: blocked"),
+            (0.31, "> Skipped answers are committed as empty"),
+            (0.33, "> Safe sequence mode enabled"),
+
+            (0.35, "> Preparing answer payloads..."),
+            (0.37, "> Formula parser initialized"),
+            (0.39, "> MathJax rendering cache loaded"),
+            (0.41, "> Autosave channel verified"),
+            (0.43, "> Submit channel verified"),
+
+            (0.45, "> Launching attempt 1/3: ДР-II-1"),
+            (0.47, "> Attempt token issued"),
+            (0.49, "> Question sequence locked"),
+            (0.51, "> Solving block: Euclidean spaces"),
+            (0.53, "> Processing: scalar product"),
+            (0.55, "> Processing: norm and distance"),
+            (0.57, "> Processing: orthogonality"),
+            (0.59, "> Processing: Gram matrix"),
+            (0.61, "> Processing: projection theorem"),
+            (0.63, "> Payload accepted by autosave"),
+            (0.65, "> Attempt submitted: ДР-II-1"),
+
+            (0.67, "> Launching attempt 2/3: ДР-II-2"),
+            (0.69, "> Attempt token issued"),
+            (0.71, "> Question sequence locked"),
+            (0.73, "> Solving block: linear operators"),
+            (0.75, "> Processing: kernel and image"),
+            (0.77, "> Processing: operator matrix"),
+            (0.79, "> Processing: basis transformation"),
+            (0.81, "> Processing: eigenvalues"),
+            (0.83, "> Processing: invariant subspaces"),
+            (0.85, "> Payload accepted by autosave"),
+            (0.87, "> Attempt submitted: ДР-II-2"),
+
+            (0.89, "> Launching attempt 3/3: КР-II-1"),
+            (0.90, "> Attempt token issued"),
+            (0.91, "> Question sequence locked"),
+            (0.92, "> Solving block: differential equations"),
+            (0.93, "> Processing: separable equations"),
+            (0.94, "> Processing: linear first-order equations"),
+            (0.95, "> Processing: Cauchy problem"),
+            (0.96, "> Processing: higher-order linear DE"),
+            (0.97, "> Processing: systems of DE"),
+            (0.98, "> Payload accepted by autosave"),
+            (0.99, "> Attempt submitted: КР-II-1"),
+            (1.00, "> MOODLE QUIZ CHAIN COMPLETE — all targets submitted"),
+        ],
+        4: [
+            (0.00, "> EXAM1 CONTROLLED SUBMITTER v3.2"),
+            (0.00, "> Secure exam session initialization..."),
+            (0.01, "> Target host: exam1.ntk.local"),
+            (0.02, "> HTTPS connection established"),
+            (0.03, "> Loading session state..."),
+            (0.04, "> Session token: valid"),
+            (0.05, "> CSRF token: valid"),
+            (0.06, "> Exam context loaded"),
+            (0.07, "> User role: student"),
+            (0.08, "> Interface state: locked attempt"),
+
+            (0.10, "> Searching active exams..."),
+            (0.12, "> Exam matched: Английский язык НТК"),
+            (0.14, "> Attempt found: active"),
+            (0.16, "> Timer synchronization... OK"),
+            (0.18, "> Autosave endpoint verified"),
+            (0.20, "> Final submit endpoint verified"),
+            (0.22, "> Passive proctoring flag detected"),
+            (0.24, "> Navigation restrictions loaded"),
+
+            (0.26, "> Reading exam layout..."),
+            (0.28, "> Section detected: Reading"),
+            (0.30, "> Section detected: Use of English"),
+            (0.32, "> Section detected: Listening"),
+            (0.34, "> Section detected: Writing"),
+            (0.36, "> Answer fields indexed"),
+            (0.38, "> Building response queue..."),
+
+            (0.40, "> [READING] Loading passage data..."),
+            (0.42, "> Passage block received"),
+            (0.44, "> Question group: multiple choice"),
+            (0.46, "> Question group: matching"),
+            (0.48, "> Question group: true/false"),
+            (0.50, "> Extracting context anchors..."),
+            (0.52, "> Resolving reference answers..."),
+            (0.54, "> Reading payload built"),
+            (0.56, "> Autosave checkpoint: Reading"),
+
+            (0.58, "> [USE_OF_ENGLISH] Parsing grammar blocks..."),
+            (0.60, "> Block: verb tenses"),
+            (0.62, "> Block: modal verbs"),
+            (0.64, "> Block: passive voice"),
+            (0.66, "> Block: conditionals"),
+            (0.68, "> Block: word formation"),
+            (0.70, "> Block: phrasal verbs"),
+            (0.72, "> Grammar payload built"),
+            (0.74, "> Autosave checkpoint: Use of English"),
+
+            (0.76, "> [LISTENING] Audio task detected"),
+            (0.77, "> Audio stream handshake... OK"),
+            (0.78, "> Segmenting audio track..."),
+            (0.79, "> Segment 1/3 processed"),
+            (0.80, "> Segment 2/3 processed"),
+            (0.81, "> Segment 3/3 processed"),
+            (0.82, "> Speech-to-text confidence: acceptable"),
+            (0.83, "> Extracting timestamps and keywords..."),
+            (0.84, "> Listening payload built"),
+            (0.85, "> Autosave checkpoint: Listening"),
+
+            (0.86, "> [WRITING] Loading prompt..."),
+            (0.87, "> Prompt type: essay"),
+            (0.88, "> Topic detected: education / technology"),
+            (0.89, "> Planning structure: intro, arguments, conclusion"),
+            (0.90, "> Generating text within word limit..."),
+            (0.91, "> Grammar pass: OK"),
+            (0.92, "> Vocabulary level: B1/B2"),
+            (0.93, "> Plagiarism risk: low"),
+            (0.94, "> Writing payload built"),
+            (0.95, "> Autosave checkpoint: Writing"),
+
+            (0.96, "> Final consistency check..."),
+            (0.97, "> Empty fields: 0"),
+            (0.98, "> Attempt state: ready to submit"),
+            (0.99, "> Sending final submission..."),
+            (1.00, "> EXAM1 COMPLETE — English NTK exam submitted"),
+        ],
+        5: [
+            (0.00, "> BRS FINAL OVERRIDE MODULE v5.0"),
+            (0.00, "> Boss session initialization..."),
+            (0.01, "> Target system: brs.rtf.local"),
+            (0.02, "> Establishing secure channel... OK"),
+            (0.03, "> Loading student record context..."),
+            (0.04, "> Student ID: 2309876"),
+            (0.05, "> Faculty: Радиоэлектроники и информационных технологий — РТФ"),
+            (0.06, "> Study form: очная"),
+            (0.07, "> Admission date: 01.09.2023"),
+
+            (0.09, "> Opening BRS registry..."),
+            (0.11, "> Authentication context: limited"),
+            (0.13, "> Checking role permissions..."),
+            (0.15, "> WRITE permission: denied"),
+            (0.17, "> Searching cached grade transactions..."),
+            (0.19, "> Transaction template found"),
+            (0.21, "> Preparing gradebook synchronization layer..."),
+            (0.23, "> Loading attestation table..."),
+
+            (0.25, "> Found records: 12"),
+            (0.26, "> Term: 2024 interim attestation"),
+            (0.27, "> Grade format: 5-point scale"),
+            (0.28, "> Signature column detected"),
+            (0.29, "> Date column detected"),
+            (0.30, "> Validation rules loaded"),
+
+            (0.32, "> [01/12] Английский язык"),
+            (0.33, "> Work type: экзамен"),
+            (0.34, "> Current state: pending sync"),
+            (0.35, "> Setting grade: 5 (отлично)"),
+            (0.36, "> Date: 14.06.2024"),
+            (0.37, "> Signature hash attached"),
+
+            (0.39, "> [02/12] Программирование"),
+            (0.40, "> Work type: экзамен"),
+            (0.41, "> Setting grade: 5 (отлично)"),
+            (0.42, "> Date: 16.06.2024"),
+            (0.43, "> Checking lab dependencies... OK"),
+            (0.44, "> Signature hash attached"),
+
+            (0.46, "> [03/12] Алгебра, геометрия и ТДУ"),
+            (0.47, "> Work type: экзамен"),
+            (0.48, "> Linked course: АГиТДУ"),
+            (0.49, "> Moodle debt reference detected"),
+            (0.50, "> Resolving dependency... OK"),
+            (0.51, "> Setting grade: 5 (отлично)"),
+            (0.52, "> Date: 18.06.2024"),
+            (0.53, "> Signature hash attached"),
+
+            (0.55, "> [04/12] Философия"),
+            (0.56, "> Work type: зачёт"),
+            (0.57, "> Setting result: зачтено"),
+            (0.58, "> Grade mirror: 5 (отлично)"),
+            (0.59, "> Date: 20.06.2024"),
+            (0.60, "> Signature hash attached"),
+
+            (0.62, "> [05/12] Физика"),
+            (0.63, "> Work type: экзамен"),
+            (0.64, "> Lab reports dependency detected"),
+            (0.65, "> Dependency state: accepted"),
+            (0.66, "> Setting grade: 5 (отлично)"),
+            (0.67, "> Date: 21.06.2024"),
+            (0.68, "> Signature hash attached"),
+
+            (0.70, "> [06/12] Электротехника и электроника"),
+            (0.71, "> Work type: зачёт"),
+            (0.72, "> Setting result: зачтено"),
+            (0.73, "> Grade mirror: 5 (отлично)"),
+            (0.74, "> Date: 22.06.2024"),
+            (0.75, "> Signature hash attached"),
+
+            (0.77, "> [07/12] Математический анализ"),
+            (0.78, "> Work type: экзамен"),
+            (0.79, "> Checking exam protocol..."),
+            (0.80, "> Protocol state: available"),
+            (0.81, "> Setting grade: 5 (отлично)"),
+            (0.82, "> Date: 12.06.2024"),
+            (0.83, "> Signature hash attached"),
+
+            (0.85, "> [08/12] Теория вероятностей и мат. статистика"),
+            (0.86, "> Work type: зачёт"),
+            (0.87, "> Setting result: зачтено"),
+            (0.88, "> Grade mirror: 5 (отлично)"),
+            (0.89, "> Date: 13.06.2024"),
+            (0.90, "> Signature hash attached"),
+
+            (0.91, "> [09/12] Дискретная математика"),
+            (0.92, "> Work type: экзамен"),
+            (0.93, "> Setting grade: 5 (отлично)"),
+            (0.94, "> Date: 17.06.2024"),
+
+            (0.95, "> [10/12] Базы данных"),
+            (0.955, "> Work type: экзамен"),
+            (0.960, "> Setting grade: 5 (отлично)"),
+            (0.965, "> Date: 19.06.2024"),
+
+            (0.970, "> [11/12] Операционные системы"),
+            (0.975, "> Work type: зачёт"),
+            (0.980, "> Setting result: зачтено"),
+
+            (0.985, "> [12/12] Физическая культура"),
+            (0.990, "> Work type: зачёт"),
+            (0.992, "> Setting result: зачтено"),
+
+            (0.994, "> Recalculating semester rating..."),
+            (0.996, "> Updating зачётная книжка mirror..."),
+            (0.997, "> Validating all 12 records... OK"),
+            (0.998, "> Writing final BRS transaction..."),
+            (0.999, "> Audit state: pending"),
+            (1.00, "> BRS FINAL COMPLETE — all exams and credits closed"),
+        ],
+    }
+
+
+class HackLogPlayer:
+    """Последовательно выдаёт строки терминала по прогрессу взлома.
+
+    Args:
+        sequences: Таблица ``night -> [(threshold, message)]``. Если не
+            передана, используется стандартный набор ``HACK_LOG_SEQUENCES``.
+
+    Returns:
+        Экземпляр с внутренним индексом текущей строки. Индекс скрыт внутри
+        объекта, поэтому ``GameModel`` больше не управляет деталями вывода
+        логов напрямую.
+    """
+
+    def __init__(
+        self,
+        sequences: dict[int, list[tuple[float, str]]] | None = None,
+    ) -> None:
+        """Создать проигрыватель терминальных строк.
+
+        Args:
+            sequences: Пользовательская таблица логов или ``None`` для
+                стандартных сценариев.
+
+        Returns:
+            ``None``. Конструктор сохраняет таблицу и ставит индекс на начало.
+        """
+        self._sequences = sequences or HACK_LOG_SEQUENCES
+        self._index = 0
+
+    @property
+    def index(self) -> int:
+        """Вернуть индекс следующей строки сценария.
+
+        Args:
+            Нет аргументов.
+
+        Returns:
+            Номер следующей записи, которую надо проверить по прогрессу.
+        """
+        return self._index
+
+    def reset(self) -> None:
+        """Сбросить выдачу логов к началу сценария.
+
+        Args:
+            Нет аргументов.
+
+        Returns:
+            ``None``. Используется при полном рестарте ночи.
+        """
+        self._index = 0
+
+    def append_available(
+        self,
+        logs: list[str],
+        night: int,
+        progress: float,
+        hour: int,
+        minute: int,
+    ) -> None:
+        """Добавить в терминал все строки, открытые текущим прогрессом.
+
+        Args:
+            logs: Список строк терминала, куда добавляются новые сообщения.
+            night: Номер ночи.
+            progress: Текущий прогресс взлома от ``0.0`` до ``1.0``.
+            hour: Игровой час для временной метки.
+            minute: Игровая минута для временной метки.
+
+        Returns:
+            ``None``. Метод изменяет переданный список логов на месте и
+            продвигает внутренний индекс.
+        """
+        sequence = self._sequences.get(night, self._sequences[1])
+        while self._index < len(sequence):
+            threshold, message = sequence[self._index]
+            if progress < threshold:
+                break
+            logs.append(f"[{hour}:{minute:02d}] {message}")
+            self._index += 1

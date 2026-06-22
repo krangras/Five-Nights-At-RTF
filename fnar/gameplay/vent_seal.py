@@ -1,0 +1,251 @@
+"""Подсистема блокировки вентиляционных шахт.
+
+``GameModel`` раньше напрямую хранила таймеры seal, состояние каждой
+заслонки и кэш графа. Это превращало модель ночи в god-object: она
+одновременно считала время, сервер, рекламу, ИИ и геометрию вентов.
+
+``VentSealController`` забирает одну ответственность: принять команду
+закрытия, отсчитать анимацию SEALING -> CLOSED и построить актуальный
+граф камер с учётом закрытых шахт.
+"""
+
+from __future__ import annotations
+
+from enum import Enum, auto
+
+from .pathfinding import Graph
+
+
+class SealState(Enum):
+    """Состояние одной блокировки вентиляции."""
+
+    OPEN = auto()
+    SEALING = auto()
+    CLOSED = auto()
+
+
+class VentSealController:
+    """Управляет seal-блокировками и графом доступных переходов.
+
+    Args:
+        vent_seals: Словарь ``seal_id -> vent_node``.
+        base_graph: Базовый граф камер без закрытых вентиляционных шахт.
+        seal_retreat_graph: Разрешённые отступления из закрытого вента, если
+            Алгем уже физически находится внутри заблокированного узла.
+        seal_duration: Длительность анимации закрытия в тиках.
+
+    Returns:
+        Объект-контроллер. Все изменения состояния выполняются через методы,
+        поэтому ``GameModel`` больше не дублирует логику seal и построения
+        графа.
+    """
+
+    def __init__(
+        self,
+        vent_seals: dict[str, int],
+        base_graph: Graph,
+        seal_retreat_graph: Graph,
+        seal_duration: int,
+    ) -> None:
+        """Выполнить ``init``.
+        
+        Args:
+            vent_seals: Входной параметр метода ``__init__``.
+            base_graph: Входной параметр метода ``__init__``.
+            seal_retreat_graph: Входной параметр метода ``__init__``.
+            seal_duration: Входной параметр метода ``__init__``.
+        
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта.
+        """
+        self._vent_seals = vent_seals
+        self._base_graph = base_graph
+        self._seal_retreat_graph = seal_retreat_graph
+        self._seal_duration = seal_duration
+        self.seals: dict[str, SealState] = {
+            seal_id: SealState.OPEN for seal_id in vent_seals
+        }
+        self._timers: dict[str, int] = {seal_id: 0 for seal_id in vent_seals}
+        self._currently_sealing_id: str | None = None
+        self._graph_cache_key: tuple[tuple[str, ...], int] | None = None
+        self._graph_cache: Graph | None = None
+
+    @property
+    def currently_sealing_id(self) -> str | None:
+        """Вернуть id seal, который сейчас находится в фазе SEALING.
+
+        Args:
+            Нет аргументов.
+
+        Returns:
+            ``seal_id`` активной анимации или ``None``, если ничего не
+            закрывается.
+        """
+        return self._currently_sealing_id
+
+    @currently_sealing_id.setter
+    def currently_sealing_id(self, value: str | None) -> None:
+        """Принудительно установить текущий SEALING-id.
+
+        Args:
+            value: Новый id активного seal или ``None``.
+
+        Returns:
+            ``None``. Сеттер нужен для обратной совместимости ручных demo.
+        """
+        self._currently_sealing_id = value
+        self._invalidate_graph_cache()
+
+    def start(self, seal_id: str) -> int | None:
+        """Запустить закрытие выбранной вентиляционной заслонки.
+
+        Args:
+            seal_id: Идентификатор seal из ``VENT_SEALS``.
+
+        Returns:
+            Номер vent-узла, для которого началось закрытие. ``None``
+            означает, что команда проигнорирована: seal уже закрыт, не найден
+            или сейчас закрывается другая шахта.
+        """
+        if self.seals.get(seal_id) is not SealState.OPEN:
+            return None
+        if self._currently_sealing_id is not None:
+            return None
+
+        # Одновременно активным может быть только один seal. Поэтому новый
+        # клик открывает ранее закрытые заслонки и делает выбор игрока явным.
+        for known_id in self._vent_seals:
+            if self.seals[known_id] is SealState.CLOSED:
+                self.seals[known_id] = SealState.OPEN
+
+        self.seals[seal_id] = SealState.SEALING
+        self._timers[seal_id] = self._seal_duration
+        self._currently_sealing_id = seal_id
+        self._invalidate_graph_cache()
+        return self._vent_seals.get(seal_id)
+
+    def tick(self) -> list[int]:
+        """Обновить таймеры закрытия на один игровой тик.
+
+        Args:
+            Нет аргументов.
+
+        Returns:
+            Список vent-узлов, которые именно на этом тике перешли из
+            ``SEALING`` в ``CLOSED``. Модель использует список, чтобы
+            уведомить ИИ и забрать события звука/стука.
+        """
+        closed_now: list[int] = []
+        for seal_id in self._vent_seals:
+            if self.seals[seal_id] is not SealState.SEALING:
+                continue
+
+            self._timers[seal_id] -= 1
+            if self._timers[seal_id] > 0:
+                continue
+
+            self.seals[seal_id] = SealState.CLOSED
+            self._timers[seal_id] = 0
+            vent_node = self._vent_seals.get(seal_id)
+            if vent_node is not None:
+                closed_now.append(vent_node)
+            if self._currently_sealing_id == seal_id:
+                self._currently_sealing_id = None
+
+        if closed_now:
+            self._invalidate_graph_cache()
+        return closed_now
+
+    def current_graph(self, actor_location: int) -> Graph:
+        """Построить граф камер с учётом закрытых seal-заслонок.
+
+        Args:
+            actor_location: Текущий узел Алгема. Он нужен, чтобы не
+            телепортировать врага из уже закрытого вента: если Алгем внутри,
+            ему оставляется только честный маршрут отступления.
+
+        Returns:
+            Граф ``node -> neighbors``. Возвращаемый граф кэшируется до тех
+            пор, пока не изменится набор закрытых seal или позиция Алгема в
+            закрытом венте.
+        """
+        closed = tuple(
+            seal_id
+            for seal_id in self._vent_seals
+            if self.seals[seal_id] is SealState.CLOSED
+        )
+        location_key = actor_location if closed else -1
+        cache_key = (closed, location_key)
+        if self._graph_cache_key == cache_key and self._graph_cache is not None:
+            return self._graph_cache
+
+        graph = self._copy_graph(self._base_graph)
+        for seal_id in closed:
+            vent_node = self._vent_seals[seal_id]
+            self._remove_external_edges_to_vent(graph, vent_node)
+            if actor_location == vent_node:
+                graph[vent_node] = self._safe_retreats_from(vent_node)
+            else:
+                graph[vent_node] = []
+
+        self._graph_cache_key = cache_key
+        self._graph_cache = graph
+        return graph
+
+    def _remove_external_edges_to_vent(self, graph: Graph, vent_node: int) -> None:
+        """Удалить входы в закрытый vent-узел из остальных узлов.
+
+        Args:
+            graph: Изменяемая копия графа камер.
+            vent_node: Заблокированный vent-узел.
+
+        Returns:
+            ``None``. Метод меняет переданный граф на месте, потому что это
+            локальная копия внутри ``current_graph``.
+        """
+        for other_node, neighbors in list(graph.items()):
+            if other_node == vent_node or vent_node not in neighbors:
+                continue
+            graph[other_node] = [node for node in neighbors if node != vent_node]
+
+    def _safe_retreats_from(self, vent_node: int) -> list[int]:
+        """Вернуть разрешённые отступления из закрытого вента.
+
+        Args:
+            vent_node: Узел вентиляции, внутри которого оказался Алгем.
+
+        Returns:
+            Список соседей из базового графа, куда можно отступить без
+            телепортации и нарушения карты.
+        """
+        base_neighbors = self._base_graph.get(vent_node, [])
+        return [
+            node
+            for node in self._seal_retreat_graph.get(vent_node, [])
+            if node in base_neighbors
+        ]
+
+    def _invalidate_graph_cache(self) -> None:
+        """Сбросить кэш графа после изменения seal-состояний.
+
+        Args:
+            Нет аргументов.
+
+        Returns:
+            ``None``. Следующий вызов ``current_graph`` построит свежий граф.
+        """
+        self._graph_cache_key = None
+        self._graph_cache = None
+
+    @staticmethod
+    def _copy_graph(graph: Graph) -> Graph:
+        """Создать поверхностную копию списков соседей графа.
+
+        Args:
+            graph: Исходный граф камер.
+
+        Returns:
+            Новый словарь, в котором каждый список соседей можно безопасно
+            менять без влияния на исходную карту.
+        """
+        return {node: list(neighbors) for node, neighbors in graph.items()}
