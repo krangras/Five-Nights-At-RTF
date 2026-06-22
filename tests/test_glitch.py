@@ -50,67 +50,60 @@ class TestGlitchModelFields:
         assert m._glitch_timer == 0
         assert m._glitch_frame == 0
         assert m._glitch_frame_timer == 0
-        assert m._glitch_triggered is False
-
-    def test_delay_in_range(self):
-        for _ in range(50):
-            m = GameModel(night=1)
-            assert 1800 <= m._glitch_delay <= 10800
 
 
-# ── 2. Обратный отсчёт delay ──────────────────────────────────────────────
+# ── 2. Проверка раз в секунду ─────────────────────────────────────────────
 
-class TestGlitchDelay:
-    def test_delay_counts_down(self):
+class TestGlitchCheckInterval:
+    def test_no_check_before_interval(self):
         p = _make_presenter()
-        initial = p.model._glitch_delay
-        for _ in range(100):
-            p._update_glitch()
-        assert p.model._glitch_delay == initial - 100
-        assert p.model._glitch_triggered is False
+        p._glitch_tick_counter = 0
+        with patch("gameplay_presenter.random.random", return_value=0.0001):
+            for _ in range(59):
+                p._update_glitch()
+        assert p.model._glitch_active is False
 
-    def test_delay_reaches_zero_marks_triggered(self):
+    def test_check_at_interval(self):
         p = _make_presenter()
-        p.model._glitch_delay = 5
-        for _ in range(5):
-            p._update_glitch()
-        assert p.model._glitch_triggered is True
+        p._glitch_tick_counter = 0
+        with patch("gameplay_presenter.random.random", return_value=0.0001), \
+             patch("pygame.sndarray.array", return_value=[0] * 2400):
+            for _ in range(60):
+                p._update_glitch()
+        assert p.model._glitch_active is True
 
 
-# ── 3. Шанс 10% ──────────────────────────────────────────────────────────
+# ── 3. Шанс 0.4% каждую секунду ──────────────────────────────────────────
 
 class TestGlitchChance:
-    def test_01_percent_chance(self):
+    def test_trigger_below_threshold(self):
         p = _make_presenter()
-        p.model._glitch_delay = 0
-        p.model._glitch_triggered = False
-        with patch("gameplay_presenter.random.random", return_value=0.0005), \
-             patch("pygame.sndarray.array", return_value=[0]*2400):
+        p._glitch_tick_counter = 59
+        with patch("gameplay_presenter.random.random", return_value=0.001), \
+             patch("pygame.sndarray.array", return_value=[0] * 2400):
             p._update_glitch()
         assert p.model._glitch_active is True
         assert p.model._glitch_timer == 90
 
-    def test_no_trigger_above_01_percent(self):
+    def test_no_trigger_above_threshold(self):
         p = _make_presenter()
-        p.model._glitch_delay = 0
-        p.model._glitch_triggered = False
+        p._glitch_tick_counter = 59
         with patch("gameplay_presenter.random.random", return_value=0.5):
             p._update_glitch()
         assert p.model._glitch_active is False
-        assert p.model._glitch_triggered is True
 
-    def test_only_triggers_once(self):
+    def test_can_trigger_again_after_first_ends(self):
         p = _make_presenter()
-        p.model._glitch_delay = 0
-        p.model._glitch_triggered = False
-        with patch("gameplay_presenter.random.random", return_value=0.0005), \
-             patch("pygame.sndarray.array", return_value=[0]*2400):
-            p._update_glitch()
-        assert p.model._glitch_active is True
-        p.model._glitch_active = False
-        p.model._glitch_triggered = True
+        p.model._glitch_active = True
+        p.model._glitch_timer = 1
         p._update_glitch()
         assert p.model._glitch_active is False
+
+        p._glitch_tick_counter = 59
+        with patch("gameplay_presenter.random.random", return_value=0.001), \
+             patch("pygame.sndarray.array", return_value=[0] * 2400):
+            p._update_glitch()
+        assert p.model._glitch_active is True
 
 
 # ── 4. Таймер глитча ─────────────────────────────────────────────────────
@@ -118,8 +111,6 @@ class TestGlitchChance:
 class TestGlitchTimer:
     def _start_glitch(self, p):
         p.model._glitch_active = True
-        p.model._glitch_triggered = True
-        p.model._glitch_delay = 0
         p.model._glitch_timer = 90
         p.model._glitch_frame = 0
         p.model._glitch_frame_timer = 99
@@ -154,8 +145,6 @@ class TestGlitchFrame:
     def test_frame_alternates(self):
         p = _make_presenter()
         p.model._glitch_active = True
-        p.model._glitch_triggered = True
-        p.model._glitch_delay = 0
         p.model._glitch_timer = 90
         p.model._glitch_frame = 0
         p.model._glitch_frame_timer = 0
@@ -172,8 +161,6 @@ class TestGlitchFrame:
     def test_frame_bounces_0_1(self):
         p = _make_presenter()
         p.model._glitch_active = True
-        p.model._glitch_triggered = True
-        p.model._glitch_delay = 0
         p.model._glitch_timer = 90
         p.model._glitch_frame = 0
         p.model._glitch_frame_timer = 0
@@ -202,6 +189,7 @@ class TestGlitchInputBlock:
     def test_events_work_after_glitch(self):
         p = _make_presenter()
         p.model._glitch_active = False
+        p.model.tablet_animating = False
         event = MagicMock()
         event.type = pygame.KEYDOWN
         event.key = pygame.K_TAB
@@ -215,16 +203,12 @@ class TestGlitchEndGame:
     def test_no_glitch_after_game_over(self):
         p = _make_presenter()
         p.model.game_over = True
-        p.model._glitch_delay = 0
-        p.model._glitch_triggered = False
         p._update_glitch()
         assert p.model._glitch_active is False
 
     def test_no_glitch_after_night_complete(self):
         p = _make_presenter()
         p.model.night_complete = True
-        p.model._glitch_delay = 0
-        p.model._glitch_triggered = False
         p._update_glitch()
         assert p.model._glitch_active is False
 
@@ -234,16 +218,11 @@ class TestGlitchEndGame:
 class TestGlitchIntegration:
     def test_full_scenario_with_forced_trigger(self):
         p = _make_presenter()
-        p.model._glitch_delay = 3
+        p._glitch_tick_counter = 59
 
-        for _ in range(2):
+        with patch("gameplay_presenter.random.random", return_value=0.001), \
+             patch("pygame.sndarray.array", return_value=[0] * 2400):
             p._update_glitch()
-        assert p.model._glitch_triggered is False
-
-        with patch("gameplay_presenter.random.random", return_value=0.0005), \
-             patch("pygame.sndarray.array", return_value=[0]*2400):
-            p._update_glitch()
-        assert p.model._glitch_triggered is True
         assert p.model._glitch_active is True
         assert p.model._glitch_timer == 90
 
@@ -251,10 +230,3 @@ class TestGlitchIntegration:
             assert p.model._glitch_active is True
             p._update_glitch()
         assert p.model._glitch_active is False
-
-    def test_delay_not_negative(self):
-        p = _make_presenter()
-        p.model._glitch_delay = 2
-        for _ in range(10):
-            p._update_glitch()
-        assert p.model._glitch_delay == 0 or p.model._glitch_triggered is True

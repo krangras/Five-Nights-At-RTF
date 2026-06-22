@@ -15,12 +15,19 @@ gameplay_model.py — Игровая модель (M в паттерне MVP).
 
 from __future__ import annotations
 
-import copy
 import random
 from enum import Enum, auto
 
-from algem_ai import AlgemAI, AlgemEvent, AIState, bfs_path   # noqa: F401
-
+from algem_ai import AIState, AlgemAI, AlgemEvent, bfs_path  # noqa: F401
+from camera_graph import (
+    BASE_GRAPH,
+    PATROL_GRAPH,
+    SEAL_CAMERA_MAP,
+    SEAL_RETREAT_GRAPH,
+    VENT_SEALS,
+    VENT_CAMERAS,
+    copy_graph,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Константы карты камер
@@ -46,67 +53,8 @@ GAME_HOUR_SECONDS = 45
 GAME_HOUR_TICKS = FPS * GAME_HOUR_SECONDS
 GAME_MINUTE_TICKS = max(1, GAME_HOUR_TICKS // 60)
 
-# Индексы вент-камер (8–11)
-VENT_CAMERAS: set[int] = {8, 9, 10, 11}
-
-
-# Базовый граф атаки: учитывает реальные переходы по камерам и вентиляции.
-BASE_GRAPH: dict[int, list[int]] = {
-    0: [],
-    1: [2, 3, 4, 8],
-    2: [1, 3, 8, 9],
-    3: [1, 2, 4, 5, 8],
-    4: [1, 2, 3, 5, 11],
-    5: [3, 4, 6],
-    6: [5, 10],
-    7: [10, 11],
-    8: [1, 2, 3],
-    9: [2, 0],
-    10: [7, 11, 0],
-    11: [4, 10, 7],
-}
-
-# Граф патруля: когда игрок тихий, Алгем физически ходит только по обычным камерам 1–6.
-PATROL_GRAPH: dict[int, list[int]] = {
-    0: [],
-    1: [2, 3, 4],
-    2: [1, 3],
-    3: [1, 2, 4, 5],
-    4: [1, 2, 3, 5],
-    5: [3, 4, 6],
-    6: [5],
-    7: [],
-    8: [],
-    9: [],
-    10: [],
-    11: [],
-}
-
-# Вентиляционные короткие пути: {id: (из, в)}
+# Графы и привязки вентиляции берутся из camera_graph.py.
 VENT_CONNECTIONS: dict[str, tuple[int, int]] = {}
-
-# Точки блокировки вентов (SEAL) — {id: vent_camera_node}
-# При активном seal ВСЕ рёбра ИЗ этой вент-камеры удаляются из графа.
-VENT_SEALS: dict[str, int] = {
-    "SEAL_TOP_RIGHT":  9,   # upper-right vent
-    "SEAL_CENTER":     10,  # upper-left vent
-    "SEAL_MID_RIGHT":  8,   # lower-right vent
-    "SEAL_BOTTOM_LEFT": 11, # lower-left vent
-}
-
-SEAL_CAMERA_MAP: dict[int, str] = {
-    8: "SEAL_MID_RIGHT",
-    9: "SEAL_TOP_RIGHT",
-    10: "SEAL_CENTER",
-    11: "SEAL_BOTTOM_LEFT",
-}
-
-SEAL_RETREAT_GRAPH: dict[int, list[int]] = {
-    8: [1, 2, 3],
-    9: [2],
-    10: [6, 11],
-    11: [4, 10],
-}
 
 SEAL_DURATION = 420  # 7 секунд при 60 FPS
 
@@ -266,10 +214,10 @@ class GameModel:
         # ── ИИ Алгема ────────────────────────────────────────────────────
         # AlgemAI инкапсулирует FSM, A* и всю логику перемещения.
         self._ai: AlgemAI = AlgemAI(
-            graph      = copy.deepcopy(BASE_GRAPH),
+            graph      = copy_graph(BASE_GRAPH),
             night      = night,
             start_node = 1,
-            patrol_graph=copy.deepcopy(PATROL_GRAPH),
+            patrol_graph=copy_graph(PATROL_GRAPH),
         )
         self.algem_in_office: bool = False   # вошёл, но не убил (планшет открыт)
         self.office_threat_timer: int = 0
@@ -316,18 +264,17 @@ class GameModel:
         self.phone_muted:       bool = False
         self._phone_timer:      int  = 300   # тиков задержки перед звонком
 
-        # ── Глитч (случайный эффект раз за ночь) ────────────────────────
+        # ── Глитч (случайный эффект, каждый тик шанс) ───────────────────
         self._glitch_active: bool = False
         self._glitch_timer: int = 0
         self._glitch_frame: int = 0
         self._glitch_frame_timer: int = 0
-        self._glitch_triggered: bool = False
-        self._glitch_delay: int = random.randint(1800, 10800)
 
         # ── Флаги завершения ─────────────────────────────────────────────
         self.game_over:      bool = False
         self.night_complete: bool = False
         self.kill_from_vent: bool = False
+        self._night_end_pending: bool = False
 
     # ──────────────────────────────────────────────────────────────────────
     # Свойства-делегаты к AlgemAI (View обращается к модели, не к AI)
@@ -513,15 +460,23 @@ class GameModel:
 
     def _update_clock(self) -> None:
         """Игровые часы: 2700 тиков = 45 секунд = 1 час; 6 AM = конец ночи."""
+        if self._night_end_pending:
+            return
         self.timer += 1
         if self.timer >= GAME_HOUR_TICKS:
             self.hour += 1
             self.timer = 0
             if self.hour >= 6:
-                if self.hack_progress < 1.0:
-                    self.game_over = True
-                else:
-                    self.night_complete = True
+                self._night_end_pending = True
+
+    def resolve_night_end(self) -> None:
+        if not self._night_end_pending or self.game_over or self.night_complete:
+            return
+        if self.hack_progress >= 0.999:
+            self.hack_progress = 1.0
+            self.night_complete = True
+        else:
+            self.game_over = True
 
     def _update_phone(self) -> None:
         """Телефонный звонок текущей ночи."""
@@ -557,29 +512,8 @@ class GameModel:
                 del self.bait_cooldown[cam]
 
     def _update_vents(self) -> None:
-        """
-        Обновить состояние вентиляционных каналов.
-
-        Каждый вент со временем ломается случайно (зависит от ночи).
-        Перезагрузка занимает фиксированное время.
-        """
+        """Legacy vent reset mechanic is disabled in the current design."""
         return
-        for vid in VENT_CONNECTIONS:
-            state = self.vents[vid]
-
-            if state == VentState.OK:
-                # Отсчёт до случайной поломки
-                self._vent_error_timers[vid] -= 1
-                if self._vent_error_timers[vid] <= 0:
-                    self.vents[vid]              = VentState.ERROR
-                    self._vent_error_timers[vid] = self._vent_break_interval()
-
-            elif state == VentState.RESETTING:
-                # Прогресс перезагрузки
-                self._vent_reset_timers[vid] -= 1
-                if self._vent_reset_timers[vid] <= 0:
-                    self.vents[vid] = VentState.OK
-                    self._vent_error_timers[vid] = self._vent_break_interval()
 
     def _update_seals(self) -> None:
         """Обновить таймеры блокировки вентов."""
@@ -685,7 +619,7 @@ class GameModel:
 
         # Строим граф с учётом сломанных вентов
         current_graph = self._build_current_graph()
-        self._ai.update_graph(current_graph, copy.deepcopy(PATROL_GRAPH))
+        self._ai.update_graph(current_graph, copy_graph(PATROL_GRAPH))
         self._ai.update_camera_watch(self.camera_watch_ticks)
 
         target = self.hack_progress if self.server_state == "ON" else 0.0
@@ -1352,7 +1286,7 @@ class GameModel:
     # ──────────────────────────────────────────────────────────────────────
 
     def _build_current_graph(self) -> dict[int, list[int]]:
-        g: dict[int, list[int]] = copy.deepcopy(BASE_GRAPH)
+        g: dict[int, list[int]] = copy_graph(BASE_GRAPH)
 
         for sid, vent_node in VENT_SEALS.items():
             if self.seals[sid] == SealState.CLOSED:

@@ -17,18 +17,27 @@ gameplay_presenter.py — Presenter (P в паттерне MVP).
 
 from __future__ import annotations
 
+import os
 import random
 from typing import Any
 
 import numpy as np
 import pygame
 
-from audio_mix import AudioCalibrationOverlay, effective_volume, ensure_audio_settings
-from algem_ai import AIState, AlgemEventType, bfs_path
-from gameplay_model import (
-    BASE_GRAPH, CAMERAS, CAMERA_COUNT, VENT_CAMERAS,
-    GameModel, SealState, SEAL_CAMERA_MAP, VENT_SEALS,
+from algem_ai import AlgemEventType
+from audio_mix import (
+    AudioCalibrationOverlay,
+    effective_volume,
+    ensure_audio_settings,
 )
+from camera_graph import (
+    AUDIO_EDGE_WEIGHTS,
+    BASE_GRAPH,
+    SEAL_CAMERA_MAP,
+    VENT_CAMERAS,
+    VENT_SEALS,
+)
+from gameplay_model import GameModel, SealState
 from settings import save_settings
 
 HACK_TICKS_BY_NIGHT: dict[int, int] = {
@@ -97,37 +106,6 @@ AUDIO_BUCKET_THRESHOLDS: tuple[float, float, float, float] = (
     2.35,
     3.45,
 )
-
-AUDIO_EDGE_WEIGHTS: dict[tuple[int, int], float] = {
-    (0, 7): 0.80,
-    (0, 9): 1.25,
-    (0, 10): 2.40,
-    (1, 2): 2.55,
-    (1, 3): 1.35,
-    (1, 4): 1.15,
-    (1, 8): 1.35,
-    (2, 3): 1.40,
-    (2, 4): 2.35,
-    (2, 8): 1.25,
-    (2, 9): 1.45,
-    (3, 4): 0.75,
-    (3, 5): 1.55,
-    (3, 8): 0.90,
-    (4, 5): 1.25,
-    (4, 11): 1.70,
-    (5, 6): 1.05,
-    (5, 7): 1.35,
-    (5, 10): 1.45,
-    (5, 11): 1.10,
-    (6, 10): 0.85,
-    (6, 11): 1.75,
-    (7, 9): 1.65,
-    (7, 10): 1.65,
-    (8, 9): 2.10,
-    (8, 11): 4.05,
-    (9, 10): 3.80,
-    (10, 11): 3.10,
-}
 
 def _audio_edge_key(node: int, neighbor: int) -> tuple[int, int]:
     return (node, neighbor) if node < neighbor else (neighbor, node)
@@ -314,7 +292,13 @@ class GamePresenter:
                 setattr(self, attr, snd)
             except pygame.error:
                 setattr(self, attr, None)
-        self._ad_path: str = "sounds/laptop/ad.wav"
+        self._ad_paths: tuple[str, ...] = (
+            "sounds/laptop/ad.wav",
+            "sounds/laptop/ad.mp3",
+            "sounds/ui/ad.wav",
+            "sounds/ui/ad.mp3",
+        )
+        self._ad_path: str = self._ad_paths[0]
         self._snd_off_length: int = 60
         self.__gadget_cache: list[pygame.mixer.Sound] = []
         for i in range(1, 5):
@@ -389,11 +373,16 @@ class GamePresenter:
 
         # ── Предзагрузка ad-звука в Sound-объект (вместо mixer.music.load) ─
         self._ad_sound: pygame.mixer.Sound | None = None
-        try:
-            self._ad_sound = pygame.mixer.Sound(self._ad_path)
-            self._ad_sound.set_volume(self._mix_volume("ad_loop", 0.0))
-        except pygame.error:
-            pass
+        for path in self._ad_paths:
+            if not os.path.exists(path):
+                continue
+            try:
+                self._ad_sound = pygame.mixer.Sound(path)
+                self._ad_path = path
+                self._ad_sound.set_volume(self._mix_volume("ad_loop", CHANNEL_MASTERS["ad"]))
+                break
+            except pygame.error:
+                self._ad_sound = None
 
         # ── Глитч-звуки ────────────────────────────────────────────────
         self._glitch_sounds: list[pygame.mixer.Sound] = []
@@ -792,6 +781,12 @@ class GamePresenter:
             self._start_ambience()
 
         self._update_hack()
+        resolve_night_end = getattr(self.model, "resolve_night_end", None)
+        if resolve_night_end is not None:
+            resolve_night_end()
+        if self.model.game_over or self.model.night_complete:
+            self._cleanup_on_end()
+            return
         self._update_server_anim()
         self._update_tablet_anim()
         self._update_bait_anim()
@@ -1504,9 +1499,8 @@ class GamePresenter:
 
     def _update_hack(self) -> None:
         """Прогресс взлома через ноутбук (Claude Mythos)."""
-        # Взлом начинается когда Claude Mythos открыт и сервер включён,
-        # но затем продолжается даже после закрытия ноутбука или выключения сервера.
-        # Во время ребута — взлом на паузе.
+        # Взлом запускается из Claude Mythos и продвигается только пока сервер ON.
+        # Во время ребута, перегрузки или выключенного сервера прогресс стоит.
         if self.model.laptop_app == "claude_mythos" and self.model.server_state == "ON" and not self.model.server_rebooting and not self.model.server_overload:
             self.model.hack_active = True
         if self.model.hack_active and not self.model.server_rebooting and not self.model.server_overload and self.model.server_state == "ON":
@@ -1619,16 +1613,16 @@ class GamePresenter:
             self._on_danger_camera_grace = 0
 
     def _update_ad(self) -> None:
+        volume = self._mix_volume("ad_loop", CHANNEL_MASTERS["ad"])
         if self.model.ad_active:
-            if not self._ad_playing:
-                if self._ad_sound:
-                    self._ad_sound.set_volume(self._mix_volume("ad_loop", CHANNEL_MASTERS["ad"]))
-                    self._ad_sound.play(-1)
-                self._ad_playing = True
+            if self._ad_sound:
+                if not self._ad_channel.get_busy():
+                    self._ad_channel.play(self._ad_sound, loops=-1)
+                self._ad_channel.set_volume(volume)
+            self._ad_playing = True
         else:
-            if self._ad_playing:
-                if self._ad_sound:
-                    self._ad_sound.stop()
+            if self._ad_playing or self._ad_channel.get_busy():
+                self._ad_channel.stop()
                 self._ad_playing = False
 
     def _update_sound_mix(self) -> None:
@@ -1664,17 +1658,25 @@ class GamePresenter:
                 wait_target *= 0.92
             self.snd_wait.set_volume(self._mix_volume("reboot_loop", max(0.08, min(1.0, wait_target))))
 
+        if self._ad_channel.get_busy():
+            self._ad_channel.set_volume(self._mix_volume("ad_loop", CHANNEL_MASTERS["ad"]))
+
+    _GLITCH_PER_SECOND_CHANCE = 0.00083
+    _GLITCH_CHECK_INTERVAL = 60
+
     def _update_glitch(self) -> None:
-        """Случайный визуальный глитч раз за ночь (~10% шанс)."""
+        """Случайный визуальный глитч: раз в секунду шанс ~0.4%."""
         m = self.model
         if m.game_over or m.night_complete:
             return
 
-        if not m._glitch_triggered:
-            m._glitch_delay -= 1
-            if m._glitch_delay <= 0:
-                m._glitch_triggered = True
-                if random.random() < 0.001:
+        if not m._glitch_active:
+            if not hasattr(self, "_glitch_tick_counter"):
+                self._glitch_tick_counter = 0
+            self._glitch_tick_counter += 1
+            if self._glitch_tick_counter >= self._GLITCH_CHECK_INTERVAL:
+                self._glitch_tick_counter = 0
+                if random.random() < self._GLITCH_PER_SECOND_CHANCE:
                     m._glitch_active = True
                     m._glitch_timer = 90
                     m._glitch_frame = 0
@@ -1688,12 +1690,10 @@ class GamePresenter:
                             self._glitch_channel = chan
             return
 
-        if not m._glitch_active:
-            return
-
         m._glitch_timer -= 1
         if m._glitch_timer <= 0:
             m._glitch_active = False
+            self._glitch_tick_counter = 0
             if self._glitch_channel:
                 self._glitch_channel.stop()
                 self._glitch_channel = None
@@ -1710,9 +1710,8 @@ class GamePresenter:
             self.model.ad_active = False
             self.model.ad_image_key = None
             self.model.ad_timer = 0
-            if self._ad_playing:
-                if self._ad_sound:
-                    self._ad_sound.stop()
+            if self._ad_playing or self._ad_channel.get_busy():
+                self._ad_channel.stop()
                 self._ad_playing = False
 
     def _start_ambience(self) -> None:
@@ -1739,9 +1738,8 @@ class GamePresenter:
         self._pending_vent_knocks.clear()
         self._cam_init_channel.stop()
         self._camera_inited = False
-        if self._ad_playing:
-            if self._ad_sound:
-                self._ad_sound.stop()
+        if self._ad_playing or self._ad_channel.get_busy():
+            self._ad_channel.stop()
             self._ad_playing = False
         self._algem_talk_timer = random.randint(1800, 3600)
 

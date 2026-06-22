@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Callable
 
+from camera_graph import BASE_GRAPH, SPECIAL_DETOUR_EDGES
+
 
 class AIState(Enum):
     """FSM-состояния Алгема."""
@@ -232,9 +234,7 @@ class AlgemAI:
         10: [(1.25, (7, 11)), (0.95, (11, 4)), (0.65, (7, 10))],
         11: [(1.15, (7, 10)), (0.95, (4, 3, 8)), (0.75, (10, 7))],
     }
-    _SPECIAL_DETOUR_EDGES: dict[int, list[int]] = {
-        9: [10],
-    }
+    _SPECIAL_DETOUR_EDGES: dict[int, list[int]] = SPECIAL_DETOUR_EDGES
     _POST_HACK_RAGE_DETOUR_NODES = {7, 8, 9, 10, 11}
     _POST_HACK_RAGE_STEP_CAP_BY_NIGHT: dict[int, int] = {
         1: 120,
@@ -360,6 +360,7 @@ class AlgemAI:
         self._last_vent_leave_source = -1
         self._last_vent_leave_ticks = 0
         self._seal_knock_suppressed_vents: set[int] = set()
+        self._blocked_vent_knock_cooldowns: dict[int, int] = {}
         self._pressure_cooldown_ticks = 0
         self._laptop_noise_cooldown = 0
         self._attack_route_epoch = 0
@@ -684,9 +685,9 @@ class AlgemAI:
         """Игровая реакция на полностью закрытый вент.
 
         Вызывается только после перехода SEALING -> CLOSED, то есть когда на
-        карте уже должна гореть красная полоска. Если Алгем оказался в закрытом
-        венте или прямо перед ним, создаём событие стука с задержкой примерно
-        в секунду и переводим его в отступление/оглушение.
+        карте уже должна гореть красная полоска. Стук здесь создаётся только
+        если Алгем физически находился в этой vent-камере. Попытки войти в уже
+        закрытый вент ловятся отдельно в _move_to().
         """
         # Если игрок закрыл камеру, на которой сейчас видит `algem_is_leaving`,
         # Алгем уже физически уполз с этой vent-камеры. В таком случае стука быть
@@ -728,6 +729,10 @@ class AlgemAI:
                 self._vent_audio_source = -1
         if self._pressure_cooldown_ticks > 0:
             self._pressure_cooldown_ticks -= 1
+        for vent_node in list(self._blocked_vent_knock_cooldowns):
+            self._blocked_vent_knock_cooldowns[vent_node] -= 1
+            if self._blocked_vent_knock_cooldowns[vent_node] <= 0:
+                del self._blocked_vent_knock_cooldowns[vent_node]
         if self._laptop_noise_cooldown > 0:
             self._laptop_noise_cooldown -= 1
 
@@ -1121,11 +1126,40 @@ class AlgemAI:
         best = [target for _dist, target in reachable[:2]]
         return random.choice(best)
 
+    def _is_blocked_vent_attempt(self, node: int) -> bool:
+        if node not in self.VENT_NODES:
+            return False
+        physical_neighbors = set(BASE_GRAPH.get(self.location, []))
+        physical_neighbors.update(self._SPECIAL_DETOUR_EDGES.get(self.location, []))
+        return node in physical_neighbors and node not in self._graph.get(self.location, [])
+
+    def _handle_blocked_vent_attempt(self, vent_node: int) -> None:
+        if vent_node in self._blocked_vent_knock_cooldowns:
+            return
+        if vent_node in self._seal_knock_suppressed_vents or self._is_leaving_vent(vent_node):
+            self._seal_knock_suppressed_vents.discard(vent_node)
+            return
+        self._blocked_vent_knock_cooldowns[vent_node] = 420
+        self._emit(AlgemEventType.SEAL_BLOCKED, self.location, vent_node, delay_ticks=60)
+        lo, hi = self._STUN_TICKS_BY_NIGHT.get(self._night, (120, 240))
+        self._stun_timer = max(random.randint(lo, hi), 90)
+        self.state = AIState.STUNNED
+        self._retreat_target = self._nearest_patrol_node() or self.PATROL_SAFE_HOME
+        self._move_timer = min(self._move_timer, 30)
+        self.trigger_timer = 0
+        self._pressure_cooldown_ticks = max(self._pressure_cooldown_ticks, 150)
+        self.attention = max(0.0, self.attention - 10.0)
+        self._server_interest *= 0.88
+        self._ad_interest *= 0.90
+        self._vent_interest *= 0.78
+
     def _move_to(self, node: int, graph: dict[int, list[int]] | None = None) -> bool:
         if node == self.location:
             return True
         active_graph = graph or (self._patrol_graph if self.state is AIState.PATROL else self._graph)
         if node not in active_graph.get(self.location, []):
+            if self._is_blocked_vent_attempt(node):
+                self._handle_blocked_vent_attempt(node)
             self._last_move_rejected = (self.location, node)
             self._move_history.append((self.location, node, "REJECTED"))
             self._emit(AlgemEventType.ILLEGAL_MOVE_BLOCKED, self.location, node)

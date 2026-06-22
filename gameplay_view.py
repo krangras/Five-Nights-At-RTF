@@ -1,15 +1,15 @@
+import glob
+import json
 import math
 import os
-import json
 import random
-import glob
 
 import cv2
 import numpy as np
 import pygame
 
+from camera_graph import is_vent_detour_away_from_office
 from gameplay_model import SEAL_CAMERA_MAP
-
 
 DEFAULT_LAPTOP_PROJECTION_CORNERS = [
     [419, 494],
@@ -22,38 +22,6 @@ LAPTOP_PROJECTION_CONFIG_PATH = os.path.join(
 )
 LAPTOP_BOOT_TICKS = 180
 LAPTOP_SHUTDOWN_TICKS = 150
-
-
-VENT_DIRECTION_GRAPH = {
-    0: [],
-    1: [2, 3, 4, 8],
-    2: [1, 3, 8, 9],
-    3: [1, 2, 4, 5, 8],
-    4: [1, 2, 3, 5, 11],
-    5: [3, 4, 6],
-    6: [5, 10],
-    7: [10, 11],
-    8: [1, 2, 3],
-    9: [2, 10, 0],
-    10: [7, 11, 9, 0],
-    11: [4, 10, 7],
-}
-
-
-def _view_bfs_distance_to_office(start_node: int) -> int:
-    if start_node == 0:
-        return 0
-    queue = [(start_node, 0)]
-    seen = {start_node}
-    while queue:
-        node, dist = queue.pop(0)
-        for nxt in VENT_DIRECTION_GRAPH.get(node, []):
-            if nxt == 0:
-                return dist + 1
-            if nxt not in seen:
-                seen.add(nxt)
-                queue.append((nxt, dist + 1))
-    return 999
 
 
 def get_laptop_power_sequence(power_state: str, power_timer: int) -> tuple[str, float]:
@@ -77,6 +45,31 @@ def get_laptop_power_sequence(power_state: str, power_timer: int) -> tuple[str, 
     return "off_idle", 0.0
 
 
+
+
+def _safe_load_image(path: str, alpha: bool = False, fallback_size: tuple[int, int] = (1280, 720)) -> pygame.Surface:
+    try:
+        raw = pygame.image.load(path)
+        return raw.convert_alpha() if alpha else raw.convert()
+    except (FileNotFoundError, pygame.error):
+        flags = pygame.SRCALPHA if alpha else 0
+        surf = pygame.Surface(fallback_size, flags)
+        surf.fill((12, 12, 16, 255) if alpha else (12, 12, 16))
+        try:
+            font = pygame.font.SysFont("consolas", 24, bold=True)
+            label = font.render(f"MISSING: {os.path.basename(path)}", True, (220, 80, 80))
+            surf.blit(label, label.get_rect(center=(fallback_size[0] // 2, fallback_size[1] // 2)))
+        except pygame.error:
+            pass
+        return surf
+
+
+def _safe_font(path: str, size: int) -> pygame.font.Font:
+    try:
+        return pygame.font.Font(path, size)
+    except (FileNotFoundError, pygame.error):
+        return pygame.font.SysFont("consolas", size)
+
 def _normalize_brightness(surfaces_with_paths, target=25):
     """
     Нормализует яркость изображений. Если в assets/.cache/norm/ есть
@@ -88,7 +81,7 @@ def _normalize_brightness(surfaces_with_paths, target=25):
         if src_path:
             cache_path = f"{cache_dir}/{os.path.basename(src_path)}"
             if os.path.exists(cache_path):
-                cached = pygame.image.load(cache_path).convert()
+                cached = _safe_load_image(cache_path)
                 img.blit(cached, (0, 0))
                 continue
         w, h = img.get_size()
@@ -120,10 +113,6 @@ def _normalize_brightness(surfaces_with_paths, target=25):
 
 
 class GameView:
-    @staticmethod
-    def _vent_distance_to_office(node: int) -> int:
-        return _view_bfs_distance_to_office(node)
-
     def _should_show_directional_vent_leave(self, model, cam_idx: int) -> bool:
         if cam_idx not in (8, 9, 10, 11):
             return False
@@ -137,15 +126,15 @@ class GameView:
             return False
         if target == 0:
             return False
-        return self._vent_distance_to_office(target) >= self._vent_distance_to_office(source)
+        return is_vent_detour_away_from_office(source, target)
 
     def __init__(self, screen):
         self.screen = screen
         screen_w, screen_h = screen.get_size()
 
-        raw_off = pygame.image.load(
+        raw_off = _safe_load_image(
             "assets/office/server_is_off.png"
-        ).convert()
+        )
         scale = screen_h / raw_off.get_height()
         target_size = (int(raw_off.get_width() * scale), screen_h)
 
@@ -156,7 +145,7 @@ class GameView:
             ("server_all_four_lights_are_red.png", "red"),
             ("server_all_four_lights_are_green.png", "green"),
         ]:
-            raw = pygame.image.load(f"assets/office/{name}").convert()
+            raw = _safe_load_image(f"assets/office/{name}")
             self.bg_blinks[key] = pygame.transform.smoothscale(
                 raw, target_size
             )
@@ -166,14 +155,14 @@ class GameView:
             "server_all_four_lights_are_green.png",
             "server_all_four_lights_are_green.png",
         ]:
-            raw = pygame.image.load(f"assets/office/{name}").convert()
+            raw = _safe_load_image(f"assets/office/{name}")
             self.bg_frames.append(
                 pygame.transform.smoothscale(raw, target_size)
             )
 
-        raw_hack = pygame.image.load(
+        raw_hack = _safe_load_image(
             "assets/office/server_all_four_lights_are_green+hack_is_going.png"
-        ).convert()
+        )
         self.bg_hack = pygame.transform.smoothscale(raw_hack, target_size)
         norm_list = [
             (self.bg_off, "assets/office/server_is_off.png"),
@@ -205,9 +194,9 @@ class GameView:
             (screen_w, screen_h), pygame.SRCALPHA
         )
         self._brightness_overlay.fill((255, 255, 255, 13))
-        self.font = pygame.font.Font("assets/fonts/OCR-A.ttf", 30)
-        self.font_small = pygame.font.Font("assets/fonts/OCR-A.ttf", 18)
-        self.font_very_small = pygame.font.Font("assets/fonts/OCR-A.ttf", 11)
+        self.font = _safe_font("assets/fonts/OCR-A.ttf", 30)
+        self.font_small = _safe_font("assets/fonts/OCR-A.ttf", 18)
+        self.font_very_small = _safe_font("assets/fonts/OCR-A.ttf", 11)
         self._ui_font = pygame.font.SysFont("tahoma", 16)
         self._ui_font_bold = pygame.font.SysFont("tahoma", 16, bold=True)
         self._ui_font_sm = pygame.font.SysFont("tahoma", 13)
@@ -227,9 +216,9 @@ class GameView:
         self._rebuild_laptop_projection()
 
         # Кнопка TAB в офисе (изображение на столе)
-        raw_tab = pygame.image.load(
-            "assets/cctv/tabbutton.png"
-        ).convert_alpha()
+        raw_tab = _safe_load_image(
+            "assets/cctv/tabbutton.png", alpha=True
+        )
         self.tabbutton_surf = pygame.transform.scale(
             raw_tab, (int(600 * scale), int(60 * scale))
         )
@@ -240,16 +229,16 @@ class GameView:
         )  # оригинальные координаты (1923×818)
         self.tab_button_hovered = False
 
-        raw_wallpaper = pygame.image.load(
+        raw_wallpaper = _safe_load_image(
             "assets/laptop/wallpaper.png"
-        ).convert()
+        )
         self.laptop_wallpaper = pygame.transform.smoothscale(
             raw_wallpaper, (screen_w, screen_h - 40)
         )
 
         self._ad_images = {}
         for key in ["ad_hhru", "ad_kontur", "ad_sber"]:
-            raw = pygame.image.load(f"assets/laptop/{key}.png").convert()
+            raw = _safe_load_image(f"assets/laptop/{key}.png")
             rw, rh = raw.get_size()
             scale = min((screen_w - 40) / rw, (screen_h - 80) / rh)
             self._ad_images[key] = pygame.transform.smoothscale(
@@ -258,9 +247,9 @@ class GameView:
 
         self._ad_office_images = {}
         for key in ["ad_hhru", "ad_kontur", "ad_sber"]:
-            raw = pygame.image.load(
+            raw = _safe_load_image(
                 f"assets/office/server_all_four_lights_are_green+{key}.png"
-            ).convert()
+            )
             self._ad_office_images[key] = pygame.transform.smoothscale(
                 raw, target_size
             )
@@ -294,13 +283,13 @@ class GameView:
             12: "cam10.png",
         }
         for idx, fname in icon_map.items():
-            img = pygame.image.load(f"assets/cctv/{fname}").convert_alpha()
+            img = _safe_load_image(f"assets/cctv/{fname}", alpha=True)
             self._cam_icons[idx] = pygame.transform.scale(img, (30, 25))
 
         # Мини-карта (справа в планшете, uniform scale)
-        raw_map = pygame.image.load(
-            "assets/cameras/camera_map.png"
-        ).convert_alpha()
+        raw_map = _safe_load_image(
+            "assets/cameras/camera_map.png", alpha=True
+        )
         mm_map_w, mm_map_h = raw_map.get_size()  # 595×550
         self._mm_scale = 500 / mm_map_w  # uniform scale ≈ 0.84
         mm_w, mm_h = 500, int(mm_map_h * self._mm_scale)
@@ -313,9 +302,9 @@ class GameView:
         self._minimap_size = (mm_w, mm_h)
 
         # Карта вентиляции: прозрачный оверлей (белые контуры + синие duct-линии)
-        raw_vent = pygame.image.load(
-            "assets/cameras/vent_map.png"
-        ).convert_alpha()
+        raw_vent = _safe_load_image(
+            "assets/cameras/vent_map.png", alpha=True
+        )
         vw, vh = raw_vent.get_size()
         self._vent_overlay = pygame.transform.smoothscale(
             raw_vent, (mm_w, mm_h)
@@ -383,7 +372,7 @@ class GameView:
             path = f"assets/cameras/{fname}"
             if not os.path.exists(path):
                 path = f"assets/vents_cameras/{fname}"
-            raw = pygame.image.load(path).convert()
+            raw = _safe_load_image(path)
             if path.startswith("assets/vents_cameras"):
                 target_w = int(raw.get_height() * 16 / 9)
                 offset = (raw.get_width() - target_w) // 2
@@ -405,7 +394,7 @@ class GameView:
 
         def _load_cam(path):
             try:
-                raw = pygame.image.load(path).convert()
+                raw = _safe_load_image(path)
                 if path.startswith("assets/vents_cameras"):
                     target_w = int(raw.get_height() * 16 / 9)
                     offset = (raw.get_width() - target_w) // 2
@@ -627,7 +616,7 @@ class GameView:
         self.crt_mask = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
         crt_path = os.path.join(os.environ.get("APPDATA", "."), "FiveNightsAtRTF", "crt_mask.png")
         if os.path.exists(crt_path):
-            self.crt_mask = pygame.image.load(crt_path).convert_alpha()
+            self.crt_mask = _safe_load_image(crt_path, alpha=True)
         else:
             cx, cy = screen_w / 2, screen_h / 2
             max_dist = ((cx) ** 2 + (cy) ** 2) ** 0.5
@@ -659,7 +648,7 @@ class GameView:
                 fname.lower().endswith(".png")
                 or fname.lower().endswith(".jpg")
             ):
-                img = pygame.image.load(f"assets/cctv/{fname}").convert()
+                img = _safe_load_image(f"assets/cctv/{fname}")
                 s = pygame.transform.smoothscale(img, (screen_w, screen_h))
                 s.set_alpha(255)
                 self._glitch_frames.append(s)
@@ -667,17 +656,17 @@ class GameView:
         # Планшет — 10 отдельных картинок без фона
         self.cam_frames = []
         for i in range(1, 11):
-            img = pygame.image.load(
-                f"assets/office/tablet/tablet-{i}.png"
-            ).convert_alpha()
+            img = _safe_load_image(
+                f"assets/office/tablet/tablet-{i}.png", alpha=True
+            )
             self.cam_frames.append(
                 pygame.transform.smoothscale(img, (screen_w, screen_h))
             )
 
         # Кнопка Mute Call (на столе офиса)
-        raw_mute = pygame.image.load(
-            "assets/office/mutecall.png"
-        ).convert_alpha()
+        raw_mute = _safe_load_image(
+            "assets/office/mutecall.png", alpha=True
+        )
         mute_scale = 112 / raw_mute.get_width()
         self.mutecall_surf = pygame.transform.scale(
             raw_mute, (112, int(raw_mute.get_height() * mute_scale))
@@ -688,12 +677,12 @@ class GameView:
         self._btn_size = (64, 34)
         self._bait_btn_icon_size = (56, 28)
         self._map_btn_icon_size = (52, 26)
-        raw_bait = pygame.image.load(
-            "assets/cameras/playaudio.png"
-        ).convert_alpha()
-        raw_map = pygame.image.load(
-            "assets/cameras/maptoggle.png"
-        ).convert_alpha()
+        raw_bait = _safe_load_image(
+            "assets/cameras/playaudio.png", alpha=True
+        )
+        raw_map = _safe_load_image(
+            "assets/cameras/maptoggle.png", alpha=True
+        )
         self._btn_bg = pygame.Surface(self._btn_size, pygame.SRCALPHA)
         self._btn_bg.fill((15, 15, 25, 200))
         self._bait_btn_img = pygame.Surface(self._btn_size, pygame.SRCALPHA)
@@ -725,16 +714,16 @@ class GameView:
         # Аудио-иконки для мини-карты (audio1-4.png)
         self._audio_icons = []
         for i in range(1, 5):
-            img = pygame.image.load(
-                f"assets/cameras/audio{i}.png"
-            ).convert_alpha()
+            img = _safe_load_image(
+                f"assets/cameras/audio{i}.png", alpha=True
+            )
             self._audio_icons.append(pygame.transform.scale(img, (60, 50)))
 
         # ── Глитч-картинки ─────────────────────────────────────────────
         self._glitch_surfs = []
         for fname in ("glitch1.png", "glitch2.png"):
             try:
-                raw = pygame.image.load(f"assets/glithces/{fname}").convert()
+                raw = _safe_load_image(f"assets/glithces/{fname}")
                 self._glitch_surfs.append(
                     pygame.transform.smoothscale(raw, (screen_w, screen_h))
                 )

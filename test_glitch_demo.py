@@ -33,8 +33,6 @@ FONT_PATH = "assets/fonts/OCR-A.ttf"
 
 def force_glitch(model, presenter):
     """Принудительно запустить глитч."""
-    model._glitch_delay = 0
-    model._glitch_triggered = True
     model._glitch_active = True
     model._glitch_timer = 90
     model._glitch_frame = 0
