@@ -27,6 +27,12 @@ class AIState(Enum):
 
 
 class AlgemEventType(str, Enum):
+    """Типы событий, которые ИИ отдаёт Presenter для звука и эффектов.
+
+    Строковый Enum нужен, чтобы внешний слой не сравнивал события по
+    случайным строковым литералам и не зависел от приватных методов AlgemAI.
+    """
+
     MOVE = "MOVE"
     VENT_MOVE = "VENT_MOVE"
     SEAL_BLOCKED = "SEAL_BLOCKED"
@@ -38,6 +44,15 @@ class AlgemEventType(str, Enum):
 
 @dataclass(frozen=True)
 class AlgemEvent:
+    """Одно доменное событие, созданное ИИ Алгема.
+
+    Args:
+        kind: Категория события для Presenter.
+        source: Узел, из которого началось действие.
+        target: Узел, в который направлено действие.
+        state: Название FSM-состояния после события.
+        delay_ticks: Задержка до опасного последствия, если она нужна событию.
+    """
     kind: AlgemEventType
     source: int
     target: int
@@ -47,6 +62,11 @@ class AlgemEvent:
 
 @dataclass(frozen=True)
 class NightProfile:
+    """Настройки сложности и интереса Алгема для одной ночи.
+
+    Объект хранит только данные баланса. Логика их применения находится в
+    AlgemAI, поэтому профиль можно менять без переписывания FSM.
+    """
     server_growth: float
     ad_growth: float
     hack_interest_scale: float

@@ -17,31 +17,38 @@ MENU_GLITCH_BACKGROUNDS = (
     "assets/menu/algem_normal.png",
 )
 MENU_TARGET_BRIGHTNESS = 25
+MENU_TITLE_FONT_SIZE = 65
+MENU_BUTTON_FONT_SIZE = 30
+MENU_STAR_SIZE = 64
 
 
 @dataclass(frozen=True)
 class MenuFonts:
+    """Набор шрифтов главного меню, загруженных один раз при старте.
+
+    Args:
+        title: Крупный шрифт заголовка.
+        button: Шрифт пунктов меню.
+    """
     title: pygame.font.Font
     button: pygame.font.Font
 
 
 @dataclass(frozen=True)
 class MenuBackgrounds:
+    """Фоны главного меню в нормальном и затемнённом вариантах.
+
+    Args:
+        normal: Основной фон меню.
+        glitch: Список альтернативных фонов для glitch-состояния.
+    """
     normal: pygame.Surface
     glitch: list[pygame.Surface]
 
 
 def load_menu_fonts(scale_y: float) -> MenuFonts:
-    """Выполнить ``load menu fonts``.
-    
-    Args:
-        scale_y: Входной параметр метода ``load_menu_fonts``.
-    
-    Returns:
-        Значение типа ``MenuFonts``.
-    """
-    title_size = int(65 * scale_y)
-    button_size = int(30 * scale_y)
+    title_size = int(MENU_TITLE_FONT_SIZE * scale_y)
+    button_size = int(MENU_BUTTON_FONT_SIZE * scale_y)
     return MenuFonts(
         title=safe_font(MENU_FONT_PATH, title_size),
         button=safe_font(MENU_FONT_PATH, button_size),
@@ -49,14 +56,6 @@ def load_menu_fonts(scale_y: float) -> MenuFonts:
 
 
 def load_menu_backgrounds(size: tuple[int, int]) -> MenuBackgrounds:
-    """Выполнить ``load menu backgrounds``.
-    
-    Args:
-        size: Входной параметр метода ``load_menu_backgrounds``.
-    
-    Returns:
-        Значение типа ``MenuBackgrounds``.
-    """
     normal = pygame.transform.smoothscale(
         safe_load_image(MENU_NORMAL_BG, fallback_size=size),
         size,
@@ -74,20 +73,11 @@ def load_menu_backgrounds(size: tuple[int, int]) -> MenuBackgrounds:
 
 
 def load_menu_star(scale_x: float, scale_y: float) -> pygame.Surface | None:
-    """Выполнить ``load menu star``.
-    
-    Args:
-        scale_x: Входной параметр метода ``load_menu_star``.
-        scale_y: Входной параметр метода ``load_menu_star``.
-    
-    Returns:
-        Значение типа ``pygame.Surface | None``.
-    """
     try:
         raw = safe_load_image(MENU_STAR, alpha=True)
         return pygame.transform.smoothscale(
             raw,
-            (int(64 * scale_x), int(64 * scale_y)),
+            (int(MENU_STAR_SIZE * scale_x), int(MENU_STAR_SIZE * scale_y)),
         )
     except pygame.error:
         return None

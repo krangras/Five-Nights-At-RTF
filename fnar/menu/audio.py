@@ -10,28 +10,17 @@ MENU_HOVER_DEFAULT_VOLUME = 0.30
 
 
 class MenuAudio:
+    """Звуковое сопровождение главного меню.
+
+    Класс изолирует загрузку и воспроизведение menu-track/hover-click звуков,
+    чтобы Presenter не работал напрямую с путями к аудиофайлам.
+    """
     def __init__(self, settings_data=None):
-        """Выполнить ``init``.
-        
-        Args:
-            settings_data: Входной параметр метода ``__init__``.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         self.settings_data = ensure_audio_settings(settings_data)
         self._blip_sound = None
         self._music_loaded = False
 
     def ensure_music(self):
-        """Выполнить ``ensure music``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         if pygame.mixer.music.get_busy():
             apply_music_volume(self.settings_data, "menu_music", MENU_MUSIC_DEFAULT_VOLUME)
             return
@@ -48,25 +37,9 @@ class MenuAudio:
             pass
 
     def stop_music(self):
-        """Выполнить ``stop music``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         pygame.mixer.music.stop()
 
     def play_hover(self):
-        """Выполнить ``play hover``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         if self._blip_sound is None:
             try:
                 self._blip_sound = pygame.mixer.Sound(MENU_BLIP_PATH)

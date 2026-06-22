@@ -4,29 +4,45 @@ import os
 import re
 
 
-class ScreamerPlayer:
-    """Frame-based screamer player from PNG/JPG frames."""
+DEFAULT_SCREAMER_DIR = "assets/screamer"
+DEFAULT_SCREAMER_SCREEN_SIZE = (1280, 720)
+DEFAULT_PLAYBACK_SPEED = 1.0
+DEFAULT_DOOR_FRAME_COUNT = 15
+DEFAULT_DOOR_SPEED = 8.0
+DEFAULT_SCREAM_FRAME = 40
+DEFAULT_FRAME_DELAY_SECONDS = 0.04
+DEFAULT_RED_START_FRAME = 60
+DEFAULT_HOLD_LAST_SECONDS = 0.0
+DEFAULT_RED_DURATION_SECONDS = 1.5
+FRAME_INDEX_FALLBACK = 0
+RED_OVERLAY_COLOR = (180, 0, 0, 0)
+RED_OVERLAY_RGB = (180, 0, 0)
+MAX_ALPHA = 255
 
-    def __init__(self, frames_dir="assets/screamer", screen_size=(1280, 720),
-                 speed=1.0, door_frames=15, door_speed=8.0, scream_frame=40,
-                 delay_default=0.04, red_start=60, hold_last=0.0, red_duration=1.5):
-        """Выполнить ``init``.
-        
-        Args:
-            frames_dir: Входной параметр метода ``__init__``.
-            screen_size: Входной параметр метода ``__init__``.
-            speed: Входной параметр метода ``__init__``.
-            door_frames: Входной параметр метода ``__init__``.
-            door_speed: Входной параметр метода ``__init__``.
-            scream_frame: Входной параметр метода ``__init__``.
-            delay_default: Входной параметр метода ``__init__``.
-            red_start: Входной параметр метода ``__init__``.
-            hold_last: Входной параметр метода ``__init__``.
-            red_duration: Входной параметр метода ``__init__``.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
+
+class ScreamerPlayer:
+    """Frame-based screamer player from PNG/JPG frames.
+
+    Class-level constants keep timing and visual parameters named, so the
+    screamer can be tuned without searching for hardcoded numbers.
+    """
+
+    DEFAULT_DIR = DEFAULT_SCREAMER_DIR
+    DEFAULT_SCREEN_SIZE = DEFAULT_SCREAMER_SCREEN_SIZE
+    DEFAULT_SPEED = DEFAULT_PLAYBACK_SPEED
+    DEFAULT_DOOR_FRAMES = DEFAULT_DOOR_FRAME_COUNT
+    DEFAULT_DOOR_SPEED = DEFAULT_DOOR_SPEED
+    DEFAULT_SCREAM_FRAME = DEFAULT_SCREAM_FRAME
+    DEFAULT_DELAY = DEFAULT_FRAME_DELAY_SECONDS
+    DEFAULT_RED_START = DEFAULT_RED_START_FRAME
+    DEFAULT_HOLD_LAST = DEFAULT_HOLD_LAST_SECONDS
+    DEFAULT_RED_DURATION = DEFAULT_RED_DURATION_SECONDS
+
+    def __init__(self, frames_dir=DEFAULT_SCREAMER_DIR, screen_size=DEFAULT_SCREAMER_SCREEN_SIZE,
+                 speed=DEFAULT_PLAYBACK_SPEED, door_frames=DEFAULT_DOOR_FRAME_COUNT,
+                 door_speed=DEFAULT_DOOR_SPEED, scream_frame=DEFAULT_SCREAM_FRAME,
+                 delay_default=DEFAULT_FRAME_DELAY_SECONDS, red_start=DEFAULT_RED_START_FRAME,
+                 hold_last=DEFAULT_HOLD_LAST_SECONDS, red_duration=DEFAULT_RED_DURATION_SECONDS):
         self.screen_size = screen_size
         sw, sh = screen_size
         self._frames: list[tuple[pygame.Surface, float]] = []
@@ -41,17 +57,9 @@ class ScreamerPlayer:
         files = sorted(glob.glob(png_pattern) + glob.glob(jpg_pattern))
 
         def _sort_key(path):
-            """Выполнить ``sort key``.
-            
-            Args:
-                path: Входной параметр метода ``_sort_key``.
-            
-            Returns:
-                Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-            """
             base = os.path.basename(path)
             m = re.search(r"frame[_-](\d+)", base)
-            return int(m.group(1)) if m else 0
+            return int(m.group(1)) if m else FRAME_INDEX_FALLBACK
 
         files = sorted(files, key=_sort_key)
 
@@ -71,7 +79,7 @@ class ScreamerPlayer:
             self._frames.append((cropped, delay))
 
         self._red_overlay = pygame.Surface(screen_size, pygame.SRCALPHA)
-        self._red_overlay.fill((180, 0, 0, 0))
+        self._red_overlay.fill(RED_OVERLAY_COLOR)
         self._red_start = red_start
         self._hold_last = hold_last
         self._hold_timer = 0.0
@@ -81,25 +89,9 @@ class ScreamerPlayer:
 
     @property
     def done(self):
-        """Выполнить ``done``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         return self._done
 
     def update(self, dt: float):
-        """Выполнить ``update``.
-        
-        Args:
-            dt: Входной параметр метода ``update``.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         if self._done or not self._frames:
             return
         if self._hold_timer > 0.0:
@@ -125,31 +117,15 @@ class ScreamerPlayer:
             self.scream_triggered = True
 
     def draw(self, surface: pygame.Surface):
-        """Выполнить ``draw``.
-        
-        Args:
-            surface: Входной параметр метода ``draw``.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         if self._frames:
             surface.blit(self._frames[self._idx][0], (0, 0))
             if self._red_elapsed > 0.0:
                 progress = min(1.0, self._red_elapsed / self._red_duration)
-                alpha = int(progress * 255)
-                self._red_overlay.fill((180, 0, 0, alpha))
+                alpha = int(progress * MAX_ALPHA)
+                self._red_overlay.fill((*RED_OVERLAY_RGB, alpha))
                 surface.blit(self._red_overlay, (0, 0))
 
     def reset(self):
-        """Выполнить ``reset``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         self._idx = 0
         self._elapsed = 0.0
         self._done = False
@@ -157,4 +133,4 @@ class ScreamerPlayer:
         self._red_elapsed = 0.0
         self.scream_triggered = False
         self.scream_frame = self._initial_scream_frame
-        self._red_overlay.fill((180, 0, 0, 0))
+        self._red_overlay.fill(RED_OVERLAY_COLOR)

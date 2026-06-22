@@ -18,9 +18,13 @@ class ScreenCapture:
     ])
 
     def __init__(self, scale: float):
-        """
-        scale — масштаб офисного изображения (screen_h / 821).
-        """
+        """scale — масштаб офисного изображения (screen_h / 821).
+
+        Args:
+            scale: Параметр типа ``float``, используемый методом ``__init__``.
+
+        Returns:
+            Результат выполнения метода; для процедурных методов — ``None``."""
         self.scale = scale
         self.surface: pygame.Surface | None = None
         self._lock = threading.Lock()
@@ -55,14 +59,6 @@ class ScreenCapture:
         self._thread.start()
 
     def _capture_loop(self):
-        """Выполнить ``capture loop``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         sct = mss.mss()
         monitor = sct.monitors[1]  # primary monitor
         while self._running:
@@ -86,14 +82,6 @@ class ScreenCapture:
             time.sleep(self._interval)
 
     def stop(self):
-        """Выполнить ``stop``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         self._running = False
         if self._thread.is_alive():
             self._thread.join(timeout=2.0)

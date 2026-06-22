@@ -16,20 +16,14 @@ from typing import Callable
 Graph = dict[int, list[int]]
 GraphSignature = tuple[tuple[int, tuple[int, ...]], ...]
 
+UNREACHABLE_HEURISTIC = 999
+MIN_EDGE_WEIGHT = 0.05
+
 
 def _reconstruct_path(
     parents: dict[int, int | None],
     goal: int,
 ) -> list[int]:
-    """Выполнить ``reconstruct path``.
-    
-    Args:
-        parents: Входной параметр метода ``_reconstruct_path``.
-        goal: Входной параметр метода ``_reconstruct_path``.
-    
-    Returns:
-        Значение типа ``list[int]``.
-    """
     path: list[int] = []
     current: int | None = goal
     while current is not None:
@@ -40,7 +34,15 @@ def _reconstruct_path(
 
 
 def bfs_path(start: int, goal: int, graph: Graph) -> list[int] | None:
-    """Кратчайший путь в невзвешенном графе. Сложность O(V + E)."""
+    """Кратчайший путь в невзвешенном графе. Сложность O(V + E).
+
+    Args:
+        start: Параметр типа ``int``, используемый методом ``bfs_path``.
+        goal: Параметр типа ``int``, используемый методом ``bfs_path``.
+        graph: Параметр типа ``Graph``, используемый методом ``bfs_path``.
+
+    Returns:
+        Значение типа ``list[int] | None``."""
     if start == goal:
         return [start]
 
@@ -60,7 +62,15 @@ def bfs_path(start: int, goal: int, graph: Graph) -> list[int] | None:
 
 
 def dfs_path(start: int, goal: int, graph: Graph) -> list[int] | None:
-    """Один физически допустимый маршрут через DFS. Сложность O(V + E)."""
+    """Один физически допустимый маршрут через DFS. Сложность O(V + E).
+
+    Args:
+        start: Параметр типа ``int``, используемый методом ``dfs_path``.
+        goal: Параметр типа ``int``, используемый методом ``dfs_path``.
+        graph: Параметр типа ``Graph``, используемый методом ``dfs_path``.
+
+    Returns:
+        Значение типа ``list[int] | None``."""
     if start == goal:
         return [start]
 
@@ -91,12 +101,22 @@ def astar_path(
     edge_weight_fn: Callable[[int, int], float],
     heuristic: dict[int, int],
 ) -> list[int] | None:
-    """A* для взвешенного графа. Сложность O((V + E) log V)."""
+    """A* для взвешенного графа. Сложность O((V + E) log V).
+
+    Args:
+        start: Параметр типа ``int``, используемый методом ``astar_path``.
+        goal: Параметр типа ``int``, используемый методом ``astar_path``.
+        graph: Параметр типа ``Graph``, используемый методом ``astar_path``.
+        edge_weight_fn: Параметр типа ``Callable[[int, int], float]``, используемый методом ``astar_path``.
+        heuristic: Параметр типа ``dict[int, int]``, используемый методом ``astar_path``.
+
+    Returns:
+        Значение типа ``list[int] | None``."""
     if start == goal:
         return [start]
 
     open_heap: list[tuple[float, float, int]] = []
-    heapq.heappush(open_heap, (float(heuristic.get(start, 999)), 0.0, start))
+    heapq.heappush(open_heap, (float(heuristic.get(start, UNREACHABLE_HEURISTIC)), 0.0, start))
     best_g: dict[int, float] = {start: 0.0}
     parents: dict[int, int | None] = {start: None}
 
@@ -108,26 +128,18 @@ def astar_path(
             return _reconstruct_path(parents, goal)
 
         for neighbor in graph.get(current, []):
-            new_g = g + max(0.05, edge_weight_fn(current, neighbor))
+            new_g = g + max(MIN_EDGE_WEIGHT, edge_weight_fn(current, neighbor))
             if new_g < best_g.get(neighbor, float("inf")):
                 best_g[neighbor] = new_g
                 parents[neighbor] = current
                 heapq.heappush(
                     open_heap,
-                    (new_g + heuristic.get(neighbor, 999), new_g, neighbor),
+                    (new_g + heuristic.get(neighbor, UNREACHABLE_HEURISTIC), new_g, neighbor),
                 )
     return None
 
 
 def graph_signature(graph: Graph) -> GraphSignature:
-    """Выполнить ``graph signature``.
-    
-    Args:
-        graph: Входной параметр метода ``graph_signature``.
-    
-    Returns:
-        Значение типа ``GraphSignature``.
-    """
     return tuple(
         (node, tuple(neighbors))
         for node, neighbors in sorted(graph.items())
@@ -135,21 +147,12 @@ def graph_signature(graph: Graph) -> GraphSignature:
 
 
 def single_target_hop_distances(graph: Graph, goal: int) -> dict[int, int]:
-    """Выполнить ``single target hop distances``.
-    
-    Args:
-        graph: Входной параметр метода ``single_target_hop_distances``.
-        goal: Входной параметр метода ``single_target_hop_distances``.
-    
-    Returns:
-        Значение типа ``dict[int, int]``.
-    """
     reverse_graph: dict[int, list[int]] = {node: [] for node in graph}
     for node, neighbors in graph.items():
         for neighbor in neighbors:
             reverse_graph.setdefault(neighbor, []).append(node)
 
-    distances: dict[int, int] = {node: 999 for node in graph}
+    distances: dict[int, int] = {node: UNREACHABLE_HEURISTIC for node in graph}
     distances[goal] = 0
     queue: deque[int] = deque([goal])
 

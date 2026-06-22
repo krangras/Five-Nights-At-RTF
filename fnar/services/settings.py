@@ -14,14 +14,6 @@ _defaults = {
 
 
 def _default_settings() -> dict:
-    """Выполнить ``default settings``.
-    
-    Args:
-        Нет аргументов.
-    
-    Returns:
-        Значение типа ``dict``.
-    """
     return {
         "fullscreen": _defaults["fullscreen"],
         "audio_mix": default_audio_mix(),
@@ -29,16 +21,8 @@ def _default_settings() -> dict:
 
 
 def load_settings() -> dict:
-    """Выполнить ``load settings``.
-    
-    Args:
-        Нет аргументов.
-    
-    Returns:
-        Значение типа ``dict``.
-    """
     try:
-        with open(SETTINGS_PATH, "r") as f:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         for k, v in _default_settings().items():
             data.setdefault(k, v)
@@ -49,15 +33,7 @@ def load_settings() -> dict:
 
 
 def save_settings(data: dict) -> None:
-    """Выполнить ``save settings``.
-    
-    Args:
-        data: Входной параметр метода ``save_settings``.
-    
-    Returns:
-        ``None``. Метод выполняет действие или обновляет состояние объекта.
-    """
     data = dict(data)
     data["audio_mix"] = normalize_audio_mix(data.get("audio_mix"))
-    with open(SETTINGS_PATH, "w") as f:
+    with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)

@@ -8,30 +8,37 @@ from __future__ import annotations
 
 LAPTOP_BOOT_TICKS = 180
 LAPTOP_SHUTDOWN_TICKS = 150
+PROGRESS_MIN = 0.0
+PROGRESS_MAX = 1.0
+BOOT_WAKE_END = 0.18
+BOOT_POST_END = 0.62
+BOOT_POST_DURATION = BOOT_POST_END - BOOT_WAKE_END
+BOOT_LOADING_DURATION = PROGRESS_MAX - BOOT_POST_END
+SHUTDOWN_MESSAGE_END = 0.48
+SHUTDOWN_FADE_DURATION = PROGRESS_MAX - SHUTDOWN_MESSAGE_END
+PHASE_BOOT_WAKE = "boot_wake"
+PHASE_BOOT_POST = "boot_post"
+PHASE_BOOT_LOADING = "boot_loading"
+PHASE_SHUTDOWN_MESSAGE = "shutdown_msg"
+PHASE_SHUTDOWN_FADE = "shutdown_fade"
+PHASE_OFF_IDLE = "off_idle"
+STATE_BOOTING = "BOOTING"
+STATE_SHUTTING_DOWN = "SHUTTING_DOWN"
 
 
 def get_laptop_power_sequence(power_state: str, power_timer: int) -> tuple[str, float]:
-    """Выполнить ``get laptop power sequence``.
-    
-    Args:
-        power_state: Входной параметр метода ``get_laptop_power_sequence``.
-        power_timer: Входной параметр метода ``get_laptop_power_sequence``.
-    
-    Returns:
-        Значение типа ``tuple[str, float]``.
-    """
-    if power_state == "BOOTING":
-        progress = max(0.0, min(1.0, 1.0 - power_timer / LAPTOP_BOOT_TICKS))
-        if progress < 0.18:
-            return "boot_wake", progress / 0.18
-        if progress < 0.62:
-            return "boot_post", (progress - 0.18) / 0.44
-        return "boot_loading", (progress - 0.62) / 0.38
+    if power_state == STATE_BOOTING:
+        progress = max(PROGRESS_MIN, min(PROGRESS_MAX, PROGRESS_MAX - power_timer / LAPTOP_BOOT_TICKS))
+        if progress < BOOT_WAKE_END:
+            return PHASE_BOOT_WAKE, progress / BOOT_WAKE_END
+        if progress < BOOT_POST_END:
+            return PHASE_BOOT_POST, (progress - BOOT_WAKE_END) / BOOT_POST_DURATION
+        return PHASE_BOOT_LOADING, (progress - BOOT_POST_END) / BOOT_LOADING_DURATION
 
-    if power_state == "SHUTTING_DOWN":
-        progress = max(0.0, min(1.0, 1.0 - power_timer / LAPTOP_SHUTDOWN_TICKS))
-        if progress < 0.48:
-            return "shutdown_msg", progress / 0.48
-        return "shutdown_fade", (progress - 0.48) / 0.52
+    if power_state == STATE_SHUTTING_DOWN:
+        progress = max(PROGRESS_MIN, min(PROGRESS_MAX, PROGRESS_MAX - power_timer / LAPTOP_SHUTDOWN_TICKS))
+        if progress < SHUTDOWN_MESSAGE_END:
+            return PHASE_SHUTDOWN_MESSAGE, progress / SHUTDOWN_MESSAGE_END
+        return PHASE_SHUTDOWN_FADE, (progress - SHUTDOWN_MESSAGE_END) / SHUTDOWN_FADE_DURATION
 
-    return "off_idle", 0.0
+    return PHASE_OFF_IDLE, PROGRESS_MIN

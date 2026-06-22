@@ -40,14 +40,6 @@ AUDIO_ID_ALIASES: dict[str, str] = {
 
 
 def _discover_sound_files() -> list[str]:
-    """Выполнить ``discover sound files``.
-    
-    Args:
-        Нет аргументов.
-    
-    Returns:
-        Значение типа ``list[str]``.
-    """
     if not SOUNDS_ROOT.exists():
         return sorted(set(AUDIO_ID_ALIASES.values()))
 
@@ -70,26 +62,10 @@ AUDIO_MIX_DEFAULTS: dict[str, object] = {
 
 
 def default_audio_mix() -> dict:
-    """Выполнить ``default audio mix``.
-    
-    Args:
-        Нет аргументов.
-    
-    Returns:
-        Значение типа ``dict``.
-    """
     return deepcopy(AUDIO_MIX_DEFAULTS)
 
 
 def ensure_audio_settings(settings_data: dict | None) -> dict:
-    """Выполнить ``ensure audio settings``.
-    
-    Args:
-        settings_data: Входной параметр метода ``ensure_audio_settings``.
-    
-    Returns:
-        Значение типа ``dict``.
-    """
     if settings_data is None:
         settings_data = {}
     settings_data["audio_mix"] = normalize_audio_mix(settings_data.get("audio_mix"))
@@ -97,14 +73,6 @@ def ensure_audio_settings(settings_data: dict | None) -> dict:
 
 
 def normalize_audio_mix(audio_mix: dict | None) -> dict:
-    """Выполнить ``normalize audio mix``.
-    
-    Args:
-        audio_mix: Входной параметр метода ``normalize_audio_mix``.
-    
-    Returns:
-        Значение типа ``dict``.
-    """
     mix = default_audio_mix()
     if not isinstance(audio_mix, dict):
         return mix
@@ -121,16 +89,6 @@ def normalize_audio_mix(audio_mix: dict | None) -> dict:
 
 
 def effective_volume(settings_data: dict | None, sound_id: str, base: float) -> float:
-    """Выполнить ``effective volume``.
-    
-    Args:
-        settings_data: Входной параметр метода ``effective_volume``.
-        sound_id: Входной параметр метода ``effective_volume``.
-        base: Входной параметр метода ``effective_volume``.
-    
-    Returns:
-        Значение типа ``float``.
-    """
     mix = normalize_audio_mix((settings_data or {}).get("audio_mix"))
     sound_path = resolve_sound_id(sound_id)
     sound_level = mix["sounds"].get(sound_path, 1.0)
@@ -138,46 +96,24 @@ def effective_volume(settings_data: dict | None, sound_id: str, base: float) -> 
 
 
 def apply_music_volume(settings_data: dict | None, sound_id: str, base: float) -> None:
-    """Выполнить ``apply music volume``.
-    
-    Args:
-        settings_data: Входной параметр метода ``apply_music_volume``.
-        sound_id: Входной параметр метода ``apply_music_volume``.
-        base: Входной параметр метода ``apply_music_volume``.
-    
-    Returns:
-        ``None``. Метод выполняет действие или обновляет состояние объекта.
-    """
     pygame.mixer.music.set_volume(effective_volume(settings_data, sound_id, base))
 
 
 def resolve_sound_id(sound_id: str) -> str:
-    """Выполнить ``resolve sound id``.
-    
-    Args:
-        sound_id: Входной параметр метода ``resolve_sound_id``.
-    
-    Returns:
-        Значение типа ``str``.
-    """
     return AUDIO_ID_ALIASES.get(sound_id, sound_id.replace("\\", "/"))
 
 
 class AudioCalibrationOverlay:
+    """Встроенный экран калибровки громкости каналов.
+
+    Позволяет менять мастер-громкости во время игры, не смешивая UI
+    настройки звука с основной логикой Presenter.
+    """
     def __init__(
         self,
         settings_data: dict,
         on_change: Callable[[], None] | None = None,
     ) -> None:
-        """Выполнить ``init``.
-        
-        Args:
-            settings_data: Входной параметр метода ``__init__``.
-            on_change: Входной параметр метода ``__init__``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self.settings_data = ensure_audio_settings(settings_data)
         self.on_change = on_change
         self.visible = False
@@ -196,14 +132,6 @@ class AudioCalibrationOverlay:
         self._preview_base_volume: float = 1.0
 
     def handle_event(self, event: pygame.event.Event) -> bool:
-        """Выполнить ``handle event``.
-        
-        Args:
-            event: Входной параметр метода ``handle_event``.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         if event.type == pygame.KEYDOWN:
             return self._handle_keydown(event)
 
@@ -230,14 +158,6 @@ class AudioCalibrationOverlay:
         return False
 
     def draw(self, surface: pygame.Surface) -> None:
-        """Выполнить ``draw``.
-        
-        Args:
-            surface: Входной параметр метода ``draw``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if not self.visible:
             return
 
@@ -283,14 +203,6 @@ class AudioCalibrationOverlay:
         self._draw_scrollbar(surface, panel, visible_rows)
 
     def _handle_keydown(self, event: pygame.event.Event) -> bool:
-        """Выполнить ``handle keydown``.
-        
-        Args:
-            event: Входной параметр метода ``_handle_keydown``.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         if event.key in (pygame.K_F10, pygame.K_F9, pygame.K_BACKQUOTE):
             self.visible = not self.visible
             return True
@@ -345,20 +257,6 @@ class AudioCalibrationOverlay:
         index: int,
         is_selected: bool,
     ) -> None:
-        """Выполнить ``draw row``.
-        
-        Args:
-            surface: Входной параметр метода ``_draw_row``.
-            x: Входной параметр метода ``_draw_row``.
-            y: Входной параметр метода ``_draw_row``.
-            width: Входной параметр метода ``_draw_row``.
-            row: Входной параметр метода ``_draw_row``.
-            index: Входной параметр метода ``_draw_row``.
-            is_selected: Входной параметр метода ``_draw_row``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         row_rect = pygame.Rect(x, y - 2, width, 30)
         label_color = (250, 250, 250) if is_selected else (205, 220, 230)
         bar_color = (85, 200, 240) if is_selected else (70, 125, 170)
@@ -401,18 +299,6 @@ class AudioCalibrationOverlay:
         highlighted: bool,
         small: bool = False,
     ) -> None:
-        """Выполнить ``draw button``.
-        
-        Args:
-            surface: Входной параметр метода ``_draw_button``.
-            rect: Входной параметр метода ``_draw_button``.
-            text: Входной параметр метода ``_draw_button``.
-            highlighted: Входной параметр метода ``_draw_button``.
-            small: Входной параметр метода ``_draw_button``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         fill = (40, 70, 96) if highlighted else (28, 46, 64)
         edge = (120, 175, 220) if highlighted else (88, 130, 166)
         pygame.draw.rect(surface, fill, rect, border_radius=5)
@@ -422,43 +308,18 @@ class AudioCalibrationOverlay:
         surface.blit(txt, (rect.centerx - txt.get_width() // 2, rect.centery - txt.get_height() // 2))
 
     def _build_rows(self) -> list[dict[str, str]]:
-        """Выполнить ``build rows``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``list[dict[str, str]]``.
-        """
         rows = [{"kind": "master", "key": "master", "label": "MASTER"}]
         for sound_path in ALL_SOUND_PATHS:
             rows.append({"kind": "sound", "key": sound_path, "label": sound_path})
         return rows
 
     def _get_value(self, row: dict[str, str]) -> float:
-        """Выполнить ``get value``.
-        
-        Args:
-            row: Входной параметр метода ``_get_value``.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         mix = self.settings_data["audio_mix"]
         if row["kind"] == "master":
             return mix["master"]
         return mix["sounds"][row["key"]]
 
     def _set_value(self, row: dict[str, str], value: float) -> None:
-        """Выполнить ``set value``.
-        
-        Args:
-            row: Входной параметр метода ``_set_value``.
-            value: Входной параметр метода ``_set_value``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         mix = self.settings_data["audio_mix"]
         if row["kind"] == "master":
             mix["master"] = _clamp_volume(value)
@@ -467,26 +328,10 @@ class AudioCalibrationOverlay:
         self._notify_change()
 
     def _adjust_selected(self, delta: float) -> None:
-        """Выполнить ``adjust selected``.
-        
-        Args:
-            delta: Входной параметр метода ``_adjust_selected``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         row = self._rows[self.selected_index]
         self._set_value(row, self._get_value(row) + delta)
 
     def _reset_selected(self) -> None:
-        """Выполнить ``reset selected``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         defaults = default_audio_mix()
         row = self._rows[self.selected_index]
         if row["kind"] == "master":
@@ -495,41 +340,17 @@ class AudioCalibrationOverlay:
             self._set_value(row, defaults["sounds"].get(row["key"], 1.0))
 
     def _notify_change(self) -> None:
-        """Выполнить ``notify change``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self.settings_data["audio_mix"] = normalize_audio_mix(self.settings_data["audio_mix"])
         self._refresh_preview_volume()
         if self.on_change is not None:
             self.on_change()
 
     def _play_selected(self) -> None:
-        """Выполнить ``play selected``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         row = self._rows[self.selected_index]
         if row["kind"] == "sound":
             self._play_preview(row["key"])
 
     def _play_preview(self, sound_path: str) -> None:
-        """Выполнить ``play preview``.
-        
-        Args:
-            sound_path: Входной параметр метода ``_play_preview``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         snd = self._preview_cache.get(sound_path)
         if snd is None:
             try:
@@ -548,14 +369,6 @@ class AudioCalibrationOverlay:
         self._preview_channel.play(snd)
 
     def _handle_click(self, pos: tuple[int, int]) -> bool:
-        """Выполнить ``handle click``.
-        
-        Args:
-            pos: Входной параметр метода ``_handle_click``.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         if not self._sidebar_rect.collidepoint(pos):
             self.dragging_index = None
             self.visible = False
@@ -581,14 +394,6 @@ class AudioCalibrationOverlay:
         return True
 
     def _handle_drag(self, pos: tuple[int, int]) -> bool:
-        """Выполнить ``handle drag``.
-        
-        Args:
-            pos: Входной параметр метода ``_handle_drag``.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         if self.dragging_index is None:
             return False
         target = None
@@ -612,14 +417,6 @@ class AudioCalibrationOverlay:
         return True
 
     def _refresh_preview_volume(self) -> None:
-        """Выполнить ``refresh preview volume``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if self._preview_sound_id is None or self._preview_channel is None:
             return
         if not self._preview_channel.get_busy():
@@ -633,16 +430,6 @@ class AudioCalibrationOverlay:
         )
 
     def _draw_scrollbar(self, surface: pygame.Surface, panel: pygame.Rect, visible_rows: int) -> None:
-        """Выполнить ``draw scrollbar``.
-        
-        Args:
-            surface: Входной параметр метода ``_draw_scrollbar``.
-            panel: Входной параметр метода ``_draw_scrollbar``.
-            visible_rows: Входной параметр метода ``_draw_scrollbar``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if len(self._rows) <= visible_rows:
             return
         track = pygame.Rect(panel.right - 10, panel.y + 90, 4, panel.h - 140)
@@ -653,14 +440,6 @@ class AudioCalibrationOverlay:
         pygame.draw.rect(surface, (110, 180, 235), (track.x, thumb_y, track.w, thumb_h), border_radius=4)
 
     def _ensure_selected_visible(self) -> None:
-        """Выполнить ``ensure selected visible``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         viewport_rows = 15
         if self.selected_index < self.scroll_offset:
             self.scroll_offset = self.selected_index
@@ -668,26 +447,10 @@ class AudioCalibrationOverlay:
             self.scroll_offset = self.selected_index - viewport_rows + 1
 
     def _max_scroll(self) -> int:
-        """Выполнить ``max scroll``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         return max(0, len(self._rows) - 15)
 
     @staticmethod
     def _step_for_mods(mod: int) -> float:
-        """Выполнить ``step for mods``.
-        
-        Args:
-            mod: Входной параметр метода ``_step_for_mods``.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         if mod & pygame.KMOD_SHIFT:
             return 0.01
         if mod & pygame.KMOD_CTRL:
@@ -696,14 +459,6 @@ class AudioCalibrationOverlay:
 
 
 def _migrate_legacy_sound_keys(raw_sounds: dict) -> dict[str, object]:
-    """Выполнить ``migrate legacy sound keys``.
-    
-    Args:
-        raw_sounds: Входной параметр метода ``_migrate_legacy_sound_keys``.
-    
-    Returns:
-        Значение типа ``dict[str, object]``.
-    """
     migrated: dict[str, object] = {}
     for key, value in raw_sounds.items():
         migrated[resolve_sound_id(str(key))] = value
@@ -711,14 +466,6 @@ def _migrate_legacy_sound_keys(raw_sounds: dict) -> dict[str, object]:
 
 
 def _clamp_volume(value: object) -> float:
-    """Выполнить ``clamp volume``.
-    
-    Args:
-        value: Входной параметр метода ``_clamp_volume``.
-    
-    Returns:
-        Значение типа ``float``.
-    """
     try:
         number = float(value)
     except (TypeError, ValueError):

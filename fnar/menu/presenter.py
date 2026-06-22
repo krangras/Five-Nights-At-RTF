@@ -6,31 +6,18 @@ from .audio import MenuAudio
 
 
 class MenuPresenter:
+    """Presenter главного меню.
+
+    Обрабатывает события мыши/клавиатуры, обновляет MenuModel и вызывает
+    MenuView. Геймплейные данные ночи сюда не попадают.
+    """
     def __init__(self, model, view, settings_data=None):
-        """Выполнить ``init``.
-        
-        Args:
-            model: Входной параметр метода ``__init__``.
-            view: Входной параметр метода ``__init__``.
-            settings_data: Входной параметр метода ``__init__``.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         self.model = model
         self.view = view
         self.audio = MenuAudio(settings_data)
         self._prev_hover = None
 
     def handle_events(self, global_event_handler=None):
-        """Выполнить ``handle events``.
-        
-        Args:
-            global_event_handler: Входной параметр метода ``handle_events``.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         self.audio.ensure_music()
         self._update_menu_hover()
         self._play_hover_if_changed()
@@ -57,15 +44,6 @@ class MenuPresenter:
         return "MENU"
 
     def handle_settings_events(self, is_fullscreen: bool, global_event_handler=None):
-        """Выполнить ``handle settings events``.
-        
-        Args:
-            is_fullscreen: Входной параметр метода ``handle_settings_events``.
-            global_event_handler: Входной параметр метода ``handle_settings_events``.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         hovered = self._get_settings_hover()
         if hovered != self._prev_hover and hovered is not None:
             self.audio.play_hover()
@@ -88,14 +66,6 @@ class MenuPresenter:
         return None, is_fullscreen, hovered
 
     def _update_menu_hover(self):
-        """Выполнить ``update menu hover``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         mouse_pos = pygame.mouse.get_pos()
         if self.view.btn_new_game_rect.collidepoint(mouse_pos):
             self.model.set_hovered_button("new_game")
@@ -109,14 +79,6 @@ class MenuPresenter:
             self.model.set_hovered_button(None)
 
     def _get_settings_hover(self):
-        """Выполнить ``get settings hover``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         mouse_pos = pygame.mouse.get_pos()
         if self.view.btn_fullscreen_rect.collidepoint(mouse_pos):
             return "fullscreen"
@@ -125,14 +87,6 @@ class MenuPresenter:
         return None
 
     def _play_hover_if_changed(self):
-        """Выполнить ``play hover if changed``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         if self.model.hovered_button != self._prev_hover and self.model.hovered_button is not None:
             self.audio.play_hover()
         self._prev_hover = self.model.hovered_button

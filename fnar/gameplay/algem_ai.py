@@ -172,17 +172,6 @@ class AlgemAI:
         start_node: int = 1,
         patrol_graph: dict[int, list[int]] | None = None,
     ) -> None:
-        """Выполнить ``init``.
-        
-        Args:
-            graph: Входной параметр метода ``__init__``.
-            night: Входной параметр метода ``__init__``.
-            start_node: Входной параметр метода ``__init__``.
-            patrol_graph: Входной параметр метода ``__init__``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._graph = graph
         self._patrol_graph = patrol_graph or graph
         self._patrol_graph_is_dedicated = patrol_graph is not None
@@ -266,218 +255,74 @@ class AlgemAI:
 
     @property
     def location(self) -> int:
-        """Выполнить ``location``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         return self._location
 
     @location.setter
     def location(self, value: int) -> None:
-        """Выполнить ``location``.
-        
-        Args:
-            value: Входной параметр метода ``location``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self.force_location(int(value), prev_node=self._prev_location, trigger_ticks=self._trigger_timer)
 
     @property
     def prev_location(self) -> int:
-        """Выполнить ``prev location``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         return self._prev_location
 
     @prev_location.setter
     def prev_location(self, value: int) -> None:
-        """Выполнить ``prev location``.
-        
-        Args:
-            value: Входной параметр метода ``prev_location``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._prev_location = int(value)
 
     @property
     def trigger_timer(self) -> int:
-        """Выполнить ``trigger timer``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         return self._trigger_timer
 
     @trigger_timer.setter
     def trigger_timer(self, value: int) -> None:
-        """Выполнить ``trigger timer``.
-        
-        Args:
-            value: Входной параметр метода ``trigger_timer``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._trigger_timer = max(0, int(value))
 
     @property
     def state(self) -> AIState:
-        """Выполнить ``state``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``AIState``.
-        """
         return self._state
 
     @state.setter
     def state(self, value: AIState) -> None:
-        """Выполнить ``state``.
-        
-        Args:
-            value: Входной параметр метода ``state``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if not isinstance(value, AIState):
             raise TypeError("state must be AIState")
         self._state = value
 
     @property
     def aggression(self) -> float:
-        """Выполнить ``aggression``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         return self._aggression
 
     @aggression.setter
     def aggression(self, value: float) -> None:
-        """Выполнить ``aggression``.
-        
-        Args:
-            value: Входной параметр метода ``aggression``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._aggression = max(0.0, min(1.0, float(value)))
 
     @property
     def attention(self) -> float:
-        """Выполнить ``attention``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         return self._attention
 
     @attention.setter
     def attention(self, value: float) -> None:
-        """Выполнить ``attention``.
-        
-        Args:
-            value: Входной параметр метода ``attention``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._attention = max(0.0, min(100.0, float(value)))
 
     @property
     def hack_attraction(self) -> float:
-        """Выполнить ``hack attraction``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         return self._hack_attraction
 
     @hack_attraction.setter
     def hack_attraction(self, value: float) -> None:
-        """Выполнить ``hack attraction``.
-        
-        Args:
-            value: Входной параметр метода ``hack_attraction``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self.set_hack_attraction(value)
 
     @property
     def main_hall_sprite(self) -> int:
-        """Выполнить ``main hall sprite``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         return self._main_hall_sprite
 
     @main_hall_sprite.setter
     def main_hall_sprite(self, value: int) -> None:
-        """Выполнить ``main hall sprite``.
-        
-        Args:
-            value: Входной параметр метода ``main_hall_sprite``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._main_hall_sprite = 1 if int(value) else 0
 
     def set_hack_attraction(self, value: float) -> None:
-        """Выполнить ``set hack attraction``.
-        
-        Args:
-            value: Входной параметр метода ``set_hack_attraction``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._hack_attraction = max(0.0, min(1.0, float(value)))
 
     def ensure_attention_at_least(self, value: float) -> None:
-        """Выполнить ``ensure attention at least``.
-        
-        Args:
-            value: Входной параметр метода ``ensure_attention_at_least``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._attention = max(self._attention, min(100.0, float(value)))
 
     def reset_after_office_repel(
@@ -488,18 +333,6 @@ class AlgemAI:
         move_timer: int = 120,
         idle_ticks: int = 120,
     ) -> None:
-        """Выполнить ``reset after office repel``.
-        
-        Args:
-            node: Входной параметр метода ``reset_after_office_repel``.
-            prev_node: Входной параметр метода ``reset_after_office_repel``.
-            trigger_ticks: Входной параметр метода ``reset_after_office_repel``.
-            move_timer: Входной параметр метода ``reset_after_office_repel``.
-            idle_ticks: Входной параметр метода ``reset_after_office_repel``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self.force_location(node, prev_node=prev_node, trigger_ticks=trigger_ticks)
         self._entry_timer = 0
         self._move_timer = max(1, int(move_timer))
@@ -514,15 +347,6 @@ class AlgemAI:
         graph: Graph,
         patrol_graph: Graph | None = None,
     ) -> None:
-        """Выполнить ``update graph``.
-        
-        Args:
-            graph: Входной параметр метода ``update_graph``.
-            patrol_graph: Входной параметр метода ``update_graph``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         signature = graph_signature(graph)
         if signature != self._graph_signature:
             self._graph = graph
@@ -539,29 +363,11 @@ class AlgemAI:
             self._patrol_graph = patrol_graph
 
     def drain_events(self) -> list[AlgemEvent]:
-        """Выполнить ``drain events``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``list[AlgemEvent]``.
-        """
         events = list(self._events)
         self._events.clear()
         return events
 
     def force_location(self, node: int, prev_node: int | None = None, trigger_ticks: int = 30) -> None:
-        """Выполнить ``force location``.
-        
-        Args:
-            node: Входной параметр метода ``force_location``.
-            prev_node: Входной параметр метода ``force_location``.
-            trigger_ticks: Входной параметр метода ``force_location``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         old = self._location if prev_node is None else prev_node
         self._prev_location = old
         self._location = node
@@ -575,14 +381,6 @@ class AlgemAI:
         self._reset_patrol_memory()
 
     def update_camera_watch(self, watch: dict[int, int]) -> None:
-        """Выполнить ``update camera watch``.
-        
-        Args:
-            watch: Входной параметр метода ``update_camera_watch``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._camera_watch = watch
 
     def update_game_state(
@@ -595,20 +393,6 @@ class AlgemAI:
         vent_error_count: int = 0,
         dt: float = 1 / 60,
     ) -> None:
-        """Выполнить ``update game state``.
-        
-        Args:
-            server_on: Входной параметр метода ``update_game_state``.
-            ad_active: Входной параметр метода ``update_game_state``.
-            tablet_open: Входной параметр метода ``update_game_state``.
-            laptop_open: Входной параметр метода ``update_game_state``.
-            camera_idx: Входной параметр метода ``update_game_state``.
-            vent_error_count: Входной параметр метода ``update_game_state``.
-            dt: Входной параметр метода ``update_game_state``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         old_ad = self._ad_active
         self._server_on = server_on
         self._ad_active = ad_active
@@ -730,16 +514,6 @@ class AlgemAI:
         attention_floor: float = 92.0,
         rage_level: float | None = None,
     ) -> None:
-        """Выполнить ``trigger post hack rage``.
-        
-        Args:
-            duration_ticks: Входной параметр метода ``trigger_post_hack_rage``.
-            attention_floor: Входной параметр метода ``trigger_post_hack_rage``.
-            rage_level: Входной параметр метода ``trigger_post_hack_rage``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._post_hack_rage_ticks = max(self._post_hack_rage_ticks, int(duration_ticks))
         self._post_hack_rage_attention = max(self._post_hack_rage_attention, float(attention_floor))
         if rage_level is not None:
@@ -756,27 +530,10 @@ class AlgemAI:
             self._move_timer = min(self._move_timer, cap)
 
     def _post_hack_rage_active(self) -> bool:
-        """Выполнить ``post hack rage active``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         return self._post_hack_rage_ticks > 0 or self._post_hack_rage_attention >= 25.0
 
     @staticmethod
     def _table_lerp(table: dict[int, float | int], level: float) -> float:
-        """Выполнить ``table lerp``.
-        
-        Args:
-            table: Входной параметр метода ``_table_lerp``.
-            level: Входной параметр метода ``_table_lerp``.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         if not table:
             return 0.0
 
@@ -802,28 +559,11 @@ class AlgemAI:
         return float(table[lo]) + (float(table[hi]) - float(table[lo])) * ratio
 
     def _rage_level(self) -> float:
-        """Выполнить ``rage level``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         if not self._post_hack_rage_active():
             return float(self._night)
         return max(float(self._night), self._post_hack_rage_level)
 
     def notify_audio_lure(self, target_node: int, duration: int = 480) -> None:
-        """Выполнить ``notify audio lure``.
-        
-        Args:
-            target_node: Входной параметр метода ``notify_audio_lure``.
-            duration: Входной параметр метода ``notify_audio_lure``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if target_node == self._location:
             return
         path = bfs_path(self._location, target_node, self._graph)
@@ -840,21 +580,19 @@ class AlgemAI:
         self._move_timer = min(self._move_timer, 45)
 
     def cancel_audio_lure(self) -> None:
-        """Выполнить ``cancel audio lure``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._lure_node = -1
         self._lure_ticks_left = 0
         if self._state is AIState.INVESTIGATE and self._investigate_target is not None:
             self._investigate_target = None
 
     def notify_laptop_power_event(self, event: str) -> None:
-        """React to office laptop power sounds with distance-based urgency."""
+        """React to office laptop power sounds with distance-based urgency.
+
+        Args:
+            event: Параметр типа ``str``, используемый методом ``notify_laptop_power_event``.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         if self._night <= 1:
             return
         cooldown_scale = 0.38 if self._laptop_noise_cooldown > 0 else 1.0
@@ -907,14 +645,6 @@ class AlgemAI:
                 self._move_timer = min(self._move_timer, 24 if distance <= 1 else 36)
 
     def _is_leaving_vent(self, vent_node: int) -> bool:
-        """Выполнить ``is leaving vent``.
-        
-        Args:
-            vent_node: Входной параметр метода ``_is_leaving_vent``.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         if self._location == vent_node:
             return False
         return bool(
@@ -933,15 +663,6 @@ class AlgemAI:
         )
 
     def notify_seal_started(self, vent_node: int, duration_ticks: int = 300) -> None:
-        """Выполнить ``notify seal started``.
-        
-        Args:
-            vent_node: Входной параметр метода ``notify_seal_started``.
-            duration_ticks: Входной параметр метода ``notify_seal_started``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if self._is_leaving_vent(vent_node):
             self._seal_knock_suppressed_vents.add(vent_node)
             self._last_vent_leave_source = vent_node
@@ -954,7 +675,12 @@ class AlgemAI:
         карте уже должна гореть красная полоска. Стук здесь создаётся только
         если Алгем физически находился в этой vent-камере. Попытки войти в уже
         закрытый вент ловятся отдельно в _move_to().
-        """
+
+        Args:
+            vent_node: Параметр типа ``int``, используемый методом ``notify_seal_closed``.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         # Если игрок закрыл камеру, на которой сейчас видит `algem_is_leaving`,
         # Алгем уже физически уполз с этой vent-камеры. В таком случае стука быть
         # не должно: это не блок, а запоздалая помеха от прошлого положения.
@@ -980,14 +706,6 @@ class AlgemAI:
                 self._vent_interest *= 0.70
 
     def tick(self, hour: int) -> bool:
-        """Выполнить ``tick``.
-        
-        Args:
-            hour: Входной параметр метода ``tick``.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         self._current_hour = hour
         self._block_external_teleport_if_needed()
 
@@ -1059,14 +777,6 @@ class AlgemAI:
     # ------------------------------------------------------------------
 
     def _step(self, hour: int) -> bool:
-        """Выполнить ``step``.
-        
-        Args:
-            hour: Входной параметр метода ``_step``.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         if self._state is AIState.IDLE:
             return self._step_idle(hour)
         if self._state is AIState.PATROL:
@@ -1080,14 +790,6 @@ class AlgemAI:
         return self._step_patrol()
 
     def _step_idle(self, hour: int) -> bool:
-        """Выполнить ``step idle``.
-        
-        Args:
-            hour: Входной параметр метода ``_step_idle``.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         self._idle_ticks_left -= 1
         if self._idle_ticks_left > 0 and self._attention < self._investigate_threshold():
             return False
@@ -1102,14 +804,6 @@ class AlgemAI:
         return False
 
     def _step_patrol(self) -> bool:
-        """Выполнить ``step patrol``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         if self._should_attack():
             self._enter_attack_state()
             return False
@@ -1123,14 +817,6 @@ class AlgemAI:
         return False
 
     def _step_investigate(self) -> bool:
-        """Выполнить ``step investigate``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         target = self._choose_investigate_target()
         self._investigate_target = target
 
@@ -1157,14 +843,6 @@ class AlgemAI:
         return False
 
     def _step_attack(self) -> bool:
-        """Выполнить ``step attack``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         self._trim_reached_attack_detours()
         self._maybe_start_unpredictable_attack_detour()
 
@@ -1206,14 +884,6 @@ class AlgemAI:
         return False
 
     def _current_attack_goal(self) -> int:
-        """Выполнить ``current attack goal``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         if self._lure_node >= 0:
             return self._lure_node
         self._trim_reached_attack_detours()
@@ -1222,27 +892,11 @@ class AlgemAI:
         return self.OFFICE_NODE
 
     def _current_attack_graph(self, goal: int) -> dict[int, list[int]]:
-        """Выполнить ``current attack graph``.
-        
-        Args:
-            goal: Входной параметр метода ``_current_attack_graph``.
-        
-        Returns:
-            Значение типа ``dict[int, list[int]]``.
-        """
         if goal != self.OFFICE_NODE or self._attack_detour_queue:
             return self._graph_with_special_detour_edges()
         return self._graph
 
     def _graph_with_special_detour_edges(self) -> Graph:
-        """Выполнить ``graph with special detour edges``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``Graph``.
-        """
         if self._detour_graph is not None:
             return self._detour_graph
 
@@ -1260,38 +914,14 @@ class AlgemAI:
         return graph
 
     def _node_is_enterable_for_detour(self, node: int) -> bool:
-        """Выполнить ``node is enterable for detour``.
-        
-        Args:
-            node: Входной параметр метода ``_node_is_enterable_for_detour``.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         return node == self.OFFICE_NODE or node == self._location or node in self._enterable_nodes
 
     def _trim_reached_attack_detours(self) -> None:
-        """Выполнить ``trim reached attack detours``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         while self._attack_detour_queue and self._attack_detour_queue[0] == self._location:
             self._attack_detour_queue.popleft()
             self._attack_detour_cooldown = self._DETOUR_COOLDOWN_BY_NIGHT.get(self._night, 2)
 
     def _maybe_start_unpredictable_attack_detour(self) -> None:
-        """Выполнить ``maybe start unpredictable attack detour``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if self._lure_node >= 0 or self._attack_detour_queue or self._location == self.OFFICE_NODE:
             return
         if self._attack_detour_cooldown > 0:
@@ -1313,14 +943,6 @@ class AlgemAI:
         self._move_history.append((self._location, plan[-1], "DETOUR"))
 
     def _unpredictable_route_chance(self) -> float:
-        """Выполнить ``unpredictable route chance``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         base = self._UNPREDICTABLE_ROUTE_CHANCE_BY_NIGHT.get(self._night, 0.0)
         hack_bonus = min(0.08, self._hack_attraction * 0.08)
         watch_bonus = 0.0
@@ -1334,14 +956,6 @@ class AlgemAI:
         return max(0.0, min(0.82, base + hack_bonus + watch_bonus + rage_bonus - recent_penalty))
 
     def _choose_unpredictable_attack_plan(self) -> tuple[int, ...] | None:
-        """Выполнить ``choose unpredictable attack plan``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``tuple[int, ...] | None``.
-        """
         options = self._UNPREDICTABLE_ROUTE_OPTIONS.get(self._location, [])
         if not options:
             return None
@@ -1381,15 +995,6 @@ class AlgemAI:
         return self._weighted_choice(candidates, weights)
 
     def _attack_plan_is_reachable(self, plan: tuple[int, ...], graph: Graph) -> bool:
-        """Выполнить ``attack plan is reachable``.
-        
-        Args:
-            plan: Входной параметр метода ``_attack_plan_is_reachable``.
-            graph: Входной параметр метода ``_attack_plan_is_reachable``.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         current = self._location
         for target in (*plan, self.OFFICE_NODE):
             if target == current:
@@ -1402,14 +1007,6 @@ class AlgemAI:
         return True
 
     def _step_retreat(self) -> bool:
-        """Выполнить ``step retreat``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         target = self._nearest_patrol_node() or self.PATROL_SAFE_HOME
         if self._location == target:
             self._state = AIState.PATROL
@@ -1427,14 +1024,6 @@ class AlgemAI:
     # ------------------------------------------------------------------
 
     def _enter_attack_state(self) -> None:
-        """Выполнить ``enter attack state``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if self._state not in (AIState.ATTACK, AIState.VENT_STALK):
             self._attack_route_epoch += 1
             self._last_path = []
@@ -1444,14 +1033,6 @@ class AlgemAI:
         self._state = AIState.ATTACK
 
     def _choose_patrol_node(self) -> int:
-        """Выполнить ``choose patrol node``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         neighbors = list(self._patrol_graph.get(self._location, []))
         if not neighbors:
             return self._location
@@ -1518,14 +1099,6 @@ class AlgemAI:
         return picked
 
     def _choose_investigate_target(self) -> int | None:
-        """Выполнить ``choose investigate target``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int | None``.
-        """
         if self._lure_node >= 0:
             return self._lure_node
 
@@ -1552,14 +1125,6 @@ class AlgemAI:
         return random.choice(best)
 
     def _is_blocked_vent_attempt(self, node: int) -> bool:
-        """Выполнить ``is blocked vent attempt``.
-        
-        Args:
-            node: Входной параметр метода ``_is_blocked_vent_attempt``.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         if node not in self.VENT_NODES:
             return False
         physical_neighbors = set(BASE_GRAPH.get(self._location, []))
@@ -1567,14 +1132,6 @@ class AlgemAI:
         return node in physical_neighbors and node not in self._graph.get(self._location, [])
 
     def _handle_blocked_vent_attempt(self, vent_node: int) -> None:
-        """Выполнить ``handle blocked vent attempt``.
-        
-        Args:
-            vent_node: Входной параметр метода ``_handle_blocked_vent_attempt``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if vent_node in self._blocked_vent_knock_cooldowns:
             return
         if vent_node in self._seal_knock_suppressed_vents or self._is_leaving_vent(vent_node):
@@ -1595,15 +1152,6 @@ class AlgemAI:
         self._vent_interest *= 0.78
 
     def _move_to(self, node: int, graph: dict[int, list[int]] | None = None) -> bool:
-        """Выполнить ``move to``.
-        
-        Args:
-            node: Входной параметр метода ``_move_to``.
-            graph: Входной параметр метода ``_move_to``.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         if node == self._location:
             return True
         active_graph = graph or (self._patrol_graph if self._state is AIState.PATROL else self._graph)
@@ -1650,17 +1198,6 @@ class AlgemAI:
         target: int,
         delay_ticks: int = 0,
     ) -> None:
-        """Выполнить ``emit``.
-        
-        Args:
-            kind: Входной параметр метода ``_emit``.
-            source: Входной параметр метода ``_emit``.
-            target: Входной параметр метода ``_emit``.
-            delay_ticks: Входной параметр метода ``_emit``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._events.append(
             AlgemEvent(
                 kind=kind,
@@ -1672,7 +1209,13 @@ class AlgemAI:
         )
 
     def _start_breach(self) -> None:
-        """Последний шаг в screamer/BREACH: камера пустеет, скример ещё не мгновенный."""
+        """Последний шаг в screamer/BREACH: камера пустеет, скример ещё не мгновенный.
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         source = self._location
         self._prev_location = source
         self._location = self.OFFICE_NODE
@@ -1693,14 +1236,6 @@ class AlgemAI:
         self._emit(AlgemEventType.BREACH_STARTED, source, self.OFFICE_NODE)
 
     def _start_stun_or_retreat(self) -> None:
-        """Выполнить ``start stun or retreat``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._attack_detour_queue.clear()
         self._attack_detour_cooldown = max(self._attack_detour_cooldown, 1)
         self._stun_timer = random.randint(*self._STUN_TICKS_BY_NIGHT.get(self._night, (120, 240)))
@@ -1712,26 +1247,10 @@ class AlgemAI:
         self._emit(AlgemEventType.ROUTE_BLOCKED, self._location, self._retreat_target)
 
     def _reset_patrol_memory(self) -> None:
-        """Выполнить ``reset patrol memory``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._patrol_stack = [self._location]
         self._patrol_visited = {self._location}
 
     def _nearest_patrol_node(self) -> int | None:
-        """Выполнить ``nearest patrol node``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int | None``.
-        """
         zone = self._PATROL_ZONES.get(self._night, {1, 2, 3, 4, 5, 6})
         if self._location in zone:
             return self._location
@@ -1751,14 +1270,6 @@ class AlgemAI:
 
 
     def _block_external_teleport_if_needed(self) -> None:
-        """Выполнить ``block external teleport if needed``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if self._location == self._last_valid_location:
             return
 
@@ -1788,15 +1299,6 @@ class AlgemAI:
         self._last_path = []
 
     def _vent_motion_hold_ticks(self, prev: int, node: int) -> int:
-        """Выполнить ``vent motion hold ticks``.
-        
-        Args:
-            prev: Входной параметр метода ``_vent_motion_hold_ticks``.
-            node: Входной параметр метода ``_vent_motion_hold_ticks``.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         if prev in self.VENT_NODES and node in self.VENT_NODES:
             return 360 if self._state is AIState.RETREAT else 300
         if prev in self.VENT_NODES and node not in self.VENT_NODES:
@@ -1811,15 +1313,6 @@ class AlgemAI:
 
     def _edge_weight(self, u: int, v: int) -> float:
         # Штрафуем именно узел, куда Алгем хочет зайти, а не тот, откуда он уходит.
-        """Выполнить ``edge weight``.
-        
-        Args:
-            u: Входной параметр метода ``_edge_weight``.
-            v: Входной параметр метода ``_edge_weight``.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         watch = self._camera_watch.get(v, 0)
         observed = min(1.0, watch / 300.0)
         weight = 1.0 + observed * (1.0 + self._profile.watch_penalty_scale * 1.5)
@@ -1861,15 +1354,6 @@ class AlgemAI:
         return max(0.45, weight)
 
     def _stable_edge_noise(self, u: int, v: int) -> float:
-        """Выполнить ``stable edge noise``.
-        
-        Args:
-            u: Входной параметр метода ``_stable_edge_noise``.
-            v: Входной параметр метода ``_stable_edge_noise``.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         seed = self._attack_route_epoch * 10007 + self._night * 1009 + u * 137 + v * 271
         seed ^= seed << 13
         seed ^= seed >> 17
@@ -1877,38 +1361,14 @@ class AlgemAI:
         return 0.92 + (abs(seed) % 1001) / 1000.0 * 0.20
 
     def _attack_threshold(self, base_threshold: float) -> float:
-        """Выполнить ``attack threshold``.
-        
-        Args:
-            base_threshold: Входной параметр метода ``_attack_threshold``.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         hack_cut = self._hack_attraction * (8.0 + self._night * 1.5)
         hour_cut = self._current_hour * self._profile.hour_attack_delta
         return max(35.0, base_threshold - hour_cut - hack_cut)
 
     def _investigate_threshold(self) -> float:
-        """Выполнить ``investigate threshold``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         return max(10.0, 24.0 - self._night * 1.8 - self._current_hour * 0.9)
 
     def _should_attack(self) -> bool:
-        """Выполнить ``should attack``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         if self._lure_node >= 0:
             return False
         if (
@@ -1933,14 +1393,6 @@ class AlgemAI:
         return can_attack and self._attention >= threshold
 
     def _compute_interval(self, hour: int) -> int:
-        """Выполнить ``compute interval``.
-        
-        Args:
-            hour: Входной параметр метода ``_compute_interval``.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         if self._post_hack_rage_active():
             rage_speed_level = self._rage_level()
             lo = int(self._table_lerp({k: v[0] for k, v in self._NIGHT_SPEED.items()}, rage_speed_level))
@@ -1983,14 +1435,6 @@ class AlgemAI:
         return max(45, interval)
 
     def _initial_delay(self) -> int:
-        """Выполнить ``initial delay``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         if self._night <= 1:
             return random.randint(240, 540)
         lo, hi = self._NIGHT_SPEED.get(self._night, (240, 600))
@@ -1998,29 +1442,12 @@ class AlgemAI:
 
     @staticmethod
     def _compute_enterable_nodes(graph: Graph) -> set[int]:
-        """Выполнить ``compute enterable nodes``.
-        
-        Args:
-            graph: Входной параметр метода ``_compute_enterable_nodes``.
-        
-        Returns:
-            Значение типа ``set[int]``.
-        """
         nodes: set[int] = set()
         for neighbors in graph.values():
             nodes.update(neighbors)
         return nodes
 
     def _heuristic_for(self, graph: Graph, goal: int) -> dict[int, int]:
-        """Выполнить ``heuristic for``.
-        
-        Args:
-            graph: Входной параметр метода ``_heuristic_for``.
-            goal: Входной параметр метода ``_heuristic_for``.
-        
-        Returns:
-            Значение типа ``dict[int, int]``.
-        """
         signature = graph_signature(graph)
         key = (signature, goal)
         cached = self._heuristic_cache.get(key)
@@ -2033,28 +1460,10 @@ class AlgemAI:
 
     @staticmethod
     def _precompute_heuristic(graph: Graph, goal: int) -> dict[int, int]:
-        """Выполнить ``precompute heuristic``.
-        
-        Args:
-            graph: Входной параметр метода ``_precompute_heuristic``.
-            goal: Входной параметр метода ``_precompute_heuristic``.
-        
-        Returns:
-            Значение типа ``dict[int, int]``.
-        """
         return single_target_hop_distances(graph, goal)
 
     @staticmethod
     def _weighted_choice(nodes: list[ChoiceT], weights: list[float]) -> ChoiceT:
-        """Выполнить ``weighted choice``.
-        
-        Args:
-            nodes: Входной параметр метода ``_weighted_choice``.
-            weights: Входной параметр метода ``_weighted_choice``.
-        
-        Returns:
-            Значение типа ``ChoiceT``.
-        """
         total = sum(weights)
         if total <= 0:
             return random.choice(nodes)
@@ -2068,26 +1477,10 @@ class AlgemAI:
 
     @property
     def state_name(self) -> str:
-        """Выполнить ``state name``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``str``.
-        """
         return self._state.name
 
     @property
     def debug_target(self) -> int | None:
-        """Выполнить ``debug target``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int | None``.
-        """
         if self._state is AIState.INVESTIGATE:
             return self._investigate_target
         if self._state in (AIState.ATTACK, AIState.VENT_STALK):
@@ -2098,74 +1491,26 @@ class AlgemAI:
 
     @property
     def debug_path(self) -> list[int]:
-        """Выполнить ``debug path``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``list[int]``.
-        """
         return list(self._last_path)
 
     @property
     def debug_move_history(self) -> list[tuple[int, int, str]]:
-        """Выполнить ``debug move history``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``list[tuple[int, int, str]]``.
-        """
         return list(self._move_history)
 
     @property
     def debug_detour_queue(self) -> list[int]:
-        """Выполнить ``debug detour queue``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``list[int]``.
-        """
         return list(self._attack_detour_queue)
 
     @property
     def debug_unpredictable_chance(self) -> float:
-        """Выполнить ``debug unpredictable chance``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         return self._unpredictable_route_chance()
 
     @property
     def vent_motion_ticks(self) -> int:
-        """Выполнить ``vent motion ticks``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         return self._vent_motion_ticks
 
     @property
     def vent_audio_source(self) -> int:
-        """Выполнить ``vent audio source``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         if self._location in self.VENT_NODES:
             return self._location
         if self._vent_motion_ticks > 0 and self._vent_audio_source in self.VENT_NODES:
@@ -2174,49 +1519,17 @@ class AlgemAI:
 
     @property
     def last_vent_move(self) -> tuple[int, int]:
-        """Выполнить ``last vent move``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``tuple[int, int]``.
-        """
         return self._last_vent_move
 
     @property
     def last_vent_leave_source(self) -> int:
-        """Выполнить ``last vent leave source``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         return self._last_vent_leave_source if self._last_vent_leave_ticks > 0 else -1
 
     @property
     def pressure_cooldown_ticks(self) -> int:
-        """Выполнить ``pressure cooldown ticks``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         return self._pressure_cooldown_ticks
 
     def __repr__(self) -> str:
-        """Выполнить ``repr``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``str``.
-        """
         return (
             f"AlgemAI(state={self._state.name}, loc={self._location}, "
             f"prev={self._prev_location}, attention={self._attention:.1f}, "

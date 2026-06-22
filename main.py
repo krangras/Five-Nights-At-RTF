@@ -7,14 +7,6 @@ import pygame
 import cv2
 
 def _base_path():
-    """Выполнить ``base path``.
-    
-    Args:
-        Нет аргументов.
-    
-    Returns:
-        Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-    """
     if getattr(sys, 'frozen', False):
         return sys._MEIPASS
     return os.path.dirname(os.path.abspath(__file__))
@@ -41,14 +33,6 @@ DISCLAIMER_FADE_OUT_MS = 1200
 DISCLAIMER_MIN_SHOW_MS = 3500
 
 def _get_loading_font(size=30):
-    """Выполнить ``get loading font``.
-    
-    Args:
-        size: Входной параметр метода ``_get_loading_font``.
-    
-    Returns:
-        Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-    """
     if size not in LOADING_FONT_CACHE:
         path = "assets/fonts/OCR-A.ttf"
         if os.path.exists(path):
@@ -58,15 +42,6 @@ def _get_loading_font(size=30):
     return LOADING_FONT_CACHE[size]
 
 def draw_loading(screen, elapsed_ms):
-    """Выполнить ``draw loading``.
-    
-    Args:
-        screen: Входной параметр метода ``draw_loading``.
-        elapsed_ms: Входной параметр метода ``draw_loading``.
-    
-    Returns:
-        Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-    """
     screen.fill((0, 0, 0))
     font = _get_loading_font()
     dots = "." * ((elapsed_ms // 300) % 4)
@@ -77,16 +52,6 @@ def draw_loading(screen, elapsed_ms):
 
 
 def draw_disclaimer(screen, disclaimer_surf, alpha):
-    """Выполнить ``draw disclaimer``.
-    
-    Args:
-        screen: Входной параметр метода ``draw_disclaimer``.
-        disclaimer_surf: Входной параметр метода ``draw_disclaimer``.
-        alpha: Входной параметр метода ``draw_disclaimer``.
-    
-    Returns:
-        Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-    """
     screen.fill((0, 0, 0))
     if disclaimer_surf is not None:
         screen.blit(disclaimer_surf, (0, 0))
@@ -100,15 +65,6 @@ GAME_SIZE = (1280, 720)
 WINDOWED_SIZE = (1280, 720)
 
 def _scale_event(event, screen):
-    """Выполнить ``scale event``.
-    
-    Args:
-        event: Входной параметр метода ``_scale_event``.
-        screen: Входной параметр метода ``_scale_event``.
-    
-    Returns:
-        Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-    """
     sw, sh = screen.get_size()
     if sw == GAME_SIZE[0] and sh == GAME_SIZE[1]:
         return event
@@ -124,30 +80,12 @@ _settings = None
 _native_size = None
 
 def _blit_or_scale(src, dst):
-    """Выполнить ``blit or scale``.
-    
-    Args:
-        src: Входной параметр метода ``_blit_or_scale``.
-        dst: Входной параметр метода ``_blit_or_scale``.
-    
-    Returns:
-        Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-    """
     if _native_size and dst.get_size() == _native_size:
         dst.blit(src, (0, 0))
     else:
         pygame.transform.smoothscale(src, dst.get_size(), dst)
 
 def toggle_fullscreen(screen, is_fullscreen):
-    """Выполнить ``toggle fullscreen``.
-    
-    Args:
-        screen: Входной параметр метода ``toggle_fullscreen``.
-        is_fullscreen: Входной параметр метода ``toggle_fullscreen``.
-    
-    Returns:
-        Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-    """
     global _settings
     if is_fullscreen:
         screen = pygame.display.set_mode(WINDOWED_SIZE)
@@ -177,14 +115,6 @@ _ICON_LOADED = False
 
 
 def _apply_window_icon() -> None:
-    """Выполнить ``apply window icon``.
-    
-    Args:
-        Нет аргументов.
-    
-    Returns:
-        ``None``. Метод выполняет действие или обновляет состояние объекта.
-    """
     global _icon_big, _icon_small, _ICON_LOADED
 
     icon_candidates = [
@@ -258,14 +188,6 @@ def _apply_window_icon() -> None:
         pass
 
 def main():
-    """Выполнить ``main``.
-    
-    Args:
-        Нет аргументов.
-    
-    Returns:
-        Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-    """
     global _monitor_size, _settings
     pygame.init()
     pygame.mixer.set_num_channels(24)
@@ -340,14 +262,6 @@ def main():
     _nt_video_fps = 30.0
 
     def _preload_night_transfer():
-        """Выполнить ``preload night transfer``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         nonlocal _nt_video_frames, _nt_video_fps
         try:
             _nt_video_frames = []
@@ -415,14 +329,6 @@ def main():
     _native_size = GAME_SIZE
 
     def start_game(night=1):
-        """Выполнить ``start game``.
-        
-        Args:
-            night: Входной параметр метода ``start_game``.
-        
-        Returns:
-            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-        """
         m = GameModel(night=night)
         v = GameView(game_surface)
         p = GamePresenter(m, v, _settings)
@@ -570,10 +476,7 @@ def main():
                     screamer_office = None
                     screamer_vent = None
                     lecture_sound = None
-                    _raw = load_save()
-                    menu_m.game_completed = _raw > 5
-                    menu_m.saved_night = min(_raw, 5)
-                    menu_m.continue_available = menu_m.saved_night > 0
+                    menu_m.reload_progress()
                     state = "MENU"
 
             screamer.update(dt)
@@ -596,14 +499,6 @@ def main():
                     lecture_sound.set_volume(0.62)
                     lecture_sound.play()
                     def _echo():
-                        """Выполнить ``echo``.
-                        
-                        Args:
-                            Нет аргументов.
-                        
-                        Returns:
-                            Результат выполнения метода. Если метод меняет состояние, возвращает ``None``.
-                        """
                         lecture_sound.set_volume(0.28)
                         lecture_sound.play()
                     threading.Timer(0.3, _echo).start()
@@ -615,10 +510,7 @@ def main():
                 if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                     pygame.mixer.stop()
                     lecture_sound = None
-                    _raw = load_save()
-                    menu_m.game_completed = _raw > 5
-                    menu_m.saved_night = min(_raw, 5)
-                    menu_m.continue_available = menu_m.saved_night > 0
+                    menu_m.reload_progress()
                     state = "MENU"
 
             game_surface.fill((0, 0, 0))
@@ -652,10 +544,7 @@ def main():
                 if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                     pygame.mixer.stop()
                     hack_timeout_sound = None
-                    _raw = load_save()
-                    menu_m.game_completed = _raw > 5
-                    menu_m.saved_night = min(_raw, 5)
-                    menu_m.continue_available = menu_m.saved_night > 0
+                    menu_m.reload_progress()
                     state = "MENU"
 
             game_surface.fill((0, 0, 0))
@@ -690,10 +579,7 @@ def main():
                 if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                     _nt_video_frames = []
                     pygame.mixer.stop()
-                    _raw = load_save()
-                    menu_m.game_completed = _raw > 5
-                    menu_m.saved_night = min(_raw, 5)
-                    menu_m.continue_available = menu_m.saved_night > 0
+                    menu_m.reload_progress()
                     state = "MENU"
                     continue
 
@@ -715,10 +601,7 @@ def main():
             sound_done = night_end_sound is None or not pygame.mixer.get_busy()
             if video_done and sound_done:
                 pygame.mixer.stop()
-                _raw = load_save()
-                menu_m.game_completed = _raw > 5
-                menu_m.saved_night = min(_raw, 5)
-                menu_m.continue_available = menu_m.saved_night > 0
+                menu_m.reload_progress()
                 if completed_night >= 5:
                     final_scene_tick = 0
                     final_scene_phase = "FADE_IN"
@@ -793,10 +676,7 @@ def main():
                     final_scene_img = None
                     final_scene_music_chan = None
                     final_scene_speech_chan = None
-                    _raw = load_save()
-                    menu_m.game_completed = _raw > 5
-                    menu_m.saved_night = min(_raw, 5)
-                    menu_m.continue_available = menu_m.saved_night > 0
+                    menu_m.reload_progress()
                     state = "MENU"
 
             _blit_or_scale(game_surface, screen)

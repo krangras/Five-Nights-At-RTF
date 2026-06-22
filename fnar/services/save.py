@@ -7,29 +7,16 @@ SAVE_PATH = os.path.join(_APP_DIR, "save.txt")
 
 
 def load_save() -> int:
-    """Выполнить ``load save``.
-    
-    Args:
-        Нет аргументов.
-    
-    Returns:
-        Значение типа ``int``.
-    """
     try:
-        with open(SAVE_PATH, "r") as f:
+        with open(SAVE_PATH, "r", encoding="utf-8") as f:
             return int(f.read().strip())
     except (FileNotFoundError, ValueError):
         return 0
 
 
 def save_progress(night: int) -> None:
-    """Выполнить ``save progress``.
-    
-    Args:
-        night: Входной параметр метода ``save_progress``.
-    
-    Returns:
-        ``None``. Метод выполняет действие или обновляет состояние объекта.
-    """
-    with open(SAVE_PATH, "w") as f:
-        f.write(str(night))
+    progress = max(load_save(), int(night))
+    temporary_path = f"{SAVE_PATH}.tmp"
+    with open(temporary_path, "w", encoding="utf-8") as save_file:
+        save_file.write(str(progress))
+    os.replace(temporary_path, SAVE_PATH)

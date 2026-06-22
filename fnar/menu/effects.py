@@ -13,16 +13,6 @@ MENU_VIGNETTE_ALPHA = 150
 
 
 def generate_static_noise(size: tuple[int, int], scale_x: float, scale_y: float) -> list[pygame.Surface]:
-    """Выполнить ``generate static noise``.
-    
-    Args:
-        size: Входной параметр метода ``generate_static_noise``.
-        scale_x: Входной параметр метода ``generate_static_noise``.
-        scale_y: Входной параметр метода ``generate_static_noise``.
-    
-    Returns:
-        Значение типа ``list[pygame.Surface]``.
-    """
     width, height = size
     frames = []
     density = int(MENU_NOISE_DENSITY * scale_x * scale_y)
@@ -39,14 +29,6 @@ def generate_static_noise(size: tuple[int, int], scale_x: float, scale_y: float)
 
 
 def create_scanlines(size: tuple[int, int]) -> pygame.Surface:
-    """Выполнить ``create scanlines``.
-    
-    Args:
-        size: Входной параметр метода ``create_scanlines``.
-    
-    Returns:
-        Значение типа ``pygame.Surface``.
-    """
     width, height = size
     scanlines = pygame.Surface(size, pygame.SRCALPHA)
     for y in range(0, height, MENU_SCANLINE_STEP):
@@ -55,14 +37,6 @@ def create_scanlines(size: tuple[int, int]) -> pygame.Surface:
 
 
 def create_vignette(size: tuple[int, int]) -> pygame.Surface:
-    """Выполнить ``create vignette``.
-    
-    Args:
-        size: Входной параметр метода ``create_vignette``.
-    
-    Returns:
-        Значение типа ``pygame.Surface``.
-    """
     width, height = size
     vignette = pygame.Surface(size, pygame.SRCALPHA)
     for i in range(height):
@@ -73,14 +47,6 @@ def create_vignette(size: tuple[int, int]) -> pygame.Surface:
 
 
 def draw_glitch_bars(screen: pygame.Surface) -> None:
-    """Выполнить ``draw glitch bars``.
-    
-    Args:
-        screen: Входной параметр метода ``draw_glitch_bars``.
-    
-    Returns:
-        ``None``. Метод выполняет действие или обновляет состояние объекта.
-    """
     width, height = screen.get_size()
     for _ in range(random.randint(2, 5)):
         y = random.randint(0, height - 1)

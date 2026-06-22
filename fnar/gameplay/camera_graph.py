@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import deque
+from .pathfinding import bfs_path
 
 OFFICE_NODE = 0
 VENT_CAMERAS: set[int] = {8, 9, 10, 11}
@@ -103,73 +103,15 @@ for source, targets in SPECIAL_DETOUR_EDGES.items():
             VENT_DIRECTION_GRAPH[source].append(target)
 
 def copy_graph(graph: dict[int, list[int]]) -> dict[int, list[int]]:
-    """Выполнить ``copy graph``.
-    
-    Args:
-        graph: Входной параметр метода ``copy_graph``.
-    
-    Returns:
-        Значение типа ``dict[int, list[int]]``.
-    """
     return {node: list(neighbors) for node, neighbors in graph.items()}
 
 
-def bfs_path(start: int, goal: int, graph: dict[int, list[int]]) -> list[int] | None:
-    """Выполнить ``bfs path``.
-    
-    Args:
-        start: Входной параметр метода ``bfs_path``.
-        goal: Входной параметр метода ``bfs_path``.
-        graph: Входной параметр метода ``bfs_path``.
-    
-    Returns:
-        Значение типа ``list[int] | None``.
-    """
-    if start == goal:
-        return [start]
-    queue = deque([start])
-    parents: dict[int, int | None] = {start: None}
-    while queue:
-        node = queue.popleft()
-        for nxt in graph.get(node, []):
-            if nxt in parents:
-                continue
-            parents[nxt] = node
-            if nxt == goal:
-                path = [goal]
-                cur = node
-                while cur is not None:
-                    path.append(cur)
-                    cur = parents[cur]
-                return list(reversed(path))
-            queue.append(nxt)
-    return None
-
-
 def distance_to_office(node: int, graph: dict[int, list[int]] | None = None) -> int:
-    """Выполнить ``distance to office``.
-    
-    Args:
-        node: Входной параметр метода ``distance_to_office``.
-        graph: Входной параметр метода ``distance_to_office``.
-    
-    Returns:
-        Значение типа ``int``.
-    """
     path = bfs_path(node, OFFICE_NODE, graph or VENT_DIRECTION_GRAPH)
     return 999 if not path else max(0, len(path) - 1)
 
 
 def is_vent_detour_away_from_office(source: int, target: int) -> bool:
-    """Выполнить ``is vent detour away from office``.
-    
-    Args:
-        source: Входной параметр метода ``is_vent_detour_away_from_office``.
-        target: Входной параметр метода ``is_vent_detour_away_from_office``.
-    
-    Returns:
-        Значение типа ``bool``.
-    """
     if source not in VENT_CAMERAS or target not in VENT_CAMERAS:
         return False
     return distance_to_office(target) >= distance_to_office(source)

@@ -16,15 +16,15 @@ gameplay_model.py — Игровая модель (M в паттерне MVP).
 from __future__ import annotations
 
 import random
-from .ai_domain import AIState, AlgemEvent  # noqa: F401
+from .ai_domain import AlgemEvent
 from .algem_ai import AlgemAI, bfs_path  # noqa: F401
 from .camera_graph import (
     BASE_GRAPH,
     PATROL_GRAPH,
     SEAL_CAMERA_MAP,
     SEAL_RETREAT_GRAPH,
-    VENT_SEALS,
     VENT_CAMERAS,
+    VENT_SEALS,
     copy_graph,
 )
 from .hack_logs import HACK_LOG_SEQUENCES, NIGHT_APPS, HackLogPlayer
@@ -140,14 +140,6 @@ class GameModel:
     """
 
     def __init__(self, night: int = 1) -> None:
-        """Выполнить ``init``.
-        
-        Args:
-            night: Входной параметр метода ``__init__``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self.night:  int   = night
 
         # ── Время ────────────────────────────────────────────────────────
@@ -283,61 +275,147 @@ class GameModel:
 
     @property
     def algem_location(self) -> int:
-        """Текущий узел Алгема в графе."""
+        """Текущий узел Алгема в графе.
+
+        Args:
+            Нет.
+
+        Returns:
+            Значение типа ``int``."""
         return self._ai.location
 
     @property
     def algem_prev_location(self) -> int:
-        """Предыдущий узел (для отрисовки глитча на нужной камере)."""
+        """Предыдущий узел (для отрисовки глитча на нужной камере).
+
+        Args:
+            Нет.
+
+        Returns:
+            Значение типа ``int``."""
         return self._ai.prev_location
 
     @property
     def algem_trigger(self) -> int:
-        """Анимационный триггер: > 0 = Алгем только что переместился."""
+        """Анимационный триггер: > 0 = Алгем только что переместился.
+
+        Args:
+            Нет.
+
+        Returns:
+            Значение типа ``int``."""
         return self._ai.trigger_timer
 
     @property
     def algem_main_hall_sprite(self) -> int:
-        """Вариант спрайта в Главном коридоре (0 или 1)."""
+        """Вариант спрайта в Главном коридоре (0 или 1).
+
+        Args:
+            Нет.
+
+        Returns:
+            Значение типа ``int``."""
         return self._ai.main_hall_sprite
 
     @property
     def algem_state_name(self) -> str:
-        """Имя текущего состояния ИИ для HUD (отладка / курсовая работа)."""
+        """Имя текущего состояния ИИ для HUD (отладка / курсовая работа).
+
+        Args:
+            Нет.
+
+        Returns:
+            Значение типа ``str``."""
         return self._ai.state_name
 
+    @property
+    def algem_last_vent_move(self) -> tuple[int, int]:
+        """Return the most recent movement between ventilation nodes."""
+        return self._ai.last_vent_move
+
+    @property
+    def algem_vent_motion_ticks(self) -> int:
+        """Return how long the current ventilation movement remains audible."""
+        return self._ai.vent_motion_ticks
+
+    @property
+    def algem_vent_audio_source(self) -> int:
+        """Return the ventilation node currently producing movement audio."""
+        return self._ai.vent_audio_source
+
+    @property
+    def algem_last_vent_leave_source(self) -> int:
+        """Return the ventilation node Algem most recently left."""
+        return self._ai.last_vent_leave_source
+
+    def notify_laptop_power_event(self, event: str) -> None:
+        """Forward an office laptop power sound to the AI subsystem."""
+        self._ai.notify_laptop_power_event(event)
+
+    @property
+    def glitch_active(self) -> bool:
+        """Whether the office glitch overlay is currently active."""
+        return self._glitch_active
+
+    @property
+    def glitch_frame(self) -> int:
+        """Current alternating glitch frame."""
+        return self._glitch_frame
+
+    @property
+    def glitch_timer(self) -> int:
+        """Ticks remaining in the current glitch."""
+        return self._glitch_timer
+
+    def start_glitch(self, duration: int = 90) -> None:
+        """Start a visual glitch for the requested number of ticks."""
+        self._glitch_active = True
+        self._glitch_timer = duration
+        self._glitch_frame = 0
+        self._glitch_frame_timer = 0
+
+    def advance_glitch(self) -> bool:
+        """Advance the glitch animation and report whether it remains active."""
+        if not self._glitch_active:
+            return False
+        self._glitch_timer -= 1
+        if self._glitch_timer <= 0:
+            self._glitch_active = False
+            return False
+        self._glitch_frame_timer -= 1
+        if self._glitch_frame_timer <= 0:
+            self._glitch_frame = 1 - self._glitch_frame
+            self._glitch_frame_timer = 0
+        return True
+
     def drain_algem_events(self) -> list[AlgemEvent]:
-        """Выполнить ``drain algem events``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``list[AlgemEvent]``.
-        """
         events = list(self.algem_events)
         self.algem_events.clear()
         return events
 
     def _collect_ai_events(self) -> None:
-        """Выполнить ``collect ai events``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self.algem_events.extend(self._ai.drain_events())
 
     @property
     def currently_sealing_id(self) -> str | None:
-        """Id вентиляционной заслонки, которая сейчас закрывается."""
+        """Id вентиляционной заслонки, которая сейчас закрывается.
+
+        Args:
+            Нет.
+
+        Returns:
+            Значение типа ``str | None``."""
         return self._seal_controller.currently_sealing_id
 
     @currently_sealing_id.setter
     def currently_sealing_id(self, value: str | None) -> None:
-        """Установить активную SEALING-заслонку для demo-сценариев."""
+        """Установить активную SEALING-заслонку для demo-сценариев.
+
+        Args:
+            value: Параметр типа ``str | None``, используемый методом ``currently_sealing_id``.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         self._seal_controller.currently_sealing_id = value
 
     # ──────────────────────────────────────────────────────────────────────
@@ -345,12 +423,16 @@ class GameModel:
     # ──────────────────────────────────────────────────────────────────────
 
     def activate_bait(self, camera_idx: int) -> None:
-        """
-        Активировать аудио-приманку на камере camera_idx.
+        """Активировать аудио-приманку на камере camera_idx.
 
         Вызывается из Presenter при нажатии кнопки PLAY AUDIO.
         Устанавливает cooldown, чтобы нельзя было спамить одну камеру.
-        """
+
+        Args:
+            camera_idx: Параметр типа ``int``, используемый методом ``activate_bait``.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         if self.bait_active:
             return
         if camera_idx in self.bait_cooldown:
@@ -367,12 +449,16 @@ class GameModel:
         self._ai.notify_audio_lure(camera_idx, duration=480)
 
     def start_vent_reset(self, vent_id: str) -> None:
-        """
-        Начать перезагрузку вентиляционного канала vent_id.
+        """Начать перезагрузку вентиляционного канала vent_id.
 
         Перезагрузка занимает 300 тиков (5 секунд). В это время
         Алгем всё ещё может использовать сломанный вент.
-        """
+
+        Args:
+            vent_id: Параметр типа ``str``, используемый методом ``start_vent_reset``.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         return
 
     def start_seal(self, seal_id: str) -> None:
@@ -400,8 +486,7 @@ class GameModel:
     # ──────────────────────────────────────────────────────────────────────
 
     def update(self) -> None:
-        """
-        Обновить всё состояние модели на один тик.
+        """Обновить всё состояние модели на один тик.
 
         Порядок обновления:
           1. Ранний выход при завершении игры.
@@ -413,7 +498,12 @@ class GameModel:
           7. Аудио-приманка.
           8. Вентиляция.
           9. ИИ Алгема (получает актуальный граф и watch-данные).
-        """
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         if self.game_over or self.night_complete:
             return
 
@@ -444,11 +534,23 @@ class GameModel:
     # ──────────────────────────────────────────────────────────────────────
 
     def _update_office_look(self) -> None:
-        """Плавное следование взгляда за курсором мыши (lerp)."""
+        """Плавное следование взгляда за курсором мыши (lerp).
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         self.current_look += (self.target_look - self.current_look) * 0.12
 
     def _update_cam_pan(self) -> None:
-        """Автоматическое панорамирование камеры (покачивание)."""
+        """Автоматическое панорамирование камеры (покачивание).
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         if self.cam_state == "HOLDING":
             self.cam_hold_timer += 1
             if self.cam_hold_timer >= 180:
@@ -468,30 +570,20 @@ class GameModel:
                 )
 
     def _clock_minute(self) -> int:
-        """Выполнить ``clock minute``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         return min(59, self.timer // GAME_MINUTE_TICKS)
 
     @property
     def clock_minute(self) -> int:
-        """Выполнить ``clock minute``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``int``.
-        """
         return self._clock_minute()
 
     def _update_clock(self) -> None:
-        """Игровые часы: 2700 тиков = 45 секунд = 1 час; 6 AM = конец ночи."""
+        """Игровые часы: 2700 тиков = 45 секунд = 1 час; 6 AM = конец ночи.
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         if self._night_end_pending:
             return
         self.timer += 1
@@ -502,14 +594,6 @@ class GameModel:
                 self._night_end_pending = True
 
     def resolve_night_end(self) -> None:
-        """Выполнить ``resolve night end``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if not self._night_end_pending or self.game_over or self.night_complete:
             return
         if self.hack_progress >= 0.999:
@@ -519,7 +603,13 @@ class GameModel:
             self.game_over = True
 
     def _update_phone(self) -> None:
-        """Телефонный звонок текущей ночи."""
+        """Телефонный звонок текущей ночи.
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         if (
             self.phone_call_ready
             and not self.phone_call_active
@@ -531,14 +621,26 @@ class GameModel:
                 self.phone_call_ready  = False
 
     def _update_camera_watch(self) -> None:
-        """Накапливать тики просмотра текущей камеры."""
+        """Накапливать тики просмотра текущей камеры.
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         if self.tablet_open and not self.tablet_animating:
             self.camera_watch_ticks[self.camera_idx] = (
                 self.camera_watch_ticks.get(self.camera_idx, 0) + 1
             )
 
     def _update_bait(self) -> None:
-        """Таймеры аудио-приманки и cooldown камер."""
+        """Таймеры аудио-приманки и cooldown камер.
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         if self.bait_attract_timer > 0:
             self.bait_attract_timer -= 1
             if self.bait_attract_timer <= 0:
@@ -552,7 +654,13 @@ class GameModel:
                 del self.bait_cooldown[cam]
 
     def _update_vents(self) -> None:
-        """Legacy vent reset mechanic is disabled in the current design."""
+        """Legacy vent reset mechanic is disabled in the current design.
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         return
 
     def _update_seals(self) -> None:
@@ -572,14 +680,6 @@ class GameModel:
                 self._collect_ai_events()
 
     def _start_post_hack_phase(self) -> None:
-        """Выполнить ``start post hack phase``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if self.post_hack_started or self.hack_progress < 1.0:
             return
         self.post_hack_started = True
@@ -603,14 +703,6 @@ class GameModel:
         self._push_post_hack_rage(False)
 
     def _post_hack_ready(self) -> bool:
-        """Выполнить ``post hack ready``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         return (
             self.server_state == "OFF"
             and self.laptop_power_state == "OFF"
@@ -620,14 +712,6 @@ class GameModel:
         )
 
     def _push_post_hack_rage(self, shutdown_ready: bool = False) -> None:
-        """Выполнить ``push post hack rage``.
-        
-        Args:
-            shutdown_ready: Входной параметр метода ``_push_post_hack_rage``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if not self.post_hack_active:
             return
         attention_table = (
@@ -649,14 +733,6 @@ class GameModel:
             self._ai.ensure_attention_at_least(attention)
 
     def _update_post_hack_phase(self) -> None:
-        """Выполнить ``update post hack phase``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if self.hack_progress >= 1.0 and not self.post_hack_started:
             self._start_post_hack_phase()
         if not self.post_hack_active:
@@ -678,12 +754,16 @@ class GameModel:
             self.post_hack_survival_timer = 0
 
     def _update_ai(self) -> None:
-        """
-        Тик ИИ Алгема.
+        """Тик ИИ Алгема.
 
         Передаём актуальный граф, данные о просмотре камер,
         состояние сервера и рекламы для шкалы внимания.
-        """
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         if self.algem_in_office:
             self._update_office_threat()
             return
@@ -735,7 +815,12 @@ class GameModel:
         исчезает с последней камеры/вента, потом игрок получает короткое
         random-окно на реакцию. Чем выше ночь и progress взлома, тем окно
         короче.
-        """
+
+        Args:
+            Нет.
+
+        Returns:
+            Значение типа ``int``."""
         base = OFFICE_THREAT_TICKS_BY_NIGHT.get(self.night, OFFICE_THREAT_TICKS_BY_NIGHT[5])
         spread = max(36, int(base * 0.42))
         timer = random.randint(max(45, base - spread), base + spread)
@@ -748,19 +833,18 @@ class GameModel:
         return max(45, timer)
 
     def _bfs_dist(self, start: int, goal: int) -> int:
-        """BFS-расстояние между узлами (для расчёта перегрузки сервера)."""
+        """BFS-расстояние между узлами (для расчёта перегрузки сервера).
+
+        Args:
+            start: Параметр типа ``int``, используемый методом ``_bfs_dist``.
+            goal: Параметр типа ``int``, используемый методом ``_bfs_dist``.
+
+        Returns:
+            Значение типа ``int``."""
         path = bfs_path(start, goal, BASE_GRAPH)
         return (len(path) - 1) if path else 99
 
     def _can_algem_lose_interest(self) -> bool:
-        """Выполнить ``can algem lose interest``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         return (
             self.server_state == "OFF"
             and not self.tablet_open
@@ -774,14 +858,6 @@ class GameModel:
         )
 
     def _last_chance_save_chance(self) -> float:
-        """Выполнить ``last chance save chance``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``float``.
-        """
         chances = LAST_CHANCE_ROULETTE_CHANCES_BY_NIGHT.get(
             self.night,
             LAST_CHANCE_ROULETTE_CHANCES_BY_NIGHT[5],
@@ -790,14 +866,6 @@ class GameModel:
         return chances[idx]
 
     def notify_manual_server_shutdown_started(self) -> None:
-        """Выполнить ``notify manual server shutdown started``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if (
             self.algem_in_office
             and self.office_breach_source in (9, 10)
@@ -806,14 +874,6 @@ class GameModel:
             self.manual_server_shutdown_pending = True
 
     def try_last_chance_server_shutdown(self) -> bool:
-        """Выполнить ``try last chance server shutdown``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            Значение типа ``bool``.
-        """
         if not (
             self.algem_in_office
             and self.office_breach_source in (9, 10)
@@ -851,14 +911,6 @@ class GameModel:
         return False
 
     def _repel_algem_from_office(self, reset_hack: bool = True) -> None:
-        """Выполнить ``repel algem from office``.
-        
-        Args:
-            reset_hack: Входной параметр метода ``_repel_algem_from_office``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self.algem_in_office = False
         self.office_threat_timer = 0
         self.office_breach_source = -1
@@ -876,14 +928,6 @@ class GameModel:
             self.hack_progress = 0.0
 
     def _update_office_threat(self) -> None:
-        """Выполнить ``update office threat``.
-        
-        Args:
-            Нет аргументов.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         if self.server_state == "OFF":
             if self.try_last_chance_server_shutdown():
                 return
@@ -892,8 +936,14 @@ class GameModel:
         if self.office_threat_timer <= 0:
             self.game_over = True
 
-    def _schedule_next_overload(self) -> None:
-        """Запланировать следующую перегрузку сервера в зависимости от близости Алгема."""
+    def schedule_next_overload(self) -> None:
+        """Запланировать следующую перегрузку сервера в зависимости от близости Алгема.
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         dist = self._bfs_dist(self._ai.location, 0)
         # dist: 0 (офис)…4 (самая дальняя — комната 2)
         max_dist = 4
@@ -903,13 +953,17 @@ class GameModel:
         self._server_overload_timer = random.randint(min_ticks, max_ticks)
 
     def _update_server_load(self) -> None:
-        """
-        Логика перегрузки сервера.
+        """Логика перегрузки сервера.
 
         Пока сервер ON — тикает таймер. Когда дотикал — перегрузка.
         Если игрок не кликнул за server_overload_warn — сервер выключается.
         Если кликнул — начинается перезагрузка (5 сек), после — сброс.
-        """
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         if self.server_state != "ON":
             self.server_overload = False
             self.server_overload_warn = 0
@@ -923,7 +977,7 @@ class GameModel:
             if self.server_reboot_timer <= 0:
                 self.server_rebooting = False
                 self.server_overload = False
-                self._schedule_next_overload()
+                self.schedule_next_overload()
             return
 
         if self.server_overload:
@@ -975,12 +1029,24 @@ class GameModel:
     _AD_IMAGES = ["ad_hhru", "ad_kontur", "ad_sber"]
 
     def _rand_ad_interval(self) -> int:
-        """Случайный интервал до следующей рекламы, зависит от ночи."""
+        """Случайный интервал до следующей рекламы, зависит от ночи.
+
+        Args:
+            Нет.
+
+        Returns:
+            Значение типа ``int``."""
         lo = max(600, 2400 - self.night * 300)
         return random.randint(lo, lo * 2)
 
     def _update_ad(self) -> None:
-        """Случайный спавн рекламы на ноутбуке."""
+        """Случайный спавн рекламы на ноутбуке.
+
+        Args:
+            Нет.
+
+        Returns:
+            ``None``. Метод выполняет действие или обновляет состояние объекта."""
         if (
             self.laptop_power_state != "ON"
             or not self.hack_active
@@ -1019,10 +1085,14 @@ class GameModel:
         return self._seal_controller.current_graph(self._ai.location)
 
     def _vent_break_interval(self) -> int:
-        """
-        Случайный интервал до поломки вентиля (в тиках).
+        """Случайный интервал до поломки вентиля (в тиках).
 
         Более высокие ночи → венты ломаются чаще.
-        """
+
+        Args:
+            Нет.
+
+        Returns:
+            Значение типа ``int``."""
         base = max(600, 2400 - self.night * 280)
         return random.randint(base, base + 720)

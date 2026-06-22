@@ -47,17 +47,6 @@ class VentSealController:
         seal_retreat_graph: Graph,
         seal_duration: int,
     ) -> None:
-        """Выполнить ``init``.
-        
-        Args:
-            vent_seals: Входной параметр метода ``__init__``.
-            base_graph: Входной параметр метода ``__init__``.
-            seal_retreat_graph: Входной параметр метода ``__init__``.
-            seal_duration: Входной параметр метода ``__init__``.
-        
-        Returns:
-            ``None``. Метод выполняет действие или обновляет состояние объекта.
-        """
         self._vent_seals = vent_seals
         self._base_graph = base_graph
         self._seal_retreat_graph = seal_retreat_graph
