@@ -32,11 +32,11 @@ from gameplay_model import (
 from settings import save_settings
 
 HACK_TICKS_BY_NIGHT: dict[int, int] = {
-    1: 3600,  # ~60 сек
-    2: 5100,  # ~85 сек
-    3: 6000,  # ~100 сек
-    4: 6900,  # ~115 сек
-    5: 9000,  # ~150 сек
+    1: 3900,   # 65 сек
+    2: 5400,   # 90 сек
+    3: 6900,   # 115 сек
+    4: 8700,   # 145 сек
+    5: 10500,  # 175 сек
 }
 SOUND_BASE_VOLUMES: dict[str, float] = {
     "snd_on": 0.42,
@@ -1040,6 +1040,8 @@ class GamePresenter:
             )
             if forced_retreat and seal_state == SealState.CLOSED:
                 target_volume *= AUDIO_CLOSED_RETREAT_GAIN
+                if self._is_direct_vent_camera_view(source_node):
+                    target_volume = max(target_volume, self._apply_channel_volume(0.18, "vent"))
 
         if target_volume > 0.0:
             if self._vent_sound_source != source_node and self._vent_sound_channel.get_busy():
@@ -1547,27 +1549,29 @@ class GamePresenter:
         prev_seals: dict[str, SealState],
     ) -> None:
         """Проиграть звук заслонки, если ранее закрытый seal открылся."""
-        if not self.snd_vent_close:
-            return
         for seal_id, prev_state in prev_seals.items():
             seal_now = self.model.seals.get(seal_id)
             if prev_state == SealState.CLOSED and seal_now == SealState.OPEN:
-                self.snd_vent_close.play()
+                self._play_vent_close_sound_for_node(VENT_SEALS.get(seal_id, -1))
                 return
+
+    def _play_vent_close_sound_for_node(self, vent_node: int) -> None:
+        if not self.snd_vent_close:
+            return
+        volume = self._current_audio_volume(vent_node, "snd_vent_close") if vent_node > 0 else self._apply_channel_volume(SOUND_BASE_VOLUMES["snd_vent_close"], "snd_vent_close")
+        channel = self.snd_vent_close.play()
+        if channel is not None:
+            channel.set_volume(max(0.0, min(1.0, volume)))
 
     def _update_seal_sound(self) -> None:
         """Обновить циклическое воспроизведение звука блокировки."""
-        seal_sound_played = False
         for seal_id, prev_state in self._prev_seal_states.items():
             seal_now = self.model.seals.get(seal_id)
+            vent_node = VENT_SEALS.get(seal_id, -1)
             if prev_state == SealState.CLOSED and seal_now == SealState.OPEN:
-                if self.snd_vent_close and not seal_sound_played:
-                    self.snd_vent_close.play()
-                    seal_sound_played = True
+                self._play_vent_close_sound_for_node(vent_node)
             if prev_state == SealState.SEALING and seal_now == SealState.CLOSED:
-                if self.snd_vent_close and not seal_sound_played:
-                    self.snd_vent_close.play()
-                    seal_sound_played = True
+                self._play_vent_close_sound_for_node(vent_node)
                 self._vent_seal_just_closed = 60
 
         active = any(

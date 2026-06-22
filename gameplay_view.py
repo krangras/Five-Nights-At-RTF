@@ -24,6 +24,38 @@ LAPTOP_BOOT_TICKS = 180
 LAPTOP_SHUTDOWN_TICKS = 150
 
 
+VENT_DIRECTION_GRAPH = {
+    0: [],
+    1: [2, 3, 4, 8],
+    2: [1, 3, 8, 9],
+    3: [1, 2, 4, 5, 8],
+    4: [1, 2, 3, 5, 11],
+    5: [3, 4, 6],
+    6: [5, 10],
+    7: [10, 11],
+    8: [1, 2, 3],
+    9: [2, 10, 0],
+    10: [7, 11, 9, 0],
+    11: [4, 10, 7],
+}
+
+
+def _view_bfs_distance_to_office(start_node: int) -> int:
+    if start_node == 0:
+        return 0
+    queue = [(start_node, 0)]
+    seen = {start_node}
+    while queue:
+        node, dist = queue.pop(0)
+        for nxt in VENT_DIRECTION_GRAPH.get(node, []):
+            if nxt == 0:
+                return dist + 1
+            if nxt not in seen:
+                seen.add(nxt)
+                queue.append((nxt, dist + 1))
+    return 999
+
+
 def get_laptop_power_sequence(power_state: str, power_timer: int) -> tuple[str, float]:
     """Map laptop power timers to a visual phase and normalized progress."""
     if power_state == "BOOTING":
@@ -88,6 +120,25 @@ def _normalize_brightness(surfaces_with_paths, target=25):
 
 
 class GameView:
+    @staticmethod
+    def _vent_distance_to_office(node: int) -> int:
+        return _view_bfs_distance_to_office(node)
+
+    def _should_show_directional_vent_leave(self, model, cam_idx: int) -> bool:
+        if cam_idx not in (8, 9, 10, 11):
+            return False
+        if model.algem_location != cam_idx or model.algem_trigger <= 0:
+            return False
+        ai = getattr(model, "_ai", None)
+        if ai is None:
+            return False
+        source, target = getattr(ai, "last_vent_move", (-1, -1))
+        if target != cam_idx or source == target or source not in (8, 9, 10, 11):
+            return False
+        if target == 0:
+            return False
+        return self._vent_distance_to_office(target) >= self._vent_distance_to_office(source)
+
     def __init__(self, screen):
         self.screen = screen
         screen_w, screen_h = screen.get_size()
@@ -982,8 +1033,7 @@ class GameView:
 
         if getattr(model, "post_hack_active", False):
             if getattr(model, "post_hack_shutdown_ready", False):
-                sec = max(0, getattr(model, "post_hack_survival_timer", 0) // 60)
-                msg = f"TRACE CLEANUP: {sec}s"
+                msg = "SURVIVE UNTIL 6 AM"
                 color = (230, 180, 70)
             else:
                 msg = "SHUT DOWN SERVER + LAPTOP"
@@ -1292,7 +1342,7 @@ class GameView:
 
         if model is not None:
             display_h = 12 if getattr(model, "hour", 0) == 0 else model.hour
-            display_m = getattr(model, "timer", 0) // 60
+            display_m = getattr(model, "clock_minute", getattr(model, "timer", 0) // 60)
             clock_str = f"{display_h}:{display_m:02d}"
         else:
             clock_str = "12:00"
@@ -1689,7 +1739,7 @@ class GameView:
 
         # Часы — игровое время
         display_h = 12 if model.hour == 0 else model.hour
-        display_m = model.timer // 60
+        display_m = getattr(model, "clock_minute", model.timer // 60)
         clock_str = f"{display_h}:{display_m:02d}"
         clock_label = self._ctext(self._ui_font_bold, clock_str, (255, 255, 255))
         self.screen.blit(
@@ -1892,8 +1942,7 @@ class GameView:
             self.screen.blit(lbl_server, (win_x + 15, content_y))
             if getattr(model, "post_hack_active", False):
                 if getattr(model, "post_hack_shutdown_ready", False):
-                    sec = max(0, getattr(model, "post_hack_survival_timer", 0) // 60)
-                    post_txt = f"TRACE CLEANUP: {sec}s"
+                    post_txt = "SURVIVE UNTIL 6 AM"
                     post_clr = (180, 120, 20)
                 else:
                     post_txt = "ALGEM ALERT: SHUTDOWN REQUIRED"
@@ -2488,7 +2537,13 @@ class GameView:
                     else:
                         cam_surf = self.camera_surfaces.get(4)
                 elif loc == cam_idx:
-                    if cam_idx in (8, 9, 10, 11) and model.algem_state_name == "RETREAT":
+                    if (
+                        cam_idx in (8, 9, 10, 11)
+                        and (
+                            model.algem_state_name == "RETREAT"
+                            or self._should_show_directional_vent_leave(model, cam_idx)
+                        )
+                    ):
                         cam_surf = self._algem_retreat_surfaces.get(cam_idx) or self._algem_surfaces.get(cam_idx)
                     else:
                         cam_surf = self._algem_surfaces.get(cam_idx)

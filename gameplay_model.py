@@ -41,6 +41,11 @@ CAMERAS: list[tuple[int, str, str, str]] = [
 ]
 CAMERA_COUNT: int = len(CAMERAS)
 
+FPS = 60
+GAME_HOUR_SECONDS = 45
+GAME_HOUR_TICKS = FPS * GAME_HOUR_SECONDS
+GAME_MINUTE_TICKS = max(1, GAME_HOUR_TICKS // 60)
+
 # Индексы вент-камер (8–11)
 VENT_CAMERAS: set[int] = {8, 9, 10, 11}
 
@@ -138,11 +143,35 @@ POST_HACK_RAGE_TICKS_BY_NIGHT: dict[int, int] = {
 }
 
 POST_HACK_RAGE_ATTENTION_BY_NIGHT: dict[int, float] = {
-    1: 68.0,
-    2: 80.0,
-    3: 88.0,
-    4: 96.0,
-    5: 100.0,
+    1: 56.0,
+    2: 73.0,
+    3: 84.0,
+    4: 91.0,
+    5: 96.0,
+}
+
+POST_HACK_DARK_RAGE_ATTENTION_BY_NIGHT: dict[int, float] = {
+    1: 48.0,
+    2: 66.0,
+    3: 77.0,
+    4: 85.0,
+    5: 90.0,
+}
+
+POST_HACK_RAGE_LEVEL_BY_NIGHT: dict[int, float] = {
+    1: 1.55,
+    2: 2.55,
+    3: 3.55,
+    4: 4.55,
+    5: 5.35,
+}
+
+POST_HACK_DARK_RAGE_LEVEL_BY_NIGHT: dict[int, float] = {
+    1: 1.35,
+    2: 2.35,
+    3: 3.35,
+    4: 4.35,
+    5: 5.20,
 }
 
 
@@ -475,19 +504,24 @@ class GameModel:
                     eased * self.cam_dir + (1 - eased) * (-self.cam_dir)
                 )
 
+    def _clock_minute(self) -> int:
+        return min(59, self.timer // GAME_MINUTE_TICKS)
+
+    @property
+    def clock_minute(self) -> int:
+        return self._clock_minute()
+
     def _update_clock(self) -> None:
-        """Игровые часы: 3600 тиков = 1 час; 6 AM = конец ночи."""
+        """Игровые часы: 2700 тиков = 45 секунд = 1 час; 6 AM = конец ночи."""
         self.timer += 1
-        if self.timer >= 3600:
-            self.hour  += 1
-            self.timer  = 0
+        if self.timer >= GAME_HOUR_TICKS:
+            self.hour += 1
+            self.timer = 0
             if self.hour >= 6:
                 if self.hack_progress < 1.0:
                     self.game_over = True
-                elif self.post_hack_complete:
+                else:
                     self.night_complete = True
-                elif not self.post_hack_started:
-                    self._start_post_hack_phase()
 
     def _update_phone(self) -> None:
         """Телефонный звонок текущей ночи."""
@@ -580,12 +614,12 @@ class GameModel:
             POST_HACK_RAGE_TICKS_BY_NIGHT[5],
         )
         self.post_hack_log_stage = 1
-        ts_m = self.timer // 60
+        ts_m = self._clock_minute()
         ts = f"[{self.hour}:{ts_m:02d}]"
         self.hack_logs.append(f"{ts} > ROOT ACCESS: 100%")
         self.hack_logs.append(f"{ts} > ALERT: Algem detected intrusion")
         self.hack_logs.append(f"{ts} > SHUT DOWN SERVER AND LAPTOP")
-        self._push_post_hack_rage()
+        self._push_post_hack_rage(False)
 
     def _post_hack_ready(self) -> bool:
         return (
@@ -596,23 +630,26 @@ class GameModel:
             and not self.algem_in_office
         )
 
-    def _push_post_hack_rage(self) -> None:
+    def _push_post_hack_rage(self, shutdown_ready: bool = False) -> None:
         if not self.post_hack_active:
             return
+        attention_table = (
+            POST_HACK_DARK_RAGE_ATTENTION_BY_NIGHT
+            if shutdown_ready
+            else POST_HACK_RAGE_ATTENTION_BY_NIGHT
+        )
+        level_table = (
+            POST_HACK_DARK_RAGE_LEVEL_BY_NIGHT
+            if shutdown_ready
+            else POST_HACK_RAGE_LEVEL_BY_NIGHT
+        )
+        attention = attention_table.get(self.night, attention_table[5])
+        rage_level = level_table.get(self.night, level_table[5])
         trigger = getattr(self._ai, "trigger_post_hack_rage", None)
         if trigger is not None:
-            trigger(
-                max(120, self.post_hack_rage_timer),
-                POST_HACK_RAGE_ATTENTION_BY_NIGHT.get(
-                    self.night,
-                    POST_HACK_RAGE_ATTENTION_BY_NIGHT[5],
-                ),
-            )
+            trigger(max(120, self.post_hack_rage_timer), attention, rage_level)
         else:
-            self._ai.attention = max(
-                self._ai.attention,
-                POST_HACK_RAGE_ATTENTION_BY_NIGHT.get(self.night, 96.0),
-            )
+            self._ai.attention = max(self._ai.attention, attention)
 
     def _update_post_hack_phase(self) -> None:
         if self.hack_progress >= 1.0 and not self.post_hack_started:
@@ -624,27 +661,16 @@ class GameModel:
             self.post_hack_rage_timer -= 1
 
         ready = self._post_hack_ready()
-        if not ready:
-            self._push_post_hack_rage()
+        self._push_post_hack_rage(ready)
         if ready and not self.post_hack_shutdown_ready:
-            ts_m = self.timer // 60
+            ts_m = self._clock_minute()
             ts = f"[{self.hour}:{ts_m:02d}]"
-            self.hack_logs.append(f"{ts} > SYSTEM DARK: hold position")
+            self.hack_logs.append(f"{ts} > SYSTEM DARK: survive until 6 AM")
         self.post_hack_shutdown_ready = ready
-
         if not ready:
             self.post_hack_survival_timer = self.post_hack_survival_total
-            return
-
-        self.post_hack_survival_timer -= 1
-        if self.post_hack_survival_timer <= 0:
+        else:
             self.post_hack_survival_timer = 0
-            self.post_hack_active = False
-            self.post_hack_complete = True
-            self.night_complete = True
-            ts_m = self.timer // 60
-            ts = f"[{self.hour}:{ts_m:02d}]"
-            self.hack_logs.append(f"{ts} > TRACE CLEANED: night complete")
 
     def _update_ai(self) -> None:
         """
@@ -663,11 +689,11 @@ class GameModel:
         self._ai.update_camera_watch(self.camera_watch_ticks)
 
         target = self.hack_progress if self.server_state == "ON" else 0.0
-        if self.post_hack_active and not self.post_hack_shutdown_ready:
-            target = max(target, 1.0)
+        if self.post_hack_active:
+            target = max(target, 0.82 if self.post_hack_shutdown_ready else 1.0)
         self._hack_attraction += (target - self._hack_attraction) * 0.01
-        if self.post_hack_active and not self.post_hack_shutdown_ready:
-            self._hack_attraction = max(self._hack_attraction, 0.88)
+        if self.post_hack_active:
+            self._hack_attraction = max(self._hack_attraction, 0.78 if self.post_hack_shutdown_ready else 0.92)
         self._ai.hack_attraction = self._hack_attraction
 
         # Передаём состояние сервера и рекламы для шкалы внимания
@@ -768,7 +794,7 @@ class GameModel:
         self.last_chance_attempt_index = self.last_chance_save_attempts_total
         self.last_chance_chance = chance
         self.last_chance_roll = roll
-        ts_m = self.timer // 60
+        ts_m = self._clock_minute()
         ts = f"[{self.hour}:{ts_m:02d}]"
         chance_pct = int(round(chance * 100))
         if roll < chance:
@@ -1284,7 +1310,7 @@ class GameModel:
         while self._hack_log_idx < len(seq):
             threshold, msg = seq[self._hack_log_idx]
             if self.hack_progress >= threshold:
-                ts_m = self.timer // 60
+                ts_m = self._clock_minute()
                 ts = f"[{self.hour}:{ts_m:02d}]"
                 self.hack_logs.append(f"{ts} {msg}")
                 self._hack_log_idx += 1

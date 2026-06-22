@@ -235,6 +235,14 @@ class AlgemAI:
     _SPECIAL_DETOUR_EDGES: dict[int, list[int]] = {
         9: [10],
     }
+    _POST_HACK_RAGE_DETOUR_NODES = {7, 8, 9, 10, 11}
+    _POST_HACK_RAGE_STEP_CAP_BY_NIGHT: dict[int, int] = {
+        1: 120,
+        2: 72,
+        3: 54,
+        4: 42,
+        5: 30,
+    }
 
     _ATTACK_ROOM_STEP_MIN_TICKS_BY_NIGHT: dict[int, int] = {
         1: 999999,
@@ -337,6 +345,7 @@ class AlgemAI:
         self._ambient_interest = 0.0
         self._post_hack_rage_ticks = 0
         self._post_hack_rage_attention = 0.0
+        self._post_hack_rage_level = float(night)
 
         self.main_hall_sprite = 0
         self._camera_watch: dict[int, int] = {}
@@ -523,14 +532,54 @@ class AlgemAI:
         self.attention += (target_attention - self.attention) * 0.12
         self.attention = max(0.0, min(100.0, self.attention))
 
-    def trigger_post_hack_rage(self, duration_ticks: int, attention_floor: float = 92.0) -> None:
+    def trigger_post_hack_rage(
+        self,
+        duration_ticks: int,
+        attention_floor: float = 92.0,
+        rage_level: float | None = None,
+    ) -> None:
         self._post_hack_rage_ticks = max(self._post_hack_rage_ticks, int(duration_ticks))
         self._post_hack_rage_attention = max(self._post_hack_rage_attention, float(attention_floor))
+        if rage_level is not None:
+            self._post_hack_rage_level = max(self._post_hack_rage_level, float(rage_level))
+        else:
+            self._post_hack_rage_level = max(self._post_hack_rage_level, self._night + 0.45)
         self.hack_attraction = max(self.hack_attraction, 1.0)
-        self.attention = max(self.attention, min(100.0, attention_floor - 6.0))
-        self._pressure_cooldown_ticks = 0
-        if self.state in (AIState.IDLE, AIState.PATROL, AIState.INVESTIGATE, AIState.RETREAT):
+        self.attention = max(self.attention, min(100.0, attention_floor - 4.0))
+        self._idle_ticks_left = 0
+        if self.state not in (AIState.BREACH, AIState.KILL_PENDING, AIState.STUNNED):
+            self.cancel_audio_lure()
             self._enter_attack_state()
+            cap = int(self._table_lerp(self._POST_HACK_RAGE_STEP_CAP_BY_NIGHT, self._post_hack_rage_level))
+            self._move_timer = min(self._move_timer, cap)
+
+    def _post_hack_rage_active(self) -> bool:
+        return self._post_hack_rage_ticks > 0 or self._post_hack_rage_attention >= 25.0
+
+    @staticmethod
+    def _table_lerp(table: dict[int, float | int], level: float) -> float:
+        if not table:
+            return 0.0
+        keys = sorted(table)
+        if level <= keys[0]:
+            return float(table[keys[0]])
+        if level >= keys[-1]:
+            if len(keys) >= 2:
+                prev_key, last_key = keys[-2], keys[-1]
+                step = float(table[last_key]) - float(table[prev_key])
+                return float(table[last_key]) + step * min(0.55, level - last_key)
+            return float(table[keys[-1]])
+        lo = max(k for k in keys if k <= level)
+        hi = min(k for k in keys if k >= level)
+        if lo == hi:
+            return float(table[lo])
+        ratio = (level - lo) / (hi - lo)
+        return float(table[lo]) + (float(table[hi]) - float(table[lo])) * ratio
+
+    def _rage_level(self) -> float:
+        if not self._post_hack_rage_active():
+            return float(self._night)
+        return max(float(self._night), self._post_hack_rage_level)
 
     def notify_audio_lure(self, target_node: int, duration: int = 480) -> None:
         if target_node == self.location:
@@ -647,28 +696,21 @@ class AlgemAI:
             self._seal_knock_suppressed_vents.discard(vent_node)
             return
 
-        if self.location == vent_node or vent_node in self._graph.get(self.location, []):
+        if self.location == vent_node:
             self._emit(AlgemEventType.SEAL_BLOCKED, self.location, vent_node, delay_ticks=60)
             lo, hi = self._STUN_TICKS_BY_NIGHT.get(self._night, (120, 240))
-            stun_ticks = random.randint(lo, hi)
-            if self.location == vent_node:
-                stun_ticks = max(stun_ticks, 150)
-            else:
-                stun_ticks = max(stun_ticks, 90)
+            stun_ticks = max(random.randint(lo, hi), 150)
             if stun_ticks > 0:
                 self._stun_timer = stun_ticks
                 self.state = AIState.STUNNED
                 self._retreat_target = self._nearest_patrol_node() or self.PATROL_SAFE_HOME
                 self._move_timer = min(self._move_timer, 30)
                 self.trigger_timer = 0
-                if self.location == vent_node:
-                    self._pressure_cooldown_ticks = max(self._pressure_cooldown_ticks, 210)
-                    self.attention = max(0.0, self.attention - 16.0)
-                    self._server_interest *= 0.82
-                    self._ad_interest *= 0.86
-                    self._vent_interest *= 0.70
-                else:
-                    self._pressure_cooldown_ticks = max(self._pressure_cooldown_ticks, 120)
+                self._pressure_cooldown_ticks = max(self._pressure_cooldown_ticks, 210)
+                self.attention = max(0.0, self.attention - 16.0)
+                self._server_interest *= 0.82
+                self._ad_interest *= 0.86
+                self._vent_interest *= 0.70
 
     def tick(self, hour: int) -> bool:
         self._current_hour = hour
@@ -903,8 +945,12 @@ class AlgemAI:
         watch_bonus = 0.0
         if self._current_camera_idx == self.location:
             watch_bonus = 0.08 + self._night * 0.008
+        rage_bonus = 0.0
+        if self._post_hack_rage_active():
+            rage_level = self._rage_level()
+            rage_bonus = 0.08 + rage_level * 0.022
         recent_penalty = 0.04 * sum(1 for node in self._recent_nodes if node == self.location)
-        return max(0.0, min(0.72, base + hack_bonus + watch_bonus - recent_penalty))
+        return max(0.0, min(0.82, base + hack_bonus + watch_bonus + rage_bonus - recent_penalty))
 
     def _choose_unpredictable_attack_plan(self) -> tuple[int, ...] | None:
         options = self._UNPREDICTABLE_ROUTE_OPTIONS.get(self.location, [])
@@ -913,15 +959,24 @@ class AlgemAI:
         graph = self._graph_with_special_detour_edges()
         candidates: list[tuple[int, ...]] = []
         weights: list[float] = []
+        rage_active = self._post_hack_rage_active()
         for base_weight, plan in options:
             cleaned = tuple(node for node in plan if node != self.location)
             if not cleaned:
                 continue
             if cleaned[0] in self._recent_nodes:
                 continue
+            if rage_active:
+                if not any(node in self._POST_HACK_RAGE_DETOUR_NODES for node in cleaned):
+                    continue
+                if self.location in (1, 2, 3) and cleaned[0] == self.PATROL_SAFE_HOME:
+                    continue
             if not self._attack_plan_is_reachable(cleaned, graph):
                 continue
             weight = base_weight
+            if rage_active:
+                rage_level = self._rage_level()
+                weight *= 1.30 + rage_level * 0.07
             if any(node in self.VENT_NODES for node in cleaned):
                 weight *= 1.0 + self._VENT_ROUTE_CHANCE_BY_NIGHT.get(self._night, 0.0) * 0.75
             if any(node not in self._recent_nodes for node in cleaned):
@@ -929,7 +984,7 @@ class AlgemAI:
             if any(self._camera_watch.get(node, 0) <= 40 for node in cleaned):
                 weight *= 1.12
             if self.location == 9 and cleaned[:2] == (10, 7):
-                weight *= 1.0 + self._night * 0.14
+                weight *= 1.0 + self._rage_level() * 0.12
             candidates.append(cleaned)
             weights.append(weight)
         if not candidates:
@@ -1230,19 +1285,25 @@ class AlgemAI:
             rng = random.Random(self._attack_route_epoch * 10007 + self._night * 1009 + u * 137 + v * 271)
             weight *= rng.uniform(0.92, 1.12)
 
+        rage_active = self._post_hack_rage_active()
         if v in self.VENT_NODES:
-            chance = self._VENT_ROUTE_CHANCE_BY_NIGHT.get(self._night, 0.74)
+            chance = self._table_lerp(self._VENT_ROUTE_CHANCE_BY_NIGHT, self._rage_level() if rage_active else float(self._night))
             pressure_bonus = min(0.18, self.hack_attraction * 0.18)
-            vent_bias = min(0.42, chance * 0.34 + pressure_bonus)
+            rage_bonus = min(0.20, 0.05 + self._rage_level() * 0.026) if rage_active else 0.0
+            vent_bias = min(0.58, chance * 0.34 + pressure_bonus + rage_bonus)
             weight *= 1.0 - vent_bias
             if v == 8 and self._night >= 2:
-                weight *= 0.82
+                weight *= max(0.74, 0.86 - self._rage_level() * 0.018) if rage_active else 0.82
         elif u not in self.VENT_NODES and v != self.OFFICE_NODE:
-            chance = self._VENT_ROUTE_CHANCE_BY_NIGHT.get(self._night, 0.74)
-            weight *= 1.0 + max(0.0, chance - 0.35) * 0.18
+            chance = self._table_lerp(self._VENT_ROUTE_CHANCE_BY_NIGHT, self._rage_level() if rage_active else float(self._night))
+            weight *= 1.0 + max(0.0, chance - 0.35) * (0.28 if rage_active else 0.18)
+            if rage_active and v in (1, 2):
+                weight *= 1.35
 
         if u == 9 and v == 10:
-            weight *= 0.86
+            weight *= max(0.68, 0.86 - self._rage_level() * 0.032) if rage_active else 0.86
+        if rage_active and v == self.DANGER_NODE:
+            weight *= max(0.76, 0.88 - self._rage_level() * 0.018)
 
         # Прямой вход в офис не должен быть слишком дешёвым: это даёт время на
         # последнюю vent-фазу и не превращает A* в мгновенный скример.
@@ -1280,11 +1341,16 @@ class AlgemAI:
         )
         threshold = self._attack_threshold(self._profile.patrol_attack_threshold)
         if self._post_hack_rage_attention >= 25.0:
-            threshold = min(threshold, 62.0 - self._night * 2.0)
+            threshold = min(threshold, 64.0 - self._rage_level() * 2.0)
         return can_attack and self.attention >= threshold
 
     def _compute_interval(self, hour: int) -> int:
-        lo, hi = self._NIGHT_SPEED.get(self._night, (240, 600))
+        if self._post_hack_rage_active():
+            rage_speed_level = self._rage_level()
+            lo = int(self._table_lerp({k: v[0] for k, v in self._NIGHT_SPEED.items()}, rage_speed_level))
+            hi = int(self._table_lerp({k: v[1] for k, v in self._NIGHT_SPEED.items()}, rage_speed_level))
+        else:
+            lo, hi = self._NIGHT_SPEED.get(self._night, (240, 600))
         attention_factor = self.attention / 100.0
         interval = int(hi - (hi - lo) * attention_factor)
 
@@ -1297,14 +1363,16 @@ class AlgemAI:
 
         hack_mult = 1.0 - min(0.48, self.hack_attraction * (0.32 + self._night * 0.035))
         interval = int(interval * hack_mult)
-        if self._post_hack_rage_attention >= 25.0:
-            interval = int(interval * max(0.70, 0.92 - self._night * 0.035))
+        if self._post_hack_rage_active():
+            rage_level = self._rage_level()
+            interval = int(interval * max(0.60, 0.86 - rage_level * 0.038))
 
         if self._pressure_cooldown_ticks > 0 and self.state in (AIState.PATROL, AIState.RETREAT, AIState.INVESTIGATE):
             interval = int(interval * 1.18)
 
         if self.location in self.VENT_NODES:
-            interval = max(interval, self._VENT_STAY_TICKS_BY_NIGHT.get(self._night, 660))
+            stay_level = self._rage_level() if self._post_hack_rage_active() else float(self._night)
+            interval = max(interval, int(self._table_lerp(self._VENT_STAY_TICKS_BY_NIGHT, stay_level)))
         elif self.state is AIState.VENT_STALK:
             # На случай, если состояние уже vent-атака, но следующий тик ещё
             # считается из обычной камеры перед входом в вент.
@@ -1313,7 +1381,8 @@ class AlgemAI:
             interval = max(interval, 360)
 
         if self.state in (AIState.ATTACK, AIState.VENT_STALK) and self.location not in self.VENT_NODES:
-            interval = max(interval, self._ATTACK_ROOM_STEP_MIN_TICKS_BY_NIGHT.get(self._night, 90))
+            room_level = self._rage_level() if self._post_hack_rage_active() else float(self._night)
+            interval = max(interval, int(self._table_lerp(self._ATTACK_ROOM_STEP_MIN_TICKS_BY_NIGHT, room_level)))
 
         return max(45, interval)
 
@@ -1402,5 +1471,5 @@ class AlgemAI:
         return (
             f"AlgemAI(state={self.state.name}, loc={self.location}, "
             f"prev={self.prev_location}, attention={self.attention:.1f}, "
-            f"hack={self.hack_attraction:.2f}, lure={self._lure_node})"
+            f"hack={self.hack_attraction:.2f}, rage_level={self._rage_level():.2f}, lure={self._lure_node})"
         )
