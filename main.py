@@ -275,12 +275,9 @@ def main():
 
     # ── Финальная сцена (ночь 5) ──────────────────────────────────────
     final_scene_img = None
-    final_scene_music = None
-    final_scene_speech = None
     final_scene_tick = 0
     final_scene_phase = ""  # FADE_IN | SHOWING | FADE_OUT
     final_scene_speech_played = False
-    final_scene_music_chan = None
     final_scene_speech_chan = None
     disclaimer_started_at = pygame.time.get_ticks()
     disclaimer_dismiss_started_at = None
@@ -620,11 +617,10 @@ def main():
                         )
                     except pygame.error:
                         final_scene_img = None
-                    final_scene_music_chan = None
                     final_scene_speech_chan = None
                     if "music" in _final_scene_sounds:
                         _final_scene_sounds["music"].set_volume(0.42)
-                        final_scene_music_chan = _final_scene_sounds["music"].play(loops=-1)
+                        _final_scene_sounds["music"].play(loops=-1)
                     if "speech" in _final_scene_sounds:
                         _final_scene_sounds["speech"].set_volume(0.72)
                         final_scene_speech_chan = _final_scene_sounds["speech"].play()
@@ -678,7 +674,6 @@ def main():
                 if final_scene_tick >= 32:
                     pygame.mixer.stop()
                     final_scene_img = None
-                    final_scene_music_chan = None
                     final_scene_speech_chan = None
                     menu_m.reload_progress()
                     state = "MENU"
