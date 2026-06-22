@@ -22,6 +22,7 @@ from fnar.gameplay.view import GameView
 from fnar.gameplay.presenter import GamePresenter
 from fnar.services.save import load_save, save_progress
 from fnar.services.settings import load_settings, save_settings
+from fnar.services.screen_scaler import VIRTUAL_SIZE, compute_windowed_size, present_canvas, scale_mouse_event, screen_to_virtual
 from fnar.gameplay.screamer import ScreamerPlayer
 
 LOADING_FONT_CACHE: dict[int, pygame.font.Font] = {}
@@ -41,54 +42,42 @@ def _get_loading_font(size=30):
             LOADING_FONT_CACHE[size] = pygame.font.Font(None, size)
     return LOADING_FONT_CACHE[size]
 
-def draw_loading(screen, elapsed_ms):
-    screen.fill((0, 0, 0))
+def draw_loading(canvas, elapsed_ms):
+    """Draws the loading screen onto the fixed virtual canvas."""
+    canvas.fill((0, 0, 0))
     font = _get_loading_font()
     dots = "." * ((elapsed_ms // 300) % 4)
     txt = font.render(f"LOADING{dots}", True, (100, 100, 100))
-    sw, sh = screen.get_size()
-    screen.blit(txt, (sw // 2 - txt.get_width() // 2, sh // 2 - txt.get_height() // 2))
-    pygame.display.flip()
+    sw, sh = canvas.get_size()
+    canvas.blit(txt, (sw // 2 - txt.get_width() // 2, sh // 2 - txt.get_height() // 2))
 
 
-def draw_disclaimer(screen, disclaimer_surf, alpha):
-    screen.fill((0, 0, 0))
+def draw_disclaimer(canvas, disclaimer_surf, alpha):
+    """Draws the disclaimer screen onto the fixed virtual canvas."""
+    canvas.fill((0, 0, 0))
     if disclaimer_surf is not None:
-        screen.blit(disclaimer_surf, (0, 0))
-    veil = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        canvas.blit(disclaimer_surf, (0, 0))
+    veil = pygame.Surface(canvas.get_size(), pygame.SRCALPHA)
     veil.fill((0, 0, 0, max(0, min(255, alpha))))
-    screen.blit(veil, (0, 0))
-    pygame.display.flip()
+    canvas.blit(veil, (0, 0))
 
-GAME_SIZE = (1280, 720)
+GAME_SIZE = VIRTUAL_SIZE
 
-WINDOWED_SIZE = (1280, 720)
 
 def _scale_event(event, screen):
-    sw, sh = screen.get_size()
-    if sw == GAME_SIZE[0] and sh == GAME_SIZE[1]:
-        return event
-    if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION, pygame.MOUSEBUTTONUP):
-        mx, my = event.pos
-        gx = int(mx * GAME_SIZE[0] / sw)
-        gy = int(my * GAME_SIZE[1] / sh)
-        event.pos = (gx, gy)
-    return event
+    """Translate mouse events from the real window into virtual game coordinates."""
+    return scale_mouse_event(event, screen)
 
-_monitor_size = None
-_settings = None
-_native_size = None
 
 def _blit_or_scale(src, dst):
-    if _native_size and dst.get_size() == _native_size:
-        dst.blit(src, (0, 0))
-    else:
-        pygame.transform.smoothscale(src, dst.get_size(), dst)
+    """Present the game canvas without distorting it in any display mode."""
+    present_canvas(src, dst)
+
 
 def toggle_fullscreen(screen, is_fullscreen):
     global _settings
     if is_fullscreen:
-        screen = pygame.display.set_mode(WINDOWED_SIZE)
+        screen = pygame.display.set_mode(compute_windowed_size(_monitor_size))
         _settings["fullscreen"] = False
     else:
         screen = pygame.display.set_mode(_monitor_size, pygame.FULLSCREEN)
@@ -207,7 +196,7 @@ def main():
         screen = pygame.display.set_mode(_monitor_size, pygame.FULLSCREEN)
         is_fullscreen = True
     else:
-        screen = pygame.display.set_mode(WINDOWED_SIZE)
+        screen = pygame.display.set_mode(compute_windowed_size(_monitor_size))
         is_fullscreen = False
     pygame.display.set_caption("Five Nights At RTF")
     _apply_window_icon()
@@ -247,8 +236,13 @@ def main():
         except (FileNotFoundError, pygame.error):
             pass
 
-    menu_m, menu_v = MenuModel(), MenuView(screen)
-    menu_p = MenuPresenter(menu_m, menu_v, _settings)
+    game_surface = pygame.Surface(GAME_SIZE)
+
+    def _virtual_mouse_pos():
+        return screen_to_virtual(pygame.mouse.get_pos(), screen.get_size())
+
+    menu_m, menu_v = MenuModel(), MenuView(game_surface)
+    menu_p = MenuPresenter(menu_m, menu_v, _settings, pointer_provider=_virtual_mouse_pos)
 
     game_m, game_v, game_p = None, None, None
     load_start = 0
@@ -304,7 +298,7 @@ def main():
         )
     try:
         raw_disclaimer = pygame.image.load("assets/menu/disclaimer.png").convert_alpha()
-        sw, sh = screen.get_size()
+        sw, sh = GAME_SIZE
         target_h = sh
         target_w = int(target_h * 1.6)
         if target_w < sw:
@@ -324,9 +318,6 @@ def main():
         disclaimer_surf.blit(bright, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
     except (FileNotFoundError, pygame.error):
         disclaimer_surf = None
-
-    game_surface = pygame.Surface(GAME_SIZE)
-    _native_size = GAME_SIZE
 
     def start_game(night=1):
         m = GameModel(night=night)
@@ -365,7 +356,9 @@ def main():
                 if fade_out_elapsed >= DISCLAIMER_FADE_OUT_MS:
                     if disclaimer_channel and disclaimer_channel.get_busy():
                         disclaimer_channel.stop()
-                    draw_disclaimer(screen, disclaimer_surf, 255)
+                    draw_disclaimer(game_surface, disclaimer_surf, 255)
+                    _blit_or_scale(game_surface, screen)
+                    pygame.display.flip()
                     state = "MENU"
                     clock.tick(60)
                     continue
@@ -373,12 +366,16 @@ def main():
                     disclaimer_channel.set_volume(
                         0.65 * max(0.0, 1.0 - fade_out_elapsed / DISCLAIMER_FADE_OUT_MS)
                     )
-            draw_disclaimer(screen, disclaimer_surf, alpha)
+            draw_disclaimer(game_surface, disclaimer_surf, alpha)
+            _blit_or_scale(game_surface, screen)
+            pygame.display.flip()
             clock.tick(60)
         elif state == "MENU":
             state = menu_p.handle_events()
             menu_m.update()
             menu_v.draw_menu(menu_m)
+            _blit_or_scale(game_surface, screen)
+            pygame.display.flip()
             clock.tick(60)
         elif state == "START_GAME":
             load_start = pygame.time.get_ticks()
@@ -390,15 +387,19 @@ def main():
                 state = "MENU"
             elif result == "TOGGLE_FS":
                 screen, is_fullscreen = toggle_fullscreen(screen, is_fullscreen)
-                menu_v.update_screen(screen)
+                menu_v.update_screen(game_surface)
             menu_v.draw_settings(is_fullscreen, settings_hovered, menu_m)
+            _blit_or_scale(game_surface, screen)
+            pygame.display.flip()
             clock.tick(60)
         elif state == "START_CONTINUE":
             load_start = pygame.time.get_ticks()
             _continue_night = min(load_save(), 5)
             state = "LOADING"
         elif state == "LOADING":
-            draw_loading(screen, pygame.time.get_ticks() - load_start)
+            draw_loading(game_surface, pygame.time.get_ticks() - load_start)
+            _blit_or_scale(game_surface, screen)
+            pygame.display.flip()
             clock.tick(60)
             game_m, game_v, game_p = start_game(_continue_night)
             screamer_office = ScreamerPlayer(
