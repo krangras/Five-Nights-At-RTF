@@ -1,4 +1,4 @@
-"""Микшер пользовательских громкостей для музыки, интерфейса, окружения и отдельных звуков."""
+"""Микшер пользовательских громкостей."""
 
 from __future__ import annotations
 
@@ -118,6 +118,7 @@ class AudioCalibrationOverlay:
     Позволяет менять мастер-громкости во время игры, не смешивая UI
     настройки звука с основной логикой Presenter.
     """
+
     def __init__(
         self,
         settings_data: dict,
@@ -150,7 +151,11 @@ class AudioCalibrationOverlay:
             return False
 
         if event.type == pygame.MOUSEWHEEL:
-            self.scroll_offset = max(0, min(self._max_scroll(), self.scroll_offset - event.y * 2))
+            max_scroll = self._max_scroll()
+            self.scroll_offset = max(
+                0,
+                min(max_scroll, self.scroll_offset - event.y * 2),
+            )
             return True
         if event.type == pygame.MOUSEMOTION and self.dragging_index is not None:
             return self._handle_drag(event.pos)
@@ -203,7 +208,15 @@ class AudioCalibrationOverlay:
         row_y = viewport_top
         for index in range(start, end):
             row = self._rows[index]
-            self._draw_row(surface, panel.x + 16, row_y, panel.w - 32, row, index, index == self.selected_index)
+            self._draw_row(
+                surface,
+                panel.x + 16,
+                row_y,
+                panel.w - 32,
+                row,
+                index,
+                index == self.selected_index,
+            )
             row_y += row_h
 
         footer = self._tiny_font.render(
@@ -290,7 +303,8 @@ class AudioCalibrationOverlay:
         minus_rect = pygame.Rect(plus_rect.x - 27, y + 3, 24, 22)
         bar_rect = pygame.Rect(minus_rect.x - 128, y + 10, 120, 8)
         pygame.draw.rect(surface, (38, 52, 68), bar_rect, border_radius=5)
-        fill_rect = pygame.Rect(bar_rect.x, bar_rect.y, int(bar_rect.w * (value / MAX_VOLUME)), bar_rect.h)
+        fill_w = int(bar_rect.w * (value / MAX_VOLUME))
+        fill_rect = pygame.Rect(bar_rect.x, bar_rect.y, fill_w, bar_rect.h)
         pygame.draw.rect(surface, bar_color, fill_rect, border_radius=5)
         pygame.draw.rect(surface, (120, 145, 165), bar_rect, 1, border_radius=5)
 
@@ -320,7 +334,9 @@ class AudioCalibrationOverlay:
         pygame.draw.rect(surface, edge, rect, 1, border_radius=5)
         font = self._tiny_font if small else self._small_font
         txt = font.render(text, True, (240, 248, 255))
-        surface.blit(txt, (rect.centerx - txt.get_width() // 2, rect.centery - txt.get_height() // 2))
+        cx = rect.centerx - txt.get_width() // 2
+        cy = rect.centery - txt.get_height() // 2
+        surface.blit(txt, (cx, cy))
 
     def _build_rows(self) -> list[dict[str, str]]:
         """Build rows from the current game data."""
@@ -361,7 +377,10 @@ class AudioCalibrationOverlay:
 
     def _notify_change(self) -> None:
         """Вызывает callback после изменения аудионастроек."""
-        self.settings_data["audio_mix"] = normalize_audio_mix(self.settings_data["audio_mix"])
+        current = self.settings_data["audio_mix"]
+        self.settings_data["audio_mix"] = normalize_audio_mix(
+            current,
+        )
         self._refresh_preview_volume()
         if self.on_change is not None:
             self.on_change()
@@ -385,7 +404,13 @@ class AudioCalibrationOverlay:
             return
         self._preview_sound_id = sound_path
         self._preview_base_volume = 1.0
-        snd.set_volume(effective_volume(self.settings_data, sound_path, self._preview_base_volume))
+        snd.set_volume(
+            effective_volume(
+                self.settings_data,
+                sound_path,
+                self._preview_base_volume,
+            ),
+        )
         if self._preview_channel is None:
             self._preview_channel = pygame.mixer.Channel(15)
         self._preview_channel.stop()
@@ -433,7 +458,11 @@ class AudioCalibrationOverlay:
         relative = (pos[0] - target.x) / max(1, target.w)
         self._set_value(row, _clamp_volume(relative * MAX_VOLUME))
         if row["kind"] == "sound":
-            if self._preview_sound_id != row["key"] or self._preview_channel is None or not self._preview_channel.get_busy():
+            if (
+                self._preview_sound_id != row["key"]
+                or self._preview_channel is None
+                or not self._preview_channel.get_busy()
+            ):
                 self._play_preview(row["key"])
             else:
                 self._refresh_preview_volume()
@@ -455,7 +484,12 @@ class AudioCalibrationOverlay:
             )
         )
 
-    def _draw_scrollbar(self, surface: pygame.Surface, panel: pygame.Rect, visible_rows: int) -> None:
+    def _draw_scrollbar(
+        self,
+        surface: pygame.Surface,
+        panel: pygame.Rect,
+        visible_rows: int,
+    ) -> None:
         """Render scrollbar for the current frame."""
         if len(self._rows) <= visible_rows:
             return
@@ -464,7 +498,12 @@ class AudioCalibrationOverlay:
         thumb_h = max(24, int(track.h * (visible_rows / len(self._rows))))
         max_scroll = max(1, self._max_scroll())
         thumb_y = track.y + int((track.h - thumb_h) * (self.scroll_offset / max_scroll))
-        pygame.draw.rect(surface, (110, 180, 235), (track.x, thumb_y, track.w, thumb_h), border_radius=4)
+        pygame.draw.rect(
+            surface,
+            (110, 180, 235),
+            (track.x, thumb_y, track.w, thumb_h),
+            border_radius=4,
+        )
 
     def _ensure_selected_visible(self) -> None:
         """Прокручивает список микшера так, чтобы выбранная строка была видна."""

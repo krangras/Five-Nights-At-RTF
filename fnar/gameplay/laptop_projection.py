@@ -43,12 +43,7 @@ class LaptopProjectionMixin:
 
     def save_laptop_projection(self) -> None:
         """Persist laptop projection without disturbing the running game state."""
-        data = {
-            "corners": [
-                [int(round(x)), int(round(y))]
-                for x, y in self._lp_base_corners.tolist()
-            ]
-        }
+        data = {"corners": [[int(round(x)), int(round(y))] for x, y in self._lp_base_corners.tolist()]}
         with open(self._projection_config_path, "w", encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=True, indent=2)
 
@@ -77,13 +72,10 @@ class LaptopProjectionMixin:
         dst_c = (dst - np.array([x_min, y_min])).astype(np.float32)
         self._lp_M = cv2.getPerspectiveTransform(src_c, dst_c)
 
-    def get_laptop_projection_corners_screen(
-        self, offset: int = 0
-    ) -> list[tuple[int, int]]:
+    def get_laptop_projection_corners_screen(self, offset: int = 0) -> list[tuple[int, int]]:
         """Return laptop projection corners screen using the current renderer or model state."""
         return [
-            (int(round(x * self.scale)) - offset, int(round(y * self.scale)))
-            for x, y in self._lp_base_corners.tolist()
+            (int(round(x * self.scale)) - offset, int(round(y * self.scale))) for x, y in self._lp_base_corners.tolist()
         ]
 
     def get_laptop_projection_corner_hit(
@@ -93,9 +85,7 @@ class LaptopProjectionMixin:
         mx, my = mouse_pos
         best_idx = None
         best_dist_sq = radius * radius
-        for idx, (cx, cy) in enumerate(
-            self.get_laptop_projection_corners_screen(offset)
-        ):
+        for idx, (cx, cy) in enumerate(self.get_laptop_projection_corners_screen(offset)):
             dx = mx - cx
             dy = my - cy
             dist_sq = dx * dx + dy * dy
@@ -104,18 +94,14 @@ class LaptopProjectionMixin:
                 best_dist_sq = dist_sq
         return best_idx
 
-    def move_laptop_projection_corner(
-        self, corner_idx: int, mouse_pos: tuple[int, int], offset: int = 0
-    ) -> None:
+    def move_laptop_projection_corner(self, corner_idx: int, mouse_pos: tuple[int, int], offset: int = 0) -> None:
         """Перемещает выбранный угол проекции ноутбука мышью."""
         x = (mouse_pos[0] + offset) / self.scale
         y = mouse_pos[1] / self.scale
         self._lp_base_corners[corner_idx] = [x, y]
         self._rebuild_laptop_projection()
 
-    def nudge_laptop_projection_corner(
-        self, corner_idx: int, dx: float, dy: float
-    ) -> None:
+    def nudge_laptop_projection_corner(self, corner_idx: int, dx: float, dy: float) -> None:
         """Сдвигает выбранный угол проекции ноутбука с клавиатуры."""
         self._lp_base_corners[corner_idx][0] += dx
         self._lp_base_corners[corner_idx][1] += dy
@@ -148,9 +134,7 @@ class LaptopProjectionMixin:
         surface.blit(panel_bg, panel.topleft)
         pygame.draw.rect(surface, (70, 220, 255), panel, 2, border_radius=8)
 
-        title = self._ctext(
-            self._ui_font_bold, "Laptop Projection Editor [F8]", (255, 255, 255)
-        )
+        title = self._ctext(self._ui_font_bold, "Laptop Projection Editor [F8]", (255, 255, 255))
         surface.blit(title, (panel.x + 12, panel.y + 10))
 
         status = "Drag corners with mouse"

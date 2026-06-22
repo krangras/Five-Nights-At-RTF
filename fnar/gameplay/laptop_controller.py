@@ -132,9 +132,19 @@ class LaptopControllerMixin:
         """Продвигает взлом, лог строк и окончание ночного задания."""
         # Взлом запускается из Claude Mythos и продвигается только пока сервер ON.
         # Во время ребута, перегрузки или выключенного сервера прогресс стоит.
-        if self.model.laptop_app == "claude_mythos" and self.model.server_state == "ON" and not self.model.server_rebooting and not self.model.server_overload:
+        if (
+            self.model.laptop_app == "claude_mythos"
+            and self.model.server_state == "ON"
+            and not self.model.server_rebooting
+            and not self.model.server_overload
+        ):
             self.model.hack_active = True
-        if self.model.hack_active and not self.model.server_rebooting and not self.model.server_overload and self.model.server_state == "ON":
+        if (
+            self.model.hack_active
+            and not self.model.server_rebooting
+            and not self.model.server_overload
+            and self.model.server_state == "ON"
+        ):
             hack_ticks = HACK_TICKS_BY_NIGHT.get(self.model.night, HACK_TICKS_BY_NIGHT[5])
             hack_rate = 1.0 / hack_ticks
             was_complete = self.model.hack_progress >= 1.0

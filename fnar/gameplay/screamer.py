@@ -40,11 +40,19 @@ class ScreamerPlayer:
     DEFAULT_HOLD_LAST = DEFAULT_HOLD_LAST_SECONDS
     DEFAULT_RED_DURATION = DEFAULT_RED_DURATION_SECONDS
 
-    def __init__(self, frames_dir=DEFAULT_SCREAMER_DIR, screen_size=DEFAULT_SCREAMER_SCREEN_SIZE,
-                 speed=DEFAULT_PLAYBACK_SPEED, door_frames=DEFAULT_DOOR_FRAME_COUNT,
-                 door_speed=DEFAULT_DOOR_SPEED, scream_frame=DEFAULT_SCREAM_FRAME,
-                 delay_default=DEFAULT_FRAME_DELAY_SECONDS, red_start=DEFAULT_RED_START_FRAME,
-                 hold_last=DEFAULT_HOLD_LAST_SECONDS, red_duration=DEFAULT_RED_DURATION_SECONDS):
+    def __init__(
+        self,
+        frames_dir=DEFAULT_SCREAMER_DIR,
+        screen_size=DEFAULT_SCREAMER_SCREEN_SIZE,
+        speed=DEFAULT_PLAYBACK_SPEED,
+        door_frames=DEFAULT_DOOR_FRAME_COUNT,
+        door_speed=DEFAULT_DOOR_SPEED,
+        scream_frame=DEFAULT_SCREAM_FRAME,
+        delay_default=DEFAULT_FRAME_DELAY_SECONDS,
+        red_start=DEFAULT_RED_START_FRAME,
+        hold_last=DEFAULT_HOLD_LAST_SECONDS,
+        red_duration=DEFAULT_RED_DURATION_SECONDS,
+    ):
         """Выполняет специализированную операцию «init» в подсистеме screamer."""
         self.screen_size = screen_size
         sw, sh = screen_size

@@ -39,9 +39,7 @@ class VentSealController:
         self._base_graph = base_graph
         self._seal_retreat_graph = seal_retreat_graph
         self._seal_duration = seal_duration
-        self.seals: dict[str, SealState] = {
-            seal_id: SealState.OPEN for seal_id in vent_seals
-        }
+        self.seals: dict[str, SealState] = {seal_id: SealState.OPEN for seal_id in vent_seals}
         self._timers: dict[str, int] = {seal_id: 0 for seal_id in vent_seals}
         self._currently_sealing_id: str | None = None
         self._graph_cache_key: tuple[tuple[str, ...], int] | None = None
@@ -102,11 +100,7 @@ class VentSealController:
 
     def current_graph(self, actor_location: int) -> Graph:
         """Возвращает граф камер с удалёнными рёбрами закрытых вентиляций."""
-        closed = tuple(
-            seal_id
-            for seal_id in self._vent_seals
-            if self.seals[seal_id] is SealState.CLOSED
-        )
+        closed = tuple(seal_id for seal_id in self._vent_seals if self.seals[seal_id] is SealState.CLOSED)
         location_key = actor_location if closed else -1
         cache_key = (closed, location_key)
         if self._graph_cache_key == cache_key and self._graph_cache is not None:
@@ -135,11 +129,7 @@ class VentSealController:
     def _safe_retreats_from(self, vent_node: int) -> list[int]:
         """Находит безопасные узлы отступления от заблокированной вентиляции."""
         base_neighbors = self._base_graph.get(vent_node, [])
-        return [
-            node
-            for node in self._seal_retreat_graph.get(vent_node, [])
-            if node in base_neighbors
-        ]
+        return [node for node in self._seal_retreat_graph.get(vent_node, []) if node in base_neighbors]
 
     def _invalidate_graph_cache(self) -> None:
         """Сбрасывает кэш графа после изменения состояния заслонок."""

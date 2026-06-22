@@ -15,15 +15,15 @@ from enum import Enum, auto
 class AIState(Enum):
     """FSM-состояния Алгема."""
 
-    IDLE = auto()          # короткая пауза / низкий интерес
-    PATROL = auto()        # DFS-патруль по обычным камерам
-    INVESTIGATE = auto()   # проверяет шум, приманку или активность игрока
-    ATTACK = auto()        # A* к офису
-    VENT_STALK = auto()    # A* уже идёт через вентиляцию
-    BREACH = auto()        # ушёл с последней vent-камеры, но ещё не убил
+    IDLE = auto()  # короткая пауза / низкий интерес
+    PATROL = auto()  # DFS-патруль по обычным камерам
+    INVESTIGATE = auto()  # проверяет шум, приманку или активность игрока
+    ATTACK = auto()  # A* к офису
+    VENT_STALK = auto()  # A* уже идёт через вентиляцию
+    BREACH = auto()  # ушёл с последней vent-камеры, но ещё не убил
     KILL_PENDING = auto()  # зарезервировано под расширение kill-window в AI
-    STUNNED = auto()       # остановлен seal/потерял маршрут
-    RETREAT = auto()       # отступает после блока/потери интереса
+    STUNNED = auto()  # остановлен seal/потерял маршрут
+    RETREAT = auto()  # отступает после блока/потери интереса
 
 
 class AlgemEventType(str, Enum):
@@ -45,6 +45,7 @@ class AlgemEventType(str, Enum):
 @dataclass(frozen=True)
 class AlgemEvent:
     """Immutable event emitted by the AI for presenter-side sound and UI reactions."""
+
     kind: AlgemEventType
     source: int
     target: int
@@ -59,6 +60,7 @@ class NightProfile:
     Объект хранит только данные баланса. Логика их применения находится в
     AlgemAI, поэтому профиль можно менять без переписывания FSM.
     """
+
     server_growth: float
     ad_growth: float
     hack_interest_scale: float

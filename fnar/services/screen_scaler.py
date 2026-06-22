@@ -43,9 +43,16 @@ def screen_to_virtual(
     return (int(x * vx / dx), int(y * vy / dy))
 
 
-def scale_mouse_event(event: pygame.event.Event, display: pygame.Surface) -> pygame.event.Event:
+def scale_mouse_event(
+    event: pygame.event.Event,
+    display: pygame.Surface,
+) -> pygame.event.Event:
     """Возвращает копию mouse-event с координатами в виртуальном пространстве."""
-    if event.type not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION, pygame.MOUSEBUTTONUP):
+    if event.type not in (
+        pygame.MOUSEBUTTONDOWN,
+        pygame.MOUSEMOTION,
+        pygame.MOUSEBUTTONUP,
+    ):
         return event
 
     data = getattr(event, "dict", {}).copy()

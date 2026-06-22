@@ -12,12 +12,14 @@ class ScreenCapture:
     """Фоновый захват экрана с перспективной трансформацией под экран ноутбука."""
 
     # 4 угла экрана ноутбука в оригинальном изображении офиса (1915x821)
-    _LAPTOP_CORNERS_ORIG = np.float32([
-        [423, 497],  # top-left
-        [566, 477],  # top-right
-        [589, 570],  # bottom-right
-        [446, 599],  # bottom-left
-    ])
+    _LAPTOP_CORNERS_ORIG = np.float32(
+        [
+            [423, 497],  # top-left
+            [566, 477],  # top-right
+            [589, 570],  # bottom-right
+            [446, 599],  # bottom-left
+        ]
+    )
 
     def __init__(self, scale: float):
         """scale — масштаб офисного изображения (screen_h / 821).
@@ -41,15 +43,18 @@ class ScreenCapture:
         x_max, y_max = dst.max(axis=0).astype(int)
         self.out_w = int(x_max - x_min)
         self.out_h = int(y_max - y_min)
-        self.blit_origin = (x_min, y_min)  # откуда начинать blit (в координатах изображения)
+        # откуда начинать blit (в координатах изображения)
+        self.blit_origin = (x_min, y_min)
 
         # Src-углы для warpa (прямоугольник out_w x out_h)
-        self._src_corners = np.float32([
-            [0, 0],
-            [self.out_w, 0],
-            [self.out_w, self.out_h],
-            [0, self.out_h],
-        ])
+        self._src_corners = np.float32(
+            [
+                [0, 0],
+                [self.out_w, 0],
+                [self.out_w, self.out_h],
+                [0, self.out_h],
+            ]
+        )
 
         # Dst-углы сдвинуты так, что (x_min, y_min) -> (0, 0)
         self._dst_corners = (dst - np.array([x_min, y_min])).astype(np.float32)
@@ -74,7 +79,9 @@ class ScreenCapture:
 
                 # BGR -> RGB -> pygame Surface
                 rgb = cv2.cvtColor(warped, cv2.COLOR_BGR2RGB)
-                surf = pygame.image.frombuffer(rgb.tobytes(), (self.out_w, self.out_h), "RGB")
+                buf = rgb.tobytes()
+                size = (self.out_w, self.out_h)
+                surf = pygame.image.frombuffer(buf, size, "RGB")
 
                 with self._lock:
                     self.surface = surf

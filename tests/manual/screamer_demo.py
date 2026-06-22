@@ -1,4 +1,5 @@
 """Тест скримера: пустой офис 5 секунд → скример"""
+
 import pygame
 import sys
 import os
@@ -12,7 +13,7 @@ screen = pygame.display.set_mode((1280, 720))
 clock = pygame.time.Clock()
 pygame.display.set_caption("TEST SCREAMER — ждите 5 секунд")
 
-from fnar.gameplay.screamer import ScreamerPlayer
+from fnar.gameplay.screamer import ScreamerPlayer  # noqa: E402
 
 # Офис
 bg = pygame.image.load("assets/office/server_is_off.png").convert()
@@ -35,9 +36,7 @@ while running:
     if phase == "OFFICE":
         offset = int((pygame.time.get_ticks() % 4000) / 4000 * max_off)
         screen.blit(bg, (-offset, 0))
-        txt = pygame.font.Font("assets/fonts/OCR-A.ttf", 24).render(
-            "SCREAMER IN 5...", True, (255, 255, 255)
-        )
+        txt = pygame.font.Font("assets/fonts/OCR-A.ttf", 24).render("SCREAMER IN 5...", True, (255, 255, 255))
         screen.blit(txt, (540, 680))
         pygame.display.flip()
 

@@ -29,7 +29,10 @@ STATE_SHUTTING_DOWN = "SHUTTING_DOWN"
 def get_laptop_power_sequence(power_state: str, power_timer: int) -> tuple[str, float]:
     """Map laptop power state and timer to the current visual animation phase."""
     if power_state == STATE_BOOTING:
-        progress = max(PROGRESS_MIN, min(PROGRESS_MAX, PROGRESS_MAX - power_timer / LAPTOP_BOOT_TICKS))
+        progress = max(
+            PROGRESS_MIN,
+            min(PROGRESS_MAX, PROGRESS_MAX - power_timer / LAPTOP_BOOT_TICKS),
+        )
         if progress < BOOT_WAKE_END:
             return PHASE_BOOT_WAKE, progress / BOOT_WAKE_END
         if progress < BOOT_POST_END:
@@ -37,9 +40,15 @@ def get_laptop_power_sequence(power_state: str, power_timer: int) -> tuple[str, 
         return PHASE_BOOT_LOADING, (progress - BOOT_POST_END) / BOOT_LOADING_DURATION
 
     if power_state == STATE_SHUTTING_DOWN:
-        progress = max(PROGRESS_MIN, min(PROGRESS_MAX, PROGRESS_MAX - power_timer / LAPTOP_SHUTDOWN_TICKS))
+        progress = max(
+            PROGRESS_MIN,
+            min(
+                PROGRESS_MAX,
+                PROGRESS_MAX - power_timer / LAPTOP_SHUTDOWN_TICKS,
+            ),
+        )
         if progress < SHUTDOWN_MESSAGE_END:
             return PHASE_SHUTDOWN_MESSAGE, progress / SHUTDOWN_MESSAGE_END
-        return PHASE_SHUTDOWN_FADE, (progress - SHUTDOWN_MESSAGE_END) / SHUTDOWN_FADE_DURATION
+        return PHASE_SHUTDOWN_FADE, ((progress - SHUTDOWN_MESSAGE_END) / SHUTDOWN_FADE_DURATION)
 
     return PHASE_OFF_IDLE, PROGRESS_MIN

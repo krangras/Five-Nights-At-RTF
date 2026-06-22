@@ -1,34 +1,31 @@
 import copy
-import random
 import sys
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from fnar.gameplay.camera_graph import SEAL_CAMERA_MAP
 from fnar.gameplay.model import (
     BASE_GRAPH,
     CAMERAS,
     GameModel,
     GAME_HOUR_TICKS,
     OFFICE_THREAT_TICKS_BY_NIGHT,
-    SEAL_CAMERA_MAP,
     SealState,
     VENT_CONNECTIONS,
 )
 from fnar.gameplay.presenter import (
-    CHANNEL_MASTERS,
     GamePresenter,
     TALK_DIST_PARAMS,
-    _volume_from_distance,
 )
-from fnar.services.spatial_audio import WEIGHTED_DISTANCES
+from fnar.services.spatial_audio import WEIGHTED_DISTANCES, _volume_from_distance
 
 
 # ══════════════════════════════════════════════════════════════════
 # 1. Clock / Timer
 # ══════════════════════════════════════════════════════════════════
+
 
 class TestClock:
     def test_timer_starts_at_zero(self):
@@ -56,7 +53,7 @@ class TestClock:
         m.hour = 4
         m.timer = 0
         m.update()
-        assert m.night_complete == False
+        assert not m.night_complete
 
     def test_game_over_blocks_updates(self):
         m = GameModel(night=1)
@@ -65,15 +62,17 @@ class TestClock:
         m.update()
         assert m.timer == timer_before
 
+
 # ══════════════════════════════════════════════════════════════════
 # 2. Bait (Audio lure)
 # ══════════════════════════════════════════════════════════════════
+
 
 class TestBait:
     def test_activate_bait_sets_state(self):
         m = GameModel(night=1)
         m.activate_bait(3)
-        assert m.bait_active == True
+        assert m.bait_active
         assert m.bait_target_node == 3
         assert m.bait_attract_timer == 480
         assert m.bait_step == 0
@@ -105,9 +104,11 @@ class TestBait:
             m.update()
         assert 3 not in m.bait_cooldown
 
+
 # ══════════════════════════════════════════════════════════════════
 # 3. Legacy vent links removed
 # ══════════════════════════════════════════════════════════════════
+
 
 class TestVents:
     def test_vents_start_ok(self):
@@ -131,15 +132,17 @@ class TestVents:
     def test_vent_reset_keeps_physical_route(self):
         assert VENT_CONNECTIONS == {}
 
+
 # ══════════════════════════════════════════════════════════════════
 # 4. Server
 # ══════════════════════════════════════════════════════════════════
+
 
 class TestServer:
     def test_server_starts_off(self):
         m = GameModel(night=1)
         assert m.server_state == "OFF"
-        assert m.hack_active == False
+        assert not m.hack_active
 
     def test_server_overload_timer_runs_when_on(self):
         m = GameModel(night=1)
@@ -155,7 +158,7 @@ class TestServer:
         m.server_state = "ON"
         m._server_overload_timer = 0
         m._update_server_load()
-        assert m.server_overload == True
+        assert m.server_overload
         assert m.server_overload_warn == 480
 
     def test_server_shuts_down_if_no_click(self):
@@ -173,12 +176,13 @@ class TestServer:
         m.server_rebooting = True
         m.server_reboot_timer = 1
         m._update_server_load()
-        assert m.server_overload == False
+        assert not m.server_overload
 
 
 # ══════════════════════════════════════════════════════════════════
 # 5. Graph building
 # ══════════════════════════════════════════════════════════════════
+
 
 class TestGraph:
     def test_base_graph_has_all_nodes(self):
@@ -210,11 +214,7 @@ class TestGraph:
         }
 
     def test_vent_camera_display_order_matches_map_layout(self):
-        vent_labels = {
-            idx: (display_id, name)
-            for idx, display_id, name, _ in CAMERAS
-            if idx in {8, 9, 10, 11}
-        }
+        vent_labels = {idx: (display_id, name) for idx, display_id, name, _ in CAMERAS if idx in {8, 9, 10, 11}}
         assert vent_labels[8][1] == "LOWER RIGHT VENT"
         assert vent_labels[9][1] == "UPPER RIGHT VENT"
         assert vent_labels[10][1] == "UPPER LEFT VENT"
@@ -233,14 +233,16 @@ class TestGraph:
         assert m.seals["SEAL_CENTER"] == SealState.OPEN
         assert m.seals["SEAL_TOP_RIGHT"] == SealState.SEALING
 
+
 # ══════════════════════════════════════════════════════════════════
 # 6. Model integration
 # ══════════════════════════════════════════════════════════════════
 
+
 class TestIntegration:
     def test_tick_increments_timer_and_moves_algem(self):
         m = GameModel(night=3)
-        loc_before = m.algem_location
+        _loc_before = m.algem_location
         for _ in range(1000):
             m.update()
         assert m.timer > 0
@@ -270,7 +272,7 @@ class TestIntegration:
 
         m._update_ai()
 
-        assert m.algem_in_office == True
+        assert m.algem_in_office
         assert 45 <= m.office_threat_timer <= int(OFFICE_THREAT_TICKS_BY_NIGHT[2] * 1.42)
 
     def test_office_threat_does_not_kill_on_tablet_close(self):
@@ -283,7 +285,7 @@ class TestIntegration:
         m.tablet_open = False
         m._update_office_threat()
 
-        assert m.game_over == False
+        assert not m.game_over
 
     def test_office_threat_continues_without_last_chance_conditions(self):
         m = GameModel(night=3)
@@ -298,7 +300,7 @@ class TestIntegration:
 
         m._update_office_threat()
 
-        assert m.algem_in_office == True
+        assert m.algem_in_office
         assert m.office_threat_timer == 29
 
     def test_office_threat_times_out_into_game_over(self):
@@ -309,7 +311,7 @@ class TestIntegration:
 
         m._update_office_threat()
 
-        assert m.game_over == True
+        assert m.game_over
 
 
 class TestVentAudio:
@@ -391,9 +393,7 @@ class TestVentAudio:
         presenter.model.seals = {"SEAL_TOP_RIGHT": SealState.OPEN}
         presenter.snd_vent_close = DummySound()
 
-        presenter._play_reopened_viewed_seal_sound(
-            {"SEAL_TOP_RIGHT": SealState.CLOSED}
-        )
+        presenter._play_reopened_viewed_seal_sound({"SEAL_TOP_RIGHT": SealState.CLOSED})
 
         assert presenter.snd_vent_close.play_calls == 1
 
@@ -460,10 +460,7 @@ class TestVentAudio:
 
     def test_talk_curve_fades_with_distance(self):
         presenter = GamePresenter.__new__(GamePresenter)
-        volumes = [
-            presenter._distance_volume(TALK_DIST_PARAMS, dist)
-            for dist in range(5)
-        ]
+        volumes = [presenter._distance_volume(TALK_DIST_PARAMS, dist) for dist in range(5)]
         assert volumes == sorted(volumes, reverse=True)
 
     def test_vent_curve_fades_with_distance(self):

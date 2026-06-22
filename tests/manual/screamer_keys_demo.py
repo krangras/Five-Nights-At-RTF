@@ -2,6 +2,7 @@
 Тест скримеров: O — офисный, V — вентиляционный, ESC — выход.
 Запуск: python tests/manual/screamer_keys_demo.py
 """
+
 import os
 import sys
 import pygame

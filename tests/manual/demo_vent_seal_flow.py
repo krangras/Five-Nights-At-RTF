@@ -37,18 +37,16 @@ if _icon_path.exists():
         pass
 clock = pygame.time.Clock()
 
-from fnar.gameplay.model import GameModel, SEAL_CAMERA_MAP, SealState, BASE_GRAPH
-from fnar.gameplay.view import GameView
-from fnar.gameplay.presenter import GamePresenter
-from fnar.gameplay.algem_ai import bfs_path
+from fnar.gameplay.model import GameModel, SEAL_CAMERA_MAP, SealState, BASE_GRAPH  # noqa: E402
+from fnar.gameplay.view import GameView  # noqa: E402
+from fnar.gameplay.presenter import GamePresenter  # noqa: E402
+from fnar.gameplay.algem_ai import bfs_path  # noqa: E402
 
 m = GameModel(night=2)
 v = GameView(screen)
 p = GamePresenter(m, v)
 
-CAMERA_BY_SEAL: dict[str, int] = {
-    seal_id: cam_idx for cam_idx, seal_id in SEAL_CAMERA_MAP.items()
-}
+CAMERA_BY_SEAL: dict[str, int] = {seal_id: cam_idx for cam_idx, seal_id in SEAL_CAMERA_MAP.items()}
 
 SEAL_ORDER = [
     "SEAL_TOP_RIGHT",
@@ -165,7 +163,10 @@ def _draw_debug() -> None:
 
     lines.append("")
     knock_vol = _calc_knock_volume()
-    lines.append(f"Knock vol: {knock_vol:.2f}" if _knock_sound is not False else "Knock: not loaded")
+    if _knock_sound is not False:
+        lines.append(f"Knock vol: {knock_vol:.2f}")
+    else:
+        lines.append("Knock: not loaded")
     lines.append("")
     lines.append("Click any OPEN seal on the vent map to start")
 

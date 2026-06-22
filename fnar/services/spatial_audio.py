@@ -46,6 +46,7 @@ AUDIO_BUCKET_THRESHOLDS: tuple[float, float, float, float] = (
     3.45,
 )
 
+
 def _audio_edge_key(node: int, neighbor: int) -> tuple[int, int]:
     """Нормализует пару узлов графа в ключ ребра для аудиовесов."""
     return (node, neighbor) if node < neighbor else (neighbor, node)
@@ -133,6 +134,7 @@ def _bucket_from_weighted_distance(dist: float) -> int:
     if dist <= AUDIO_BUCKET_THRESHOLDS[3]:
         return 3
     return AUDIO_MAX_BUCKET
+
 
 CHANNEL_MASTERS: dict[str, float] = {
     "algem_talk": 0.82,

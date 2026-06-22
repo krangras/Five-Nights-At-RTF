@@ -99,9 +99,7 @@ class InputControllerMixin:
             elif event.key == pygame.K_DOWN:
                 dy = step
             if dx or dy:
-                self.view.nudge_laptop_projection_corner(
-                    self._projection_corner_idx, dx, dy
-                )
+                self.view.nudge_laptop_projection_corner(self._projection_corner_idx, dx, dy)
                 return True
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -123,9 +121,7 @@ class InputControllerMixin:
         if event.type == pygame.MOUSEMOTION:
             if self._projection_dragging and not self.model.laptop_open:
                 offset = int((self.model.current_look + 1) / 2 * self.view.max_offset)
-                self.view.move_laptop_projection_corner(
-                    self._projection_corner_idx, event.pos, offset
-                )
+                self.view.move_laptop_projection_corner(self._projection_corner_idx, event.pos, offset)
             return True
 
         return False
@@ -148,9 +144,7 @@ class InputControllerMixin:
             return
 
         # 2. Кнопка Mute Call
-        if (
-            self.model.phone_call_active or self._phone_channel
-        ) and not self.model.phone_muted:
+        if (self.model.phone_call_active or self._phone_channel) and not self.model.phone_muted:
             if self.view.is_mutecall_clicked(pos):
                 self.model.phone_muted = True
                 self.model.phone_call_active = False
@@ -163,10 +157,7 @@ class InputControllerMixin:
         if self.model.tablet_open and not self.model.tablet_animating:
             # PLAY AUDIO (аудио-приманка)
             if not self.view.vent_map_mode and self.view.is_bait_clicked(pos):
-                if (
-                    not self.model.bait_active
-                    and self.model.camera_idx not in self.model.bait_cooldown
-                ):
+                if not self.model.bait_active and self.model.camera_idx not in self.model.bait_cooldown:
                     self._activate_bait()
                 return
 
@@ -200,9 +191,7 @@ class InputControllerMixin:
 
         # 4. Клик по ноутбуку (в офисе) — открыть
         if not self.model.laptop_open:
-            offset = int(
-                (self.model.current_look + 1) / 2 * self.view.max_offset
-            )
+            offset = int((self.model.current_look + 1) / 2 * self.view.max_offset)
             if self.view.is_laptop_clicked(pos, offset):
                 self.model.laptop_open = True
                 self.model.laptop_app = self._laptop_saved_app

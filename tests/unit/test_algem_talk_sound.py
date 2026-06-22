@@ -37,11 +37,15 @@ def test_office_distances() -> None:
 # Расстояния «камера → Алгем» для разных позиций
 # ─────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("algem_node,expected", [
-    (1, {1: 0, 2: 1, 3: 1, 4: 1, 5: 2, 6: 3, 7: 3}),
-    (3, {1: 1, 2: 1, 3: 0, 4: 1, 5: 1, 6: 2, 7: 3}),
-    (7, {1: 3, 2: 4, 3: 3, 4: 2, 5: 3, 6: 2, 7: 0}),
-])
+
+@pytest.mark.parametrize(
+    "algem_node,expected",
+    [
+        (1, {1: 0, 2: 1, 3: 1, 4: 1, 5: 2, 6: 3, 7: 3}),
+        (3, {1: 1, 2: 1, 3: 0, 4: 1, 5: 1, 6: 2, 7: 3}),
+        (7, {1: 3, 2: 4, 3: 3, 4: 2, 5: 3, 6: 2, 7: 0}),
+    ],
+)
 def test_camera_to_algem_distances(algem_node: int, expected: dict[int, int]) -> None:
     for cam in range(1, 8):
         path = bfs_path(cam, algem_node, BASE_GRAPH)
@@ -84,13 +88,14 @@ def test_all_distances_have_params() -> None:
 # Low-pass фильтр (_make_muffled)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _lowpass(raw_int16: np.ndarray, kernel_size: int) -> np.ndarray:
     """Копия логики _make_muffled для тестирования без pygame."""
     if kernel_size <= 1:
         return raw_int16
     arr = raw_int16.astype(np.float64)
     kernel = np.ones(kernel_size, dtype=np.float64) / kernel_size
-    filtered = np.convolve(arr, kernel, mode='same')
+    filtered = np.convolve(arr, kernel, mode="same")
     np.clip(filtered, -32768, 32767, out=filtered)
     return filtered.astype(np.int16)
 
@@ -133,6 +138,7 @@ def test_lowpass_more_kernel_more_smoothing() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Сценарии: какая дистанция и громкость при переключении камер
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _volume_for_scenario(algem_node: int, camera_idx: int) -> float:
     """Симуляция: определить громкость при given позиции алгема и камере."""

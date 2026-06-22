@@ -35,25 +35,30 @@ if _icon_path.exists():
         pass
 clock = pygame.time.Clock()
 
-from fnar.gameplay.model import GameModel
-from fnar.gameplay.view import GameView
-from fnar.gameplay.presenter import GamePresenter
+from fnar.gameplay.model import GameModel  # noqa: E402
+from fnar.gameplay.view import GameView  # noqa: E402
+from fnar.gameplay.presenter import GamePresenter  # noqa: E402
 
 m = GameModel(night=1)
 v = GameView(screen)
 p = GamePresenter(m, v)
 
-from fnar.gameplay.algem_ai import bfs_path
-from fnar.gameplay.model import BASE_GRAPH
+from fnar.gameplay.algem_ai import bfs_path  # noqa: E402
+from fnar.gameplay.model import BASE_GRAPH  # noqa: E402
 
 NODE_NAMES = {
-    1: "Algem's Room", 2: "Canteen", 3: "Toilets",
-    4: "Main Hall", 5: "West Hall", 6: "Coworking", 7: "Service Room",
+    1: "Algem's Room",
+    2: "Canteen",
+    3: "Toilets",
+    4: "Main Hall",
+    5: "West Hall",
+    6: "Coworking",
+    7: "Service Room",
 }
 
 CAM_SEQUENCE = [7, 4, 1, 2, 3, 5, 6, 7]
 SWITCH_INTERVAL = 180  # 3 сек при 60 FPS
-TALK_INTERVAL = 120    # новая цитата каждые 2 сек
+TALK_INTERVAL = 120  # новая цитата каждые 2 сек
 
 cam_step = 0
 switch_timer = 0

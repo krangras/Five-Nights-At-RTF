@@ -24,6 +24,7 @@ from .ai_domain import AIState, AlgemEvent, AlgemEventType, NightProfile
 from .camera_graph import BASE_GRAPH, SPECIAL_DETOUR_EDGES
 from .pathfinding import (
     Graph,
+    GraphSignature,
     astar_path,
     bfs_path,
     dfs_path,
@@ -125,12 +126,24 @@ class AlgemAI:
 
     # Шанс/давление пассивного патруля. Он не стоит всю ночь, но и не убивает
     # игрока просто за бездействие на ранних ночах.
-    _AMBIENT_CAP_BY_NIGHT: dict[int, float] = {1: 0.0, 2: 7.0, 3: 12.0, 4: 17.0, 5: 23.0}
-    _AMBIENT_GROWTH_BY_NIGHT: dict[int, float] = {1: 0.0, 2: 0.28, 3: 0.45, 4: 0.62, 5: 0.86}
+    _AMBIENT_CAP_BY_NIGHT: dict[int, float] = {
+        1: 0.0,
+        2: 7.0,
+        3: 12.0,
+        4: 17.0,
+        5: 23.0,
+    }
+    _AMBIENT_GROWTH_BY_NIGHT: dict[int, float] = {
+        1: 0.0,
+        2: 0.28,
+        3: 0.45,
+        4: 0.62,
+        5: 0.86,
+    }
 
     _BREACH_DELAY_BY_NIGHT: dict[int, tuple[int, int]] = {
         1: (999999, 999999),
-        2: (150, 270),   # 2.5–4.5 сек: кадр, где его уже нет в венте
+        2: (150, 270),  # 2.5–4.5 сек: кадр, где его уже нет в венте
         3: (120, 240),
         4: (90, 210),
         5: (70, 180),
@@ -144,11 +157,121 @@ class AlgemAI:
     }
 
     _NIGHT_PROFILES: dict[int, NightProfile] = {
-        1: NightProfile(0.0, 0.0, 0.0, 18.0, 99.0, 0.0, 0.0, 0.0, 0.0, 999999, 0.0, 0.0, 999.0, 999.0, 0.0, 999.0, 0.0, 0.85, 0.15, 2, 90),
-        2: NightProfile(5.2, 18.0, 18.0, 14.0, 2.4, 6.5, 16.0, 9.0, 20.0, 240, 10.0, 16.0, 88.0, 92.0, 2.0, 28.0, 0.35, 0.60, 0.08, 3, 105),
-        3: NightProfile(8.5, 24.0, 25.0, 17.0, 1.9, 8.0, 20.0, 12.0, 26.0, 210, 12.0, 22.0, 78.0, 84.0, 3.0, 24.0, 0.55, 0.75, 0.13, 3, 90),
-        4: NightProfile(11.5, 26.0, 30.0, 18.0, 1.65, 10.0, 24.0, 15.0, 30.0, 180, 14.0, 24.0, 72.0, 78.0, 3.6, 20.0, 0.72, 0.85, 0.15, 3, 90),
-        5: NightProfile(15.0, 28.0, 38.0, 18.0, 1.45, 12.0, 28.0, 18.0, 34.0, 150, 16.0, 28.0, 64.0, 72.0, 4.5, 16.0, 0.88, 0.95, 0.17, 3, 90),
+        1: NightProfile(
+            0.0,
+            0.0,
+            0.0,
+            18.0,
+            99.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            999999,
+            0.0,
+            0.0,
+            999.0,
+            999.0,
+            0.0,
+            999.0,
+            0.0,
+            0.85,
+            0.15,
+            2,
+            90,
+        ),
+        2: NightProfile(
+            5.2,
+            18.0,
+            18.0,
+            14.0,
+            2.4,
+            6.5,
+            16.0,
+            9.0,
+            20.0,
+            240,
+            10.0,
+            16.0,
+            88.0,
+            92.0,
+            2.0,
+            28.0,
+            0.35,
+            0.60,
+            0.08,
+            3,
+            105,
+        ),
+        3: NightProfile(
+            8.5,
+            24.0,
+            25.0,
+            17.0,
+            1.9,
+            8.0,
+            20.0,
+            12.0,
+            26.0,
+            210,
+            12.0,
+            22.0,
+            78.0,
+            84.0,
+            3.0,
+            24.0,
+            0.55,
+            0.75,
+            0.13,
+            3,
+            90,
+        ),
+        4: NightProfile(
+            11.5,
+            26.0,
+            30.0,
+            18.0,
+            1.65,
+            10.0,
+            24.0,
+            15.0,
+            30.0,
+            180,
+            14.0,
+            24.0,
+            72.0,
+            78.0,
+            3.6,
+            20.0,
+            0.72,
+            0.85,
+            0.15,
+            3,
+            90,
+        ),
+        5: NightProfile(
+            15.0,
+            28.0,
+            38.0,
+            18.0,
+            1.45,
+            12.0,
+            28.0,
+            18.0,
+            34.0,
+            150,
+            16.0,
+            28.0,
+            64.0,
+            72.0,
+            4.5,
+            16.0,
+            0.88,
+            0.95,
+            0.17,
+            3,
+            90,
+        ),
     }
 
     _PATROL_ZONES: dict[int, set[int]] = {
@@ -468,8 +591,7 @@ class AlgemAI:
             overload = min(1.0, (focus_ticks - self._profile.camera_focus_threshold_ticks) / 240.0)
             self._camera_focus_interest = min(
                 self._profile.camera_focus_cap,
-                self._camera_focus_interest
-                + self._profile.camera_focus_growth * (0.35 + overload) * dt,
+                self._camera_focus_interest + self._profile.camera_focus_growth * (0.35 + overload) * dt,
             )
         else:
             self._camera_focus_interest = max(
@@ -660,7 +782,9 @@ class AlgemAI:
             self.cancel_audio_lure()
             if self._state in (AIState.IDLE, AIState.PATROL):
                 self._state = AIState.INVESTIGATE
-                self._investigate_target = self._choose_investigate_target() or self._nearest_patrol_node() or self.PATROL_SAFE_HOME
+                self._investigate_target = (
+                    self._choose_investigate_target() or self._nearest_patrol_node() or self.PATROL_SAFE_HOME
+                )
             self._move_timer = min(self._move_timer, fast_move_cap + distance * 12)
 
         if distance <= 2:
@@ -855,7 +979,10 @@ class AlgemAI:
         if path is None or len(path) < 2:
             path = bfs_path(self._location, target, self._graph)
         if path and len(path) > 1:
-            self._move_to(path[1], self._graph if path[1] not in self._patrol_graph.get(self._location, []) else graph)
+            self._move_to(
+                path[1],
+                self._graph if path[1] not in self._patrol_graph.get(self._location, []) else graph,
+            )
 
         if self._lure_node < 0 and self._should_attack():
             self._enter_attack_state()
@@ -982,7 +1109,10 @@ class AlgemAI:
             rage_level = self._rage_level()
             rage_bonus = 0.08 + rage_level * 0.022
         recent_penalty = 0.04 * sum(1 for node in self._recent_nodes if node == self._location)
-        return max(0.0, min(0.82, base + hack_bonus + watch_bonus + rage_bonus - recent_penalty))
+        return max(
+            0.0,
+            min(0.82, base + hack_bonus + watch_bonus + rage_bonus - recent_penalty),
+        )
 
     def _choose_unpredictable_attack_plan(self) -> tuple[int, ...] | None:
         """Выбирает допустимый обходной план атаки из доступных узлов графа."""
@@ -1077,11 +1207,7 @@ class AlgemAI:
                 return path[1]
 
         patrol_zone = self._PATROL_ZONES.get(self._night)
-        if (
-            self._patrol_graph_is_dedicated
-            and patrol_zone is not None
-            and self._location in patrol_zone
-        ):
+        if self._patrol_graph_is_dedicated and patrol_zone is not None and self._location in patrol_zone:
             filtered = [n for n in neighbors if n in patrol_zone]
             if filtered:
                 neighbors = filtered
@@ -1120,7 +1246,10 @@ class AlgemAI:
             if self._attention >= self._profile.office_pull_start:
                 dist = self._base_heuristic.get(node, 999)
                 if dist < 999:
-                    pull = min(self._profile.office_pull_max, (self._attention - self._profile.office_pull_start) / 100.0)
+                    pull = min(
+                        self._profile.office_pull_max,
+                        (self._attention - self._profile.office_pull_start) / 100.0,
+                    )
                     weight *= 1.0 + max(0.0, 4.0 - dist) * 0.16 * pull
 
             if node in self._recent_nodes:
@@ -1138,9 +1267,15 @@ class AlgemAI:
             return self._lure_node
 
         sources: list[tuple[float, list[int]]] = [
-            (self._server_interest + self._hack_attraction * 18.0, self._SERVER_INVESTIGATE_TARGETS),
+            (
+                self._server_interest + self._hack_attraction * 18.0,
+                self._SERVER_INVESTIGATE_TARGETS,
+            ),
             (self._ad_interest, self._AD_INVESTIGATE_TARGETS),
-            (self._tablet_interest + self._camera_focus_interest, self._TABLET_INVESTIGATE_TARGETS),
+            (
+                self._tablet_interest + self._camera_focus_interest,
+                self._TABLET_INVESTIGATE_TARGETS,
+            ),
         ]
         sources.sort(key=lambda item: item[0], reverse=True)
         score, targets = sources[0]
@@ -1304,7 +1439,6 @@ class AlgemAI:
                 queue.append(neighbor)
         return None
 
-
     def _block_external_teleport_if_needed(self) -> None:
         """Отменяет внешние телепорты, если они ломают связность или честность маршрута."""
         if self._location == self._last_valid_location:
@@ -1367,7 +1501,10 @@ class AlgemAI:
 
         rage_active = self._post_hack_rage_active()
         if v in self.VENT_NODES:
-            chance = self._table_lerp(self._VENT_ROUTE_CHANCE_BY_NIGHT, self._rage_level() if rage_active else float(self._night))
+            chance = self._table_lerp(
+                self._VENT_ROUTE_CHANCE_BY_NIGHT,
+                self._rage_level() if rage_active else float(self._night),
+            )
             pressure_bonus = min(0.18, self._hack_attraction * 0.18)
             rage_bonus = min(0.20, 0.05 + self._rage_level() * 0.026) if rage_active else 0.0
             vent_bias = min(0.58, chance * 0.34 + pressure_bonus + rage_bonus)
@@ -1375,7 +1512,10 @@ class AlgemAI:
             if v == 8 and self._night >= 2:
                 weight *= max(0.74, 0.86 - self._rage_level() * 0.018) if rage_active else 0.82
         elif u not in self.VENT_NODES and v != self.OFFICE_NODE:
-            chance = self._table_lerp(self._VENT_ROUTE_CHANCE_BY_NIGHT, self._rage_level() if rage_active else float(self._night))
+            chance = self._table_lerp(
+                self._VENT_ROUTE_CHANCE_BY_NIGHT,
+                self._rage_level() if rage_active else float(self._night),
+            )
             weight *= 1.0 + max(0.0, chance - 0.35) * (0.28 if rage_active else 0.18)
             if rage_active and v in (1, 2):
                 weight *= 1.35
@@ -1416,7 +1556,13 @@ class AlgemAI:
             return False
         if (
             self._pressure_cooldown_ticks > 0
-            and self._state not in (AIState.ATTACK, AIState.VENT_STALK, AIState.BREACH, AIState.KILL_PENDING)
+            and self._state
+            not in (
+                AIState.ATTACK,
+                AIState.VENT_STALK,
+                AIState.BREACH,
+                AIState.KILL_PENDING,
+            )
             and not (self._hack_attraction >= 0.86 and self._attention >= 92.0)
         ):
             return False
@@ -1459,12 +1605,19 @@ class AlgemAI:
             rage_level = self._rage_level()
             interval = int(interval * max(0.60, 0.86 - rage_level * 0.038))
 
-        if self._pressure_cooldown_ticks > 0 and self._state in (AIState.PATROL, AIState.RETREAT, AIState.INVESTIGATE):
+        if self._pressure_cooldown_ticks > 0 and self._state in (
+            AIState.PATROL,
+            AIState.RETREAT,
+            AIState.INVESTIGATE,
+        ):
             interval = int(interval * 1.18)
 
         if self._location in self.VENT_NODES:
             stay_level = self._rage_level() if self._post_hack_rage_active() else float(self._night)
-            interval = max(interval, int(self._table_lerp(self._VENT_STAY_TICKS_BY_NIGHT, stay_level)))
+            interval = max(
+                interval,
+                int(self._table_lerp(self._VENT_STAY_TICKS_BY_NIGHT, stay_level)),
+            )
         elif self._state is AIState.VENT_STALK:
             # На случай, если состояние уже vent-атака, но следующий тик ещё
             # считается из обычной камеры перед входом в вент.
@@ -1474,7 +1627,10 @@ class AlgemAI:
 
         if self._state in (AIState.ATTACK, AIState.VENT_STALK) and self._location not in self.VENT_NODES:
             room_level = self._rage_level() if self._post_hack_rage_active() else float(self._night)
-            interval = max(interval, int(self._table_lerp(self._ATTACK_ROOM_STEP_MIN_TICKS_BY_NIGHT, room_level)))
+            interval = max(
+                interval,
+                int(self._table_lerp(self._ATTACK_ROOM_STEP_MIN_TICKS_BY_NIGHT, room_level)),
+            )
 
         return max(45, interval)
 

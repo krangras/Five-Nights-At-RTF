@@ -94,15 +94,13 @@ AUDIO_EDGE_WEIGHTS: dict[tuple[int, int], float] = {
 }
 
 
-VENT_DIRECTION_GRAPH: dict[int, list[int]] = {
-    node: list(neighbors)
-    for node, neighbors in BASE_GRAPH.items()
-}
+VENT_DIRECTION_GRAPH: dict[int, list[int]] = {node: list(neighbors) for node, neighbors in BASE_GRAPH.items()}
 for source, targets in SPECIAL_DETOUR_EDGES.items():
     VENT_DIRECTION_GRAPH.setdefault(source, [])
     for target in targets:
         if target not in VENT_DIRECTION_GRAPH[source]:
             VENT_DIRECTION_GRAPH[source].append(target)
+
 
 def copy_graph(graph: dict[int, list[int]]) -> dict[int, list[int]]:
     """Return a shallow copy of a camera graph without sharing neighbor lists."""

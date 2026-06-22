@@ -105,15 +105,39 @@ class AlgemRealtimeTest:
         h = 38
         gap = 10
         buttons.append(Button(pygame.Rect(x, y, w, h), "PATROL", lambda: self.set_mode("PATROL")))
-        buttons.append(Button(pygame.Rect(x + w + gap, y, w, h), "ATTACK", lambda: self.set_mode("ATTACK")))
+        buttons.append(
+            Button(
+                pygame.Rect(x + w + gap, y, w, h),
+                "ATTACK",
+                lambda: self.set_mode("ATTACK"),
+            )
+        )
         y += 54
-        buttons.append(Button(pygame.Rect(x, y, w * 2 + gap, h + 8), "NEXT STEP / SPACE", self.manual_step))
+        buttons.append(
+            Button(
+                pygame.Rect(x, y, w * 2 + gap, h + 8),
+                "NEXT STEP / SPACE",
+                self.manual_step,
+            )
+        )
         y += 66
         buttons.append(Button(pygame.Rect(x, y, w, h), "RESET", self.reset))
-        buttons.append(Button(pygame.Rect(x + w + gap, y, w, h), "TO OFFICE", lambda: self.set_location(0)))
+        buttons.append(
+            Button(
+                pygame.Rect(x + w + gap, y, w, h),
+                "TO OFFICE",
+                lambda: self.set_location(0),
+            )
+        )
         y += 58
         for seal_id, vent_node in VENT_SEALS.items():
-            buttons.append(Button(pygame.Rect(x, y, w * 2 + gap, h), f"toggle {vent_node}", lambda sid=seal_id: self.toggle_seal(sid)))
+            buttons.append(
+                Button(
+                    pygame.Rect(x, y, w * 2 + gap, h),
+                    f"toggle {vent_node}",
+                    lambda sid=seal_id: self.toggle_seal(sid),
+                )
+            )
             y += h + 8
         y += 10
         for node in range(1, 12):
@@ -121,7 +145,13 @@ class AlgemRealtimeTest:
             row = (node - 1) // 3
             bx = x + col * 98
             by = y + row * 34
-            buttons.append(Button(pygame.Rect(bx, by, 88, 28), f"CAM {node}", lambda n=node: self.set_location(n)))
+            buttons.append(
+                Button(
+                    pygame.Rect(bx, by, 88, 28),
+                    f"CAM {node}",
+                    lambda n=node: self.set_location(n),
+                )
+            )
         return buttons
 
     def set_mode(self, mode: str) -> None:
@@ -260,7 +290,13 @@ class AlgemRealtimeTest:
             return ""
         return self.model.seals[seal_id].name
 
-    def _draw_text(self, text: str, pos: tuple[int, int], color: tuple[int, int, int] = TEXT, font: pygame.font.Font | None = None) -> None:
+    def _draw_text(
+        self,
+        text: str,
+        pos: tuple[int, int],
+        color: tuple[int, int, int] = TEXT,
+        font: pygame.font.Font | None = None,
+    ) -> None:
         surface = (font or self.font).render(text, True, color)
         self.screen.blit(surface, pos)
 
@@ -321,7 +357,7 @@ class AlgemRealtimeTest:
 
         lines = [
             f"Current: {self._node_label(loc)}",
-            f"AI state: {self.ai.state.name} | mode: {self.mode} | prev: {self.ai.prev_location} | trigger: {self.ai.trigger_timer}",
+            f"AI state: {self.ai.state.name} | mode: {self.mode} | prev: {self.ai.prev_location} | trigger: {self.ai.trigger_timer}",  # noqa: E501
             f"Available physical neighbors: {neighbors_text}",
             f"Possible next for current mode: {next_text}",
             f"Vent next nodes from here: {vent_text}",

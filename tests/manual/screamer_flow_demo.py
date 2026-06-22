@@ -2,6 +2,7 @@
 Тест скримера: game_over через 5 секунд.
 Запуск: python tests/manual/screamer_flow_demo.py
 """
+
 import os
 import sys
 from pathlib import Path
@@ -13,17 +14,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 pygame.init()
 screen = pygame.display.set_mode((1280, 720))
 
-from fnar.menu.model import MenuModel
-from fnar.menu.presenter import MenuPresenter
-from fnar.menu.view import MenuView
-from fnar.gameplay.model import GameModel
-from fnar.gameplay.view import GameView
-from fnar.gameplay.presenter import GamePresenter
-from fnar.gameplay.screamer import ScreamerPlayer
-import random
+from fnar.gameplay.model import GameModel  # noqa: E402
+from fnar.gameplay.view import GameView  # noqa: E402
+from fnar.gameplay.presenter import GamePresenter  # noqa: E402
+from fnar.gameplay.screamer import ScreamerPlayer  # noqa: E402
+import random  # noqa: E402
 
 LOADING_FONT_CACHE: dict[int, pygame.font.Font] = {}
 LECTURE_SOUNDS = [f"sounds/lectures/lecture{i}.mp3" for i in range(1, 4)]
+
 
 def _get_loading_font(size=30):
     if size not in LOADING_FONT_CACHE:
@@ -33,6 +32,7 @@ def _get_loading_font(size=30):
         else:
             LOADING_FONT_CACHE[size] = pygame.font.Font(None, size)
     return LOADING_FONT_CACHE[size]
+
 
 def main():
     clock = pygame.time.Clock()
@@ -133,6 +133,7 @@ def main():
 
             pygame.display.flip()
             clock.tick(60)
+
 
 if __name__ == "__main__":
     main()

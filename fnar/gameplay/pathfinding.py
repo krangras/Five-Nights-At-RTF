@@ -109,17 +109,18 @@ def astar_path(
                 parents[neighbor] = current
                 heapq.heappush(
                     open_heap,
-                    (new_g + heuristic.get(neighbor, UNREACHABLE_HEURISTIC), new_g, neighbor),
+                    (
+                        new_g + heuristic.get(neighbor, UNREACHABLE_HEURISTIC),
+                        new_g,
+                        neighbor,
+                    ),
                 )
     return None
 
 
 def graph_signature(graph: Graph) -> GraphSignature:
     """Create a stable tuple representation of a graph for cache keys."""
-    return tuple(
-        (node, tuple(neighbors))
-        for node, neighbors in sorted(graph.items())
-    )
+    return tuple((node, tuple(neighbors)) for node, neighbors in sorted(graph.items()))
 
 
 def single_target_hop_distances(graph: Graph, goal: int) -> dict[int, int]:

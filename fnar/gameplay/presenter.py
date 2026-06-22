@@ -38,7 +38,7 @@ from .laptop_controller import LaptopControllerMixin
 from .model import GameModel, SealState
 from .tablet_controller import TabletControllerMixin
 from .vent_audio_controller import DANGER_CAMERA_NODE, VentAudioControllerMixin
-from fnar.services.spatial_audio import CHANNEL_MASTERS, TALK_DIST_PARAMS, _volume_from_distance
+from fnar.services.spatial_audio import CHANNEL_MASTERS, TALK_DIST_PARAMS
 
 
 class GamePresenter(
@@ -90,7 +90,6 @@ class GamePresenter(
         self._last_regular_cam: int = 1
         self._last_vent_cam: int = 8
 
-        # Paths and metadata are cheap; Sound objects are loaded on first use.
         self._keys_held: set[int] = set()
         self._sound_meta: dict[str, tuple[str, float]] = {
             "snd_on": ("server_on", SOUND_BASE_VOLUMES["snd_on"]),
@@ -138,9 +137,6 @@ class GamePresenter(
         )
         self._ad_path: str = self._ad_paths[0]
         self._snd_off_length: int = 60
-        self._gadget_cache: list[pygame.mixer.Sound] | None = None
-        self._algem_talk_cache: list[pygame.mixer.Sound] | None = None
-        self._vent_sounds_cache: list[pygame.mixer.Sound] | None = None
         if pygame.mixer.get_init() and pygame.mixer.get_num_channels() < 16:
             pygame.mixer.set_num_channels(16)
         self._algem_talk_channel: pygame.mixer.Channel = pygame.mixer.Channel(5)
@@ -161,7 +157,6 @@ class GamePresenter(
 
         # ── Звуки Алгема: расстояние от офиса ────────────────────────────
         self._dist_params: dict[int, tuple[int, float]] = TALK_DIST_PARAMS
-        self._algem_talk_variants: dict[int, list[pygame.mixer.Sound]] | None = None
 
         self._ambience_playing: bool = False
         self._prev_algem_trigger: int = 0
@@ -207,15 +202,12 @@ class GamePresenter(
             self._glitch_sounds.append(snd)
         self._glitch_channel: pygame.mixer.Channel | None = None
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Ленивая загрузка звуков
-    # ──────────────────────────────────────────────────────────────────────
-
+        # ── Предзагрузка всех звуков (чтобы не лагало во время игры) ──────
+        self._init_sounds()
 
     # ──────────────────────────────────────────────────────────────────────
     # Обработка ввода
     # ──────────────────────────────────────────────────────────────────────
-
 
     # ──────────────────────────────────────────────────────────────────────
     # Главный тик Presenter
@@ -275,7 +267,6 @@ class GamePresenter(
     # Внутренние методы обновления подсистем
     # ──────────────────────────────────────────────────────────────────────
 
-
     def _update_phone(self) -> None:
         """Start and monitor the first-night phone call without blocking gameplay."""
         if self.model.phone_call_active and self._phone_channel is None:
@@ -288,11 +279,9 @@ class GamePresenter(
             self._phone_channel = None
             self.model.phone_call_active = False
 
-
     # ──────────────────────────────────────────────────────────────────────
     # Вспомогательные команды
     # ──────────────────────────────────────────────────────────────────────
-
 
     def _activate_bait(self) -> None:
         """Trigger the lure on the selected camera and play a short gadget sound."""
@@ -313,10 +302,8 @@ class GamePresenter(
         else:
             self._on_danger_camera_grace = 0
 
-
     _GLITCH_PER_SECOND_CHANCE = 0.004
     _GLITCH_CHECK_INTERVAL = 60
-
 
     def draw_overlays(self, surface: pygame.Surface) -> None:
         """Render overlays for the current frame."""

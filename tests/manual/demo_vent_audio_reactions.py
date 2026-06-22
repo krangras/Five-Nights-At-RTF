@@ -365,9 +365,9 @@ def _draw_overlay(
     lines = [
         f"Viewed camera: {sandbox_camera:02d}  |  {camera_names.get(sandbox_camera, '?')}",
         f"Algem position: {sandbox_algem_node:02d}  |  {camera_names.get(sandbox_algem_node, '?')}",
-        f"Listener node: {listener_node:02d}    Moving: {'ON' if sandbox_moving else 'OFF'}    Vent map: {'ON' if view.vent_map_mode else 'OFF'}",
-        f"TALK target: {talk_target:.2f}    channel: {'ON' if talk_busy else 'OFF'} / {talk_volume:.2f}    bucket: {talk_bucket}    weight: {talk_weight:.2f}",
-        f"VENT target: {vent_target:.2f}    channel: {'ON' if vent_busy else 'OFF'} / {vent_volume:.2f}    bucket: {vent_bucket}    weight: {vent_weight:.2f}",
+        f"Listener node: {listener_node:02d}    Moving: {'ON' if sandbox_moving else 'OFF'}    Vent map: {'ON' if view.vent_map_mode else 'OFF'}",  # noqa: E501
+        f"TALK target: {talk_target:.2f}    channel: {'ON' if talk_busy else 'OFF'} / {talk_volume:.2f}    bucket: {talk_bucket}    weight: {talk_weight:.2f}",  # noqa: E501
+        f"VENT target: {vent_target:.2f}    channel: {'ON' if vent_busy else 'OFF'} / {vent_volume:.2f}    bucket: {vent_bucket}    weight: {vent_weight:.2f}",  # noqa: E501
         f"VENT note: {vent_note}    seal gain: {seal_gain:.2f}",
         f"Block signature: {block_signature}",
         f"Seal progress: current={model.currently_sealing_id}",

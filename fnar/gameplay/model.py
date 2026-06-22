@@ -21,9 +21,7 @@ from .algem_ai import AlgemAI, bfs_path  # noqa: F401
 from .camera_graph import (
     BASE_GRAPH,
     PATROL_GRAPH,
-    SEAL_CAMERA_MAP,
     SEAL_RETREAT_GRAPH,
-    VENT_CAMERAS,
     VENT_SEALS,
     copy_graph,
 )
@@ -35,13 +33,13 @@ from .vent_seal import SealState, VentSealController
 # ─────────────────────────────────────────────────────────────────────────────
 
 CAMERAS: list[tuple[int, str, str, str]] = [
-    (1, "01", "ALGEM'S ROOM",  "algems' room.png"),
-    (2, "02", "CANTEEN",       "canteen.png"),
-    (3, "03", "TOILETS",       "toilets.png"),
-    (4, "04", "MAIN HALL",     "main_hall.png"),
-    (5, "05", "WEST HALL",     "westhall.png"),
-    (6, "06", "COWORKING",     "coworking.png"),
-    (7, "07", "SERVICE ROOM",  "service_room.png"),
+    (1, "01", "ALGEM'S ROOM", "algems' room.png"),
+    (2, "02", "CANTEEN", "canteen.png"),
+    (3, "03", "TOILETS", "toilets.png"),
+    (4, "04", "MAIN HALL", "main_hall.png"),
+    (5, "05", "WEST HALL", "westhall.png"),
+    (6, "06", "COWORKING", "coworking.png"),
+    (7, "07", "SERVICE ROOM", "service_room.png"),
     (8, "08", "LOWER RIGHT VENT", "cam11.png"),
     (9, "09", "UPPER RIGHT VENT", "cam8.png"),
     (10, "10", "UPPER LEFT VENT", "cam9.png"),
@@ -128,6 +126,7 @@ POST_HACK_DARK_RAGE_LEVEL_BY_NIGHT: dict[int, float] = {
 # Основная модель
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class GameModel:
     """
     Центральное хранилище состояния одной ночи.
@@ -141,28 +140,28 @@ class GameModel:
 
     def __init__(self, night: int = 1) -> None:
         """Выполняет специализированную операцию «init» в подсистеме model."""
-        self.night:  int   = night
+        self.night: int = night
 
         # ── Время ────────────────────────────────────────────────────────
-        self.hour:  int = 0
+        self.hour: int = 0
         self.timer: int = 0
-        self.night_start_ticks: int = 0     # таймер стартового экрана
+        self.night_start_ticks: int = 0  # таймер стартового экрана
 
         # ── Взгляд игрока (панорамирование офиса) ────────────────────────
-        self.target_look:  float = 0.0
+        self.target_look: float = 0.0
         self.current_look: float = 0.0
 
         # ── Сервер ───────────────────────────────────────────────────────
-        self.server_state: str        = "OFF"   # OFF | TURNING_ON | ON | TURNING_OFF
-        self.server_blink: str | None = None    # "red" | "green" | None
-        self.hack_progress: float = 0.0          # 0.0–1.0 прогресс взлома
-        self.hack_active: bool = False           # идёт ли авто-взлом
-        self._hack_attraction: float = 0.0       # сглаженное притяжение Алгема
-        self.server_overload: bool = False       # флаг перегрузки сервера
-        self.server_overload_warn: int = 0       # тиков до аварийного выключения
-        self._server_overload_timer: int = 0     # тиков до следующей перегрузки
-        self.server_rebooting: bool = False      # идёт ли перезагрузка
-        self.server_reboot_timer: int = 0        # тиков до конца перезагрузки
+        self.server_state: str = "OFF"  # OFF | TURNING_ON | ON | TURNING_OFF
+        self.server_blink: str | None = None  # "red" | "green" | None
+        self.hack_progress: float = 0.0  # 0.0–1.0 прогресс взлома
+        self.hack_active: bool = False  # идёт ли авто-взлом
+        self._hack_attraction: float = 0.0  # сглаженное притяжение Алгема
+        self.server_overload: bool = False  # флаг перегрузки сервера
+        self.server_overload_warn: int = 0  # тиков до аварийного выключения
+        self._server_overload_timer: int = 0  # тиков до следующей перегрузки
+        self.server_rebooting: bool = False  # идёт ли перезагрузка
+        self.server_reboot_timer: int = 0  # тиков до конца перезагрузки
 
         # ── Логи ноутбука (терминал Claude Mythos) ────────────────────────
         self.hack_logs: list[str] = []
@@ -170,35 +169,35 @@ class GameModel:
         self._hack_log_player = HackLogPlayer(HACK_LOG_SEQUENCES)
 
         # ── Планшет (анимация открытия/закрытия) ─────────────────────────
-        self.tablet_open:       bool = False
-        self.tablet_animating:  bool = False
-        self.tablet_anim_frame: int  = 0
+        self.tablet_open: bool = False
+        self.tablet_animating: bool = False
+        self.tablet_anim_frame: int = 0
 
         # ── Ноутбук ─────────────────────────────────────────────────────
-        self.laptop_open:   bool = False          # открыт ли экран ноутбука
-        self.laptop_zoom:   float = 0.0           # 0.0 = офис, 1.0 = полный зум
+        self.laptop_open: bool = False  # открыт ли экран ноутбука
+        self.laptop_zoom: float = 0.0  # 0.0 = офис, 1.0 = полный зум
         self.laptop_cursor: tuple[int, int] = (640, 360)  # позиция курсора
-        self.laptop_start_menu: bool = False      # открыто ли меню Start
-        self.laptop_app:    str | None = None     # запущенное приложение
-        self.show_real_screen: bool = True        # показывать реальный экран на ноутбуке (F2)
-        self.laptop_power_state: str = "OFF"      # OFF | BOOTING | ON | SHUTTING_DOWN
-        self.laptop_power_timer: int = 0          # тики до конца boot/shutdown
-        self.laptop_boot_stage: str = "boot_black"   # boot_black | initializing | desktop
+        self.laptop_start_menu: bool = False  # открыто ли меню Start
+        self.laptop_app: str | None = None  # запущенное приложение
+        self.show_real_screen: bool = True  # показывать реальный экран на ноутбуке (F2)
+        self.laptop_power_state: str = "OFF"  # OFF | BOOTING | ON | SHUTTING_DOWN
+        self.laptop_power_timer: int = 0  # тики до конца boot/shutdown
+        self.laptop_boot_stage: str = "boot_black"  # boot_black | initializing | desktop
 
         # ── Реклама на ноутбуке ─────────────────────────────────────────
-        self.ad_active:      bool = False         # показывается ли реклама
-        self.ad_image_key:   str | None = None    # ключ изображения рекламы
-        self.ad_sound_channel = None              # канал для звука рекламы
-        self.ad_timer:       int = 0              # тиков с момента показа
-        self.ad_spawn_timer: int = self._rand_ad_interval()     # тиков до следующей рекламы
+        self.ad_active: bool = False  # показывается ли реклама
+        self.ad_image_key: str | None = None  # ключ изображения рекламы
+        self.ad_sound_channel = None  # канал для звука рекламы
+        self.ad_timer: int = 0  # тиков с момента показа
+        self.ad_spawn_timer: int = self._rand_ad_interval()  # тиков до следующей рекламы
 
         # ── Камера (текущая и панорамирование) ───────────────────────────
-        self.camera_idx:        int   = 1
-        self.cam_look:          float = -1.0
-        self.cam_state:         str   = "HOLDING"   # HOLDING | MOVING
-        self.cam_hold_timer:    int   = 0
+        self.camera_idx: int = 1
+        self.cam_look: float = -1.0
+        self.cam_state: str = "HOLDING"  # HOLDING | MOVING
+        self.cam_hold_timer: int = 0
         self.cam_move_progress: float = 0.0
-        self.cam_dir:           int   = 1
+        self.cam_dir: int = 1
 
         # Сколько тиков игрок смотрел на каждую камеру
         self.camera_watch_ticks: dict[int, int] = {i: 0 for i in range(1, CAMERA_COUNT + 1)}
@@ -206,12 +205,12 @@ class GameModel:
         # ── ИИ Алгема ────────────────────────────────────────────────────
         # AlgemAI инкапсулирует FSM, A* и всю логику перемещения.
         self._ai: AlgemAI = AlgemAI(
-            graph      = copy_graph(BASE_GRAPH),
-            night      = night,
-            start_node = 1,
+            graph=copy_graph(BASE_GRAPH),
+            night=night,
+            start_node=1,
             patrol_graph=copy_graph(PATROL_GRAPH),
         )
-        self.algem_in_office: bool = False   # вошёл, но не убил (планшет открыт)
+        self.algem_in_office: bool = False  # вошёл, но не убил (планшет открыт)
         self.office_threat_timer: int = 0
         self.office_breach_source: int = -1
         self.manual_server_shutdown_pending: bool = False
@@ -232,12 +231,12 @@ class GameModel:
         self.algem_events: list[AlgemEvent] = []
 
         # ── Аудио-приманка ───────────────────────────────────────────────
-        self.bait_active:       bool            = False
-        self.bait_step:         int             = 0    # 0–5, для отрисовки прогресса
-        self.bait_cam_step:     int             = 0    # 0–3, для аудио-иконки
-        self.bait_target_node:  int | None      = None
-        self.bait_attract_timer: int            = 0    # сколько тиков приманка активна
-        self.bait_cooldown:     dict[int, int]  = {}   # {camera_idx: тиков до перезарядки}
+        self.bait_active: bool = False
+        self.bait_step: int = 0  # 0–5, для отрисовки прогресса
+        self.bait_cam_step: int = 0  # 0–3, для аудио-иконки
+        self.bait_target_node: int | None = None
+        self.bait_attract_timer: int = 0  # сколько тиков приманка активна
+        self.bait_cooldown: dict[int, int] = {}  # {camera_idx: тиков до перезарядки}
 
         # ── Вентиляция ───────────────────────────────────────────────────
 
@@ -253,10 +252,10 @@ class GameModel:
         self.seals: dict[str, SealState] = self._seal_controller.seals
 
         # ── Телефонный звонок (Ночь 1) ───────────────────────────────────
-        self.phone_call_ready:  bool = True
+        self.phone_call_ready: bool = True
         self.phone_call_active: bool = False
-        self.phone_muted:       bool = False
-        self._phone_timer:      int  = 300   # тиков задержки перед звонком
+        self.phone_muted: bool = False
+        self._phone_timer: int = 300  # тиков задержки перед звонком
 
         # ── Глитч (случайный эффект, каждый тик шанс) ───────────────────
         self._glitch_active: bool = False
@@ -265,7 +264,7 @@ class GameModel:
         self._glitch_frame_timer: int = 0
 
         # ── Флаги завершения ─────────────────────────────────────────────
-        self.game_over:      bool = False
+        self.game_over: bool = False
         self.night_complete: bool = False
         self.kill_from_vent: bool = False
         self._night_end_pending: bool = False
@@ -390,11 +389,11 @@ class GameModel:
         if camera_idx in self.bait_cooldown:
             return
 
-        self.bait_active         = True
-        self.bait_step           = 0
-        self.bait_cam_step       = 0
-        self.bait_target_node    = camera_idx
-        self.bait_attract_timer  = 480        # 8 секунд при 60 FPS
+        self.bait_active = True
+        self.bait_step = 0
+        self.bait_cam_step = 0
+        self.bait_target_node = camera_idx
+        self.bait_attract_timer = 480  # 8 секунд при 60 FPS
         self.bait_cooldown[camera_idx] = 480  # cooldown 8 секунд
 
         # Уведомляем ИИ
@@ -460,20 +459,18 @@ class GameModel:
         if self.cam_state == "HOLDING":
             self.cam_hold_timer += 1
             if self.cam_hold_timer >= 180:
-                self.cam_state         = "MOVING"
+                self.cam_state = "MOVING"
                 self.cam_move_progress = 0.0
         elif self.cam_state == "MOVING":
             self.cam_move_progress += 0.006
             if self.cam_move_progress >= 1.0:
-                self.cam_state      = "HOLDING"
+                self.cam_state = "HOLDING"
                 self.cam_hold_timer = 0
-                self.cam_dir        = -self.cam_dir
+                self.cam_dir = -self.cam_dir
             else:
-                t          = self.cam_move_progress
-                eased      = t * t * (3 - 2 * t)      # smoothstep
-                self.cam_look = (
-                    eased * self.cam_dir + (1 - eased) * (-self.cam_dir)
-                )
+                t = self.cam_move_progress
+                eased = t * t * (3 - 2 * t)  # smoothstep
+                self.cam_look = eased * self.cam_dir + (1 - eased) * (-self.cam_dir)
 
     def _clock_minute(self) -> int:
         """Преобразует внутренний таймер ночи в отображаемую минуту/час."""
@@ -507,22 +504,16 @@ class GameModel:
 
     def _update_phone(self) -> None:
         """Обновляет длительность телефонного звонка и его завершение."""
-        if (
-            self.phone_call_ready
-            and not self.phone_call_active
-            and not self.phone_muted
-        ):
+        if self.phone_call_ready and not self.phone_call_active and not self.phone_muted:
             self._phone_timer -= 1
             if self._phone_timer <= 0:
                 self.phone_call_active = True
-                self.phone_call_ready  = False
+                self.phone_call_ready = False
 
     def _update_camera_watch(self) -> None:
         """Передаёт ИИ информацию о том, какую камеру сейчас смотрит игрок."""
         if self.tablet_open and not self.tablet_animating:
-            self.camera_watch_ticks[self.camera_idx] = (
-                self.camera_watch_ticks.get(self.camera_idx, 0) + 1
-            )
+            self.camera_watch_ticks[self.camera_idx] = self.camera_watch_ticks.get(self.camera_idx, 0) + 1
 
     def _update_bait(self) -> None:
         """Обновляет таймер звуковой приманки и отключает её после истечения."""
@@ -589,15 +580,9 @@ class GameModel:
         if not self.post_hack_active:
             return
         attention_table = (
-            POST_HACK_DARK_RAGE_ATTENTION_BY_NIGHT
-            if shutdown_ready
-            else POST_HACK_RAGE_ATTENTION_BY_NIGHT
+            POST_HACK_DARK_RAGE_ATTENTION_BY_NIGHT if shutdown_ready else POST_HACK_RAGE_ATTENTION_BY_NIGHT
         )
-        level_table = (
-            POST_HACK_DARK_RAGE_LEVEL_BY_NIGHT
-            if shutdown_ready
-            else POST_HACK_RAGE_LEVEL_BY_NIGHT
-        )
+        level_table = POST_HACK_DARK_RAGE_LEVEL_BY_NIGHT if shutdown_ready else POST_HACK_RAGE_LEVEL_BY_NIGHT
         attention = attention_table.get(self.night, attention_table[5])
         rage_level = level_table.get(self.night, level_table[5])
         trigger = getattr(self._ai, "trigger_post_hack_rage", None)
@@ -698,10 +683,7 @@ class GameModel:
             self.server_state == "OFF"
             and not self.tablet_open
             and not self.tablet_animating
-            and (
-                not self.laptop_open
-                or self.laptop_power_state == "OFF"
-            )
+            and (not self.laptop_open or self.laptop_power_state == "OFF")
             and not self.ad_active
             and not self.server_rebooting
         )
@@ -717,11 +699,7 @@ class GameModel:
 
     def notify_manual_server_shutdown_started(self) -> None:
         """Remember that the player tried the last-chance server shutdown."""
-        if (
-            self.algem_in_office
-            and self.office_breach_source in (9, 10)
-            and not self.last_chance_attempted
-        ):
+        if self.algem_in_office and self.office_breach_source in (9, 10) and not self.last_chance_attempted:
             self.manual_server_shutdown_pending = True
 
     def try_last_chance_server_shutdown(self) -> bool:
@@ -749,16 +727,14 @@ class GameModel:
         if roll < chance:
             self.last_chance_success = True
             self.hack_logs.append(
-                f"{ts} > SERVER OFF: Algem lost interest "
-                f"[save {self.last_chance_attempt_index}, chance {chance_pct}%]"
+                f"{ts} > SERVER OFF: Algem lost interest [save {self.last_chance_attempt_index}, chance {chance_pct}%]"
             )
             self._repel_algem_from_office(reset_hack=False)
             return True
 
         self.last_chance_success = False
         self.hack_logs.append(
-            f"{ts} > SERVER OFF: Algem ignored shutdown "
-            f"[save {self.last_chance_attempt_index}, chance {chance_pct}%]"
+            f"{ts} > SERVER OFF: Algem ignored shutdown [save {self.last_chance_attempt_index}, chance {chance_pct}%]"
         )
         return False
 
@@ -800,7 +776,7 @@ class GameModel:
         # dist: 0 (офис)…4 (самая дальняя — комната 2)
         max_dist = 4
         factor = min(1.0, dist / max_dist)  # 0.0 рядом … 1.0 далеко
-        min_ticks = int(900 + factor * 2100)   # 15 сек рядом, 50 сек далеко
+        min_ticks = int(900 + factor * 2100)  # 15 сек рядом, 50 сек далеко
         max_ticks = int(1800 + factor * 3000)  # 30 сек рядом, 80 сек далеко
         self._server_overload_timer = random.randint(min_ticks, max_ticks)
 

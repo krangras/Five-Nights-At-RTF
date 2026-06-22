@@ -3,7 +3,6 @@ import random
 import sys
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -25,16 +24,17 @@ GRAPH_WITH_VENT = {
     0: [],
     1: [2, 3, 4],
     2: [1],
-    3: [1, 4, 6],      # direct shortcut: 6->3
+    3: [1, 4, 6],  # direct shortcut: 6->3
     4: [1, 3, 5, 7],
     5: [4, 6],
-    6: [5, 7, 3],      # direct shortcut: 6->3
+    6: [5, 7, 3],  # direct shortcut: 6->3
     7: [6, 4, 0],
 }
 
 # ══════════════════════════════════════════════════════════════════
 # 1. BFS
 # ══════════════════════════════════════════════════════════════════
+
 
 class TestBFS:
     def test_basic_path(self):
@@ -65,7 +65,7 @@ class TestBFS:
                 p = bfs_path(s, g, GRAPH)
                 if p is not None:
                     d = len(p) - 1
-                    h = GRAPH.get(s, [])
+                    h = GRAPH.get(s, [])  # noqa: F841
                     assert d >= 0
                     if s == g:
                         assert d == 0
@@ -79,18 +79,23 @@ class TestBFS:
         p = bfs_path(1, 3, g)
         assert p is None
 
+
 # ══════════════════════════════════════════════════════════════════
 # 2. A*
 # ══════════════════════════════════════════════════════════════════
 
+
 def _unit_weight(u, v):
     return 1.0
+
 
 def _observed_weight(watch: dict):
     def wfn(u, v):
         obs = min(1.0, watch.get(u, 0) / 300.0)
         return 1.0 + obs * 2.0
+
     return wfn
+
 
 class TestAStar:
     def test_basic_path(self):
@@ -140,9 +145,11 @@ class TestAStar:
                 real_from_v = len(p) - 1 if p else 999
                 assert h[u] <= 1.0 + real_from_v
 
+
 # ══════════════════════════════════════════════════════════════════
 # 3. Weighted Random Walk (PATROL)
 # ══════════════════════════════════════════════════════════════════
+
 
 class TestWeightedRandomWalk:
     def test_returns_neighbor(self):
@@ -222,9 +229,11 @@ class TestWeightedRandomWalk:
         assert node != 0
         assert node != 5
 
+
 # ══════════════════════════════════════════════════════════════════
 # 4. FSM
 # ══════════════════════════════════════════════════════════════════
+
 
 class TestFSM:
     def test_initial_state_is_idle(self):
@@ -235,7 +244,7 @@ class TestFSM:
         ai = AlgemAI(copy.deepcopy(GRAPH), night=3, start_node=2)
         ai.state = AIState.IDLE
         ai._move_timer = 0
-        aggr_before = ai.aggression
+        _aggr_before = ai.aggression
         ai.tick(hour=1)
         assert ai.location != 0
 
@@ -341,11 +350,13 @@ class TestNight2Profile:
         ai._entry_timer = 90
         for _ in range(90):
             result = ai.tick(hour=2)
-        assert result == True
+        assert result
+
 
 # ══════════════════════════════════════════════════════════════════
 # 5. Night progression
 # ══════════════════════════════════════════════════════════════════
+
 
 class TestProgression:
     def test_night1_slower_than_night5(self):

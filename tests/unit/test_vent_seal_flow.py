@@ -26,9 +26,13 @@ pygame.init()
 pygame.mixer.set_num_channels(16)
 SCREEN = pygame.display.set_mode((1280, 720))
 
-from fnar.gameplay.model import GameModel, SEAL_CAMERA_MAP, SealState, VENT_SEALS
-from fnar.gameplay.presenter import GamePresenter
-from fnar.gameplay.view import GameView
+from fnar.gameplay.camera_graph import SEAL_CAMERA_MAP  # noqa: E402
+from fnar.gameplay.model import (  # noqa: E402
+    GameModel,
+    SealState,
+)
+from fnar.gameplay.presenter import GamePresenter  # noqa: E402
+from fnar.gameplay.view import GameView  # noqa: E402
 
 SEAL_ORDER = [
     "SEAL_TOP_RIGHT",
@@ -178,9 +182,7 @@ def test_full_vent_seal_autoplay_flow(game):
         assert presenter.snd_vent_close.play_calls >= prev_close_calls + 1
         assert not model.game_over
 
-        active_closed = {
-            sid for sid, state in model.seals.items() if state == SealState.CLOSED
-        }
+        active_closed = {sid for sid, state in model.seals.items() if state == SealState.CLOSED}
         assert active_closed == {seal_id}
 
         previous_seal = seal_id

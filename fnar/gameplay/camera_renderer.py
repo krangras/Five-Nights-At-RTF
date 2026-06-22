@@ -38,12 +38,7 @@ class CameraRendererMixin:
                 model.algem_prev_location,
                 model.algem_location,
             )
-            if (
-                not suppress_algem_glitch
-                and model.algem_trigger > 0
-                and on_target_cam
-                and self._glitch_frames
-            ):
+            if not suppress_algem_glitch and model.algem_trigger > 0 and on_target_cam and self._glitch_frames:
                 idx = (pygame.time.get_ticks() // 50) % len(self._glitch_frames)
                 self.screen.blit(self._glitch_frames[idx], (0, 0))
 
@@ -63,13 +58,9 @@ class CameraRendererMixin:
         """Render camera ui for the current frame."""
         blink = (pygame.time.get_ticks() // 600) % 2 == 0
         if blink:
-            pygame.draw.circle(
-                self.screen, (255, 0, 0), (self.screen_w - 78, 28), 5
-            )
+            pygame.draw.circle(self.screen, (255, 0, 0), (self.screen_w - 78, 28), 5)
             glow = self._rec_glow
-            self.screen.blit(
-                glow, (self.screen_w - 90, 16), special_flags=pygame.BLEND_ADD
-            )
+            self.screen.blit(glow, (self.screen_w - 90, 16), special_flags=pygame.BLEND_ADD)
 
         # REC text
         rec_surf = self._ctext(self.font, "REC", (200, 30, 30))
@@ -88,9 +79,7 @@ class CameraRendererMixin:
             for _ in range(random.randint(1, 4)):
                 cx = random.randint(self.screen_w - 90, self.screen_w - 30)
                 cy = random.randint(15, 50)
-                c = random.choice(
-                    [(255, 255, 255), (0, 0, 0), (100, 100, 100)]
-                )
+                c = random.choice([(255, 255, 255), (0, 0, 0), (100, 100, 100)])
                 self.screen.set_at((cx, cy), c)
 
     def _draw_minimap(self, model):
@@ -107,9 +96,7 @@ class CameraRendererMixin:
             self._cam_blink_start = pygame.time.get_ticks()
             self._prev_camera_idx = model.camera_idx
 
-        blink_green = (
-            (pygame.time.get_ticks() - self._cam_blink_start) // 1000
-        ) % 2 == 0
+        blink_green = ((pygame.time.get_ticks() - self._cam_blink_start) // 1000) % 2 == 0
 
         for cidx, (cx, cy) in self._minimap_icon_positions.items():
             icon = self._cam_icons[cidx]
@@ -130,11 +117,7 @@ class CameraRendererMixin:
                 self._minimap_tint_cache[tint_key] = tint
             self.screen.blit(tint, (ix, iy))
 
-            if (
-                model.bait_active
-                and cidx == model.bait_target_node
-                and model.bait_cam_step < 3
-            ):
+            if model.bait_active and cidx == model.bait_target_node and model.bait_cam_step < 3:
                 audio_idx = min(model.bait_cam_step, 3)
                 ax = ix + icon.get_width() // 2 - 30
                 ay = iy + icon.get_height() // 2 - 25
@@ -177,7 +160,7 @@ class CameraRendererMixin:
             ix = mx + cx - iw // 2
             iy = my + cy - ih // 2
 
-            is_active = (cidx == model.camera_idx)
+            is_active = cidx == model.camera_idx
             if is_active:
                 blink_green = ((pygame.time.get_ticks() - self._cam_blink_start) // 1000) % 2 == 0
                 tint_color = (40, 220, 40) if blink_green else (90, 90, 90)
@@ -304,12 +287,10 @@ class CameraRendererMixin:
             iw, ih = icon.get_size()
             ix = mx + cx - iw // 2
             iy = my + cy - ih // 2
-            if (
-                ix - pad <= rx <= ix + iw + pad
-                and iy - pad <= ry <= iy + ih + pad
-            ):
+            if ix - pad <= rx <= ix + iw + pad and iy - pad <= ry <= iy + ih + pad:
                 return (cidx, f"CAM {display_ids.get(cidx, f'{cidx:02d}')}")
         return None
+
     def _should_show_directional_vent_leave(self, model, cam_idx: int) -> bool:
         """Определяет, нужно ли показывать направленный кадр ухода Алгема из вентиляции."""
         if cam_idx not in (8, 9, 10, 11):

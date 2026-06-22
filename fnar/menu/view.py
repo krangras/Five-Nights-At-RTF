@@ -84,9 +84,21 @@ class MenuView:
         surf_cont = self.button_font.render(">> Continue", True, self.COLOR_WHITE)
         surf_set = self.button_font.render(">> Settings", True, self.COLOR_WHITE)
         surf_ex = self.button_font.render(">> Exit", True, self.COLOR_WHITE)
-        self.btn_new_game_rect = pygame.Rect(btn_x, int(self.NEW_GAME_Y * sy), surf_ng.get_width(), surf_ng.get_height())
-        self.btn_continue_rect = pygame.Rect(btn_x, int(self.CONTINUE_Y * sy), surf_cont.get_width(), surf_cont.get_height())
-        self.btn_settings_rect = pygame.Rect(btn_x, int(self.SETTINGS_Y * sy), surf_set.get_width(), surf_set.get_height())
+        self.btn_new_game_rect = pygame.Rect(
+            btn_x, int(self.NEW_GAME_Y * sy), surf_ng.get_width(), surf_ng.get_height()
+        )
+        self.btn_continue_rect = pygame.Rect(
+            btn_x,
+            int(self.CONTINUE_Y * sy),
+            surf_cont.get_width(),
+            surf_cont.get_height(),
+        )
+        self.btn_settings_rect = pygame.Rect(
+            btn_x,
+            int(self.SETTINGS_Y * sy),
+            surf_set.get_width(),
+            surf_set.get_height(),
+        )
         self.btn_exit_rect = pygame.Rect(btn_x, int(self.EXIT_Y * sy), surf_ex.get_width(), surf_ex.get_height())
 
     def _draw_menu_bg(self, model, draw_star=True):
@@ -169,11 +181,15 @@ class MenuView:
         text_fs = f">> Fullscreen: {fs_label}" if hovered == "fullscreen" else f"   Fullscreen: {fs_label}"
         surf_fs = self.button_font.render(text_fs, True, color_fs)
         self.screen.blit(surf_fs, (btn_x, int(self.FULLSCREEN_Y * sy)))
-        self.btn_fullscreen_rect = pygame.Rect(btn_x, int(self.FULLSCREEN_Y * sy), surf_fs.get_width(), surf_fs.get_height())
+        self.btn_fullscreen_rect = pygame.Rect(
+            btn_x,
+            int(self.FULLSCREEN_Y * sy),
+            surf_fs.get_width(),
+            surf_fs.get_height(),
+        )
 
         color_back = self.COLOR_WHITE if hovered != "back" else self.COLOR_HOVER
         text_back = ">> Back" if hovered == "back" else "   Back"
         surf_back = self.button_font.render(text_back, True, color_back)
         self.screen.blit(surf_back, (btn_x, int(self.BACK_Y * sy)))
         self.btn_back_rect = pygame.Rect(btn_x, int(self.BACK_Y * sy), surf_back.get_width(), surf_back.get_height())
-

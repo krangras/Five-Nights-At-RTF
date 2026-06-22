@@ -15,10 +15,7 @@ class UiHitboxesMixin:
         surf.fill(self._seal_btn_fill)
         pygame.draw.rect(surf, (255, 255, 255), (0, 0, *self._btn_size), 1)
 
-        rendered = [
-            self.font_very_small.render(line, False, (245, 245, 245))
-            for line in lines
-        ]
+        rendered = [self.font_very_small.render(line, False, (245, 245, 245)) for line in lines]
         total_h = sum(s.get_height() for s in rendered) + 1 * (len(rendered) - 1)
         y = (self._btn_size[1] - total_h) // 2 - 1
         for text_surf in rendered:
@@ -52,16 +49,8 @@ class UiHitboxesMixin:
         """Return whether tabbutton clicked is true for the current gameplay state."""
         if mouse_pos is None:
             return False
-        tx = (
-            self.screen_rect.right
-            - self.tabbutton_surf.get_width()
-            - self._tab_button_margin_right
-        )
-        ty = (
-            self.screen_rect.bottom
-            - self.tabbutton_surf.get_height()
-            - self._tab_button_margin_bottom
-        )
+        tx = self.screen_rect.right - self.tabbutton_surf.get_width() - self._tab_button_margin_right
+        ty = self.screen_rect.bottom - self.tabbutton_surf.get_height() - self._tab_button_margin_bottom
         rect = pygame.Rect(tx, ty, *self.tabbutton_surf.get_size())
         return rect.collidepoint(mouse_pos)
 
@@ -94,9 +83,7 @@ class UiHitboxesMixin:
 
     def is_laptop_start_clicked(self, mouse_pos):
         """Return whether laptop start clicked is true for the current gameplay state."""
-        return hasattr(
-            self, "_laptop_start_rect"
-        ) and self._laptop_start_rect.collidepoint(mouse_pos)
+        return hasattr(self, "_laptop_start_rect") and self._laptop_start_rect.collidepoint(mouse_pos)
 
     def is_laptop_menu_item_clicked(self, mouse_pos):
         """Return whether laptop menu item clicked is true for the current gameplay state."""
@@ -109,27 +96,19 @@ class UiHitboxesMixin:
 
     def is_laptop_close_clicked(self, mouse_pos):
         """Return whether laptop close clicked is true for the current gameplay state."""
-        return hasattr(
-            self, "_laptop_close_btn"
-        ) and self._laptop_close_btn.collidepoint(mouse_pos)
+        return hasattr(self, "_laptop_close_btn") and self._laptop_close_btn.collidepoint(mouse_pos)
 
     def is_laptop_server_btn_clicked(self, mouse_pos):
         """Return whether laptop server btn clicked is true for the current gameplay state."""
-        return hasattr(
-            self, "_laptop_server_btn"
-        ) and self._laptop_server_btn.collidepoint(mouse_pos)
+        return hasattr(self, "_laptop_server_btn") and self._laptop_server_btn.collidepoint(mouse_pos)
 
     def is_laptop_reboot_btn_clicked(self, mouse_pos):
         """Return whether laptop reboot btn clicked is true for the current gameplay state."""
-        return hasattr(
-            self, "_laptop_reboot_btn"
-        ) and self._laptop_reboot_btn.collidepoint(mouse_pos)
+        return hasattr(self, "_laptop_reboot_btn") and self._laptop_reboot_btn.collidepoint(mouse_pos)
 
     def is_laptop_power_clicked(self, mouse_pos):
         """Return whether laptop power clicked is true for the current gameplay state."""
-        return hasattr(
-            self, "_laptop_power_btn"
-        ) and self._laptop_power_btn.collidepoint(mouse_pos)
+        return hasattr(self, "_laptop_power_btn") and self._laptop_power_btn.collidepoint(mouse_pos)
 
     def is_ad_close_clicked(self, mouse_pos) -> bool:
         """Return whether a click hit the active advertisement close button."""

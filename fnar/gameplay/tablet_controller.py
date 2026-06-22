@@ -3,6 +3,7 @@
 from .camera_graph import SEAL_CAMERA_MAP, VENT_CAMERAS
 from .vent_seal import SealState
 
+
 class TabletControllerMixin:
     """Control tablet state without owning domain data."""
 
@@ -16,10 +17,7 @@ class TabletControllerMixin:
             return
 
         self.model.tablet_anim_frame += self._anim_dir
-        if (
-            self.model.tablet_anim_frame >= 10
-            or self.model.tablet_anim_frame < 0
-        ):
+        if self.model.tablet_anim_frame >= 10 or self.model.tablet_anim_frame < 0:
             self.model.tablet_animating = False
             if self._anim_dir == 1:
                 self.model.tablet_anim_frame = 9  # полностью открыт

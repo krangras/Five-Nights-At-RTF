@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 
+import numpy as np
 import pygame
 
 
@@ -62,19 +63,15 @@ def safe_font(path: str, size: int) -> pygame.font.Font:
         return pygame.font.SysFont("consolas", size)
 
 
-def normalize_brightness(surfaces_with_paths, target=25):
-    """Normalize background brightness once and cache processed surfaces."""
-    cache_dir = os.path.join(os.environ.get("APPDATA", "."), "FiveNightsAtRTF", "cache", "norm")
-    for img, src_path in surfaces_with_paths:
-        if src_path:
-            cache_name = f"{os.path.basename(src_path)}_{img.get_width()}x{img.get_height()}"
-            cache_path = f"{cache_dir}/{cache_name}"
-            if os.path.exists(cache_path):
-                cached = safe_load_image(cache_path)
-                if cached.get_size() == img.get_size():
-                    img.blit(cached, (0, 0))
-                    continue
-        w, h = img.get_size()
+def _brightness_avg(img: pygame.Surface) -> float:
+    """Compute mean brightness of a surface using fast NumPy sampling."""
+    w, h = img.get_size()
+    try:
+        rgb = pygame.surfarray.pixels3d(img)  # (w, h, 3)
+        sampled = rgb[::4, ::4, :].astype(np.float64)
+        brightness = sampled @ np.array([0.299, 0.587, 0.114])
+        return float(np.mean(brightness))
+    except (pygame.error, ValueError, TypeError):
         total = 0
         count = 0
         for y in range(0, h, 4):
@@ -82,21 +79,47 @@ def normalize_brightness(surfaces_with_paths, target=25):
                 r, g, b, _ = img.get_at((x, y))
                 total += int(0.299 * r + 0.587 * g + 0.114 * b)
                 count += 1
-        avg = total / count if count else target
+        return total / count if count else 25.0
+
+
+def _apply_brightness(img: pygame.Surface, factor: float) -> None:
+    """Multiply every RGB pixel by *factor* (alpha preserved)."""
+    try:
+        rgb = pygame.surfarray.pixels3d(img)
+        new_rgb = np.clip(rgb.astype(np.float64) * factor, 0, 255).astype(np.uint8)
+        rgb[:] = new_rgb
+        del rgb
+    except (pygame.error, ValueError, TypeError):
+        w, h = img.get_size()
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = img.get_at((x, y))
+                img.set_at(
+                    (x, y),
+                    (
+                        min(255, int(r * factor)),
+                        min(255, int(g * factor)),
+                        min(255, int(b * factor)),
+                        a,
+                    ),
+                )
+
+
+def normalize_brightness(surfaces_with_paths, target=25):
+    """Normalize background brightness once and cache processed surfaces."""
+    cache_dir = os.path.join(os.environ.get("APPDATA", "."), "FiveNightsAtRTF", "cache", "norm")
+    for img, src_path in surfaces_with_paths:
+        if src_path:
+            cache_name = f"{os.path.basename(src_path)}_{img.get_width()}x{img.get_height()}.png"
+            cache_path = f"{cache_dir}/{cache_name}"
+            if os.path.exists(cache_path):
+                cached = safe_load_image(cache_path)
+                if cached.get_size() == img.get_size():
+                    img.blit(cached, (0, 0))
+                    continue
+        avg = _brightness_avg(img)
         if avg > 0:
-            factor = target / avg
-            for y in range(h):
-                for x in range(w):
-                    r, g, b, a = img.get_at((x, y))
-                    img.set_at(
-                        (x, y),
-                        (
-                            min(255, int(r * factor)),
-                            min(255, int(g * factor)),
-                            min(255, int(b * factor)),
-                            a,
-                        ),
-                    )
+            _apply_brightness(img, target / avg)
         if src_path:
             os.makedirs(cache_dir, exist_ok=True)
             pygame.image.save(img, cache_path)

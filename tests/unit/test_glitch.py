@@ -6,7 +6,6 @@ test_glitch.py — Тесты механики случайного глитча
 
 from __future__ import annotations
 
-import random
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -45,6 +44,7 @@ def _make_presenter(night: int = 1) -> GamePresenter:
 
 # ── 1. Инициализация ──────────────────────────────────────────────────────
 
+
 class TestGlitchModelFields:
     def test_initial_state(self):
         m = GameModel(night=1)
@@ -55,6 +55,7 @@ class TestGlitchModelFields:
 
 
 # ── 2. Проверка раз в секунду ─────────────────────────────────────────────
+
 
 class TestGlitchCheckInterval:
     def test_no_check_before_interval(self):
@@ -68,8 +69,10 @@ class TestGlitchCheckInterval:
     def test_check_at_interval(self):
         p = _make_presenter()
         p._glitch_tick_counter = 0
-        with patch("fnar.gameplay.presenter.random.random", return_value=0.0001), \
-             patch("pygame.sndarray.array", return_value=[0] * 2400):
+        with (
+            patch("fnar.gameplay.presenter.random.random", return_value=0.0001),
+            patch("pygame.sndarray.array", return_value=[0] * 2400),
+        ):
             for _ in range(60):
                 p._update_glitch()
         assert p.model._glitch_active is True
@@ -77,12 +80,15 @@ class TestGlitchCheckInterval:
 
 # ── 3. Шанс 0.4% каждую секунду ──────────────────────────────────────────
 
+
 class TestGlitchChance:
     def test_trigger_below_threshold(self):
         p = _make_presenter()
         p._glitch_tick_counter = 59
-        with patch("fnar.gameplay.presenter.random.random", return_value=0.001), \
-             patch("pygame.sndarray.array", return_value=[0] * 2400):
+        with (
+            patch("fnar.gameplay.presenter.random.random", return_value=0.001),
+            patch("pygame.sndarray.array", return_value=[0] * 2400),
+        ):
             p._update_glitch()
         assert p.model._glitch_active is True
         assert p.model._glitch_timer == 90
@@ -102,13 +108,16 @@ class TestGlitchChance:
         assert p.model._glitch_active is False
 
         p._glitch_tick_counter = 59
-        with patch("fnar.gameplay.presenter.random.random", return_value=0.001), \
-             patch("pygame.sndarray.array", return_value=[0] * 2400):
+        with (
+            patch("fnar.gameplay.presenter.random.random", return_value=0.001),
+            patch("pygame.sndarray.array", return_value=[0] * 2400),
+        ):
             p._update_glitch()
         assert p.model._glitch_active is True
 
 
 # ── 4. Таймер глитча ─────────────────────────────────────────────────────
+
 
 class TestGlitchTimer:
     def _start_glitch(self, p):
@@ -142,6 +151,7 @@ class TestGlitchTimer:
 
 
 # ── 5. Чередование кадров ─────────────────────────────────────────────────
+
 
 class TestGlitchFrame:
     def test_frame_alternates(self):
@@ -177,6 +187,7 @@ class TestGlitchFrame:
 
 # ── 6. Блокировка ввода ───────────────────────────────────────────────────
 
+
 class TestGlitchInputBlock:
     def test_events_blocked_during_glitch(self):
         p = _make_presenter()
@@ -201,6 +212,7 @@ class TestGlitchInputBlock:
 
 # ── 7. game_over / night_complete ──────────────────────────────────────────
 
+
 class TestGlitchEndGame:
     def test_no_glitch_after_game_over(self):
         p = _make_presenter()
@@ -217,13 +229,16 @@ class TestGlitchEndGame:
 
 # ── 8. Интеграция ─────────────────────────────────────────────────────────
 
+
 class TestGlitchIntegration:
     def test_full_scenario_with_forced_trigger(self):
         p = _make_presenter()
         p._glitch_tick_counter = 59
 
-        with patch("fnar.gameplay.presenter.random.random", return_value=0.001), \
-             patch("pygame.sndarray.array", return_value=[0] * 2400):
+        with (
+            patch("fnar.gameplay.presenter.random.random", return_value=0.001),
+            patch("pygame.sndarray.array", return_value=[0] * 2400),
+        ):
             p._update_glitch()
         assert p.model._glitch_active is True
         assert p.model._glitch_timer == 90

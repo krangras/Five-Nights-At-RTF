@@ -6,32 +6,38 @@ import threading
 import pygame
 import cv2
 
+
 def _base_path():
-    if getattr(sys, 'frozen', False):
+    if getattr(sys, "frozen", False):
         return sys._MEIPASS
     return os.path.dirname(os.path.abspath(__file__))
+
 
 BASE_DIR = _base_path()
 os.chdir(BASE_DIR)
 
-from fnar.menu.model import MenuModel
-from fnar.menu.presenter import MenuPresenter
-from fnar.menu.view import MenuView
-from fnar.gameplay.model import GameModel
-from fnar.gameplay.view import GameView
-from fnar.gameplay.presenter import GamePresenter
-from fnar.services.save import load_save, save_progress
-from fnar.services.settings import load_settings, save_settings
-from fnar.services.screen_scaler import VIRTUAL_SIZE, compute_windowed_size, present_canvas, scale_mouse_event
-from fnar.gameplay.screamer import ScreamerPlayer
+from fnar.menu.model import MenuModel  # noqa: E402
+from fnar.menu.presenter import MenuPresenter  # noqa: E402
+from fnar.menu.view import MenuView  # noqa: E402
+from fnar.gameplay.model import GameModel  # noqa: E402
+from fnar.gameplay.view import GameView  # noqa: E402
+from fnar.gameplay.presenter import GamePresenter  # noqa: E402
+from fnar.services.save import load_save, save_progress  # noqa: E402
+from fnar.services.settings import load_settings, save_settings  # noqa: E402
+from fnar.services.screen_scaler import (  # noqa: E402
+    VIRTUAL_SIZE,
+    compute_windowed_size,
+    present_canvas,
+    scale_mouse_event,
+)
+from fnar.gameplay.screamer import ScreamerPlayer  # noqa: E402
 
 LOADING_FONT_CACHE: dict[int, pygame.font.Font] = {}
-LECTURE_SOUNDS: list[str] = [
-    f"sounds/lectures/lecture{i}.mp3" for i in range(1, 7)
-]
+LECTURE_SOUNDS: list[str] = [f"sounds/lectures/lecture{i}.mp3" for i in range(1, 7)]
 DISCLAIMER_FADE_IN_MS = 1200
 DISCLAIMER_FADE_OUT_MS = 1200
 DISCLAIMER_MIN_SHOW_MS = 3500
+
 
 def _get_loading_font(size=30):
     if size not in LOADING_FONT_CACHE:
@@ -41,6 +47,7 @@ def _get_loading_font(size=30):
         else:
             LOADING_FONT_CACHE[size] = pygame.font.Font(None, size)
     return LOADING_FONT_CACHE[size]
+
 
 def draw_loading(canvas, elapsed_ms):
     """Draws the loading screen onto the fixed virtual canvas."""
@@ -60,6 +67,7 @@ def draw_disclaimer(canvas, disclaimer_surf, alpha):
     veil = pygame.Surface(canvas.get_size(), pygame.SRCALPHA)
     veil.fill((0, 0, 0, max(0, min(255, alpha))))
     canvas.blit(veil, (0, 0))
+
 
 GAME_SIZE = VIRTUAL_SIZE
 
@@ -91,9 +99,8 @@ def _set_app_user_model_id() -> None:
     """Must be called BEFORE pygame.display.set_mode so Windows caches it."""
     try:
         import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "Ko4ki.FiveNightsAtRTF"
-        )
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Ko4ki.FiveNightsAtRTF")
     except Exception:
         pass
 
@@ -145,12 +152,8 @@ def _apply_window_icon() -> None:
             if icon_path is None:
                 return
 
-            _icon_big = user32.LoadImageW(
-                None, icon_path, IMAGE_ICON, 256, 256, LR_LOADFROMFILE
-            )
-            _icon_small = user32.LoadImageW(
-                None, icon_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE
-            )
+            _icon_big = user32.LoadImageW(None, icon_path, IMAGE_ICON, 256, 256, LR_LOADFROMFILE)
+            _icon_small = user32.LoadImageW(None, icon_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE)
             _ICON_LOADED = True
 
         if not _icon_big and not _icon_small:
@@ -176,6 +179,7 @@ def _apply_window_icon() -> None:
     except Exception:
         pass
 
+
 def main():
     global _monitor_size, _settings
     pygame.init()
@@ -184,7 +188,11 @@ def main():
     _settings = load_settings()
     _monitor_size = pygame.display.list_modes()[0]
 
-    for rel_path in ("assets/logo/icon.ico", "assets/logo/logo.ico", "assets/logo/logo_32_rgb.png"):
+    for rel_path in (
+        "assets/logo/icon.ico",
+        "assets/logo/logo.ico",
+        "assets/logo/logo_32_rgb.png",
+    ):
         if os.path.exists(rel_path):
             try:
                 pygame.display.set_icon(pygame.image.load(rel_path))
@@ -328,9 +336,9 @@ def main():
                 if e.type == pygame.QUIT:
                     pygame.quit()
                     return
-                if (
-                    disclaimer_dismiss_started_at is None
-                    and e.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN)
+                if disclaimer_dismiss_started_at is None and e.type in (
+                    pygame.KEYDOWN,
+                    pygame.MOUSEBUTTONDOWN,
                 ):
                     disclaimer_dismiss_started_at = pygame.time.get_ticks()
 
@@ -359,9 +367,7 @@ def main():
                     clock.tick(60)
                     continue
                 if disclaimer_channel and disclaimer_channel.get_busy():
-                    disclaimer_channel.set_volume(
-                        0.65 * max(0.0, 1.0 - fade_out_elapsed / DISCLAIMER_FADE_OUT_MS)
-                    )
+                    disclaimer_channel.set_volume(0.65 * max(0.0, 1.0 - fade_out_elapsed / DISCLAIMER_FADE_OUT_MS))
             draw_disclaimer(game_surface, disclaimer_surf, alpha)
             _blit_or_scale(game_surface, screen)
             pygame.display.flip()
@@ -406,12 +412,16 @@ def main():
                 so = ScreamerPlayer(
                     frames_dir="assets/screamer/office_screamer",
                     screen_size=GAME_SIZE,
-                    scream_frame=20, red_start=52, red_duration=0.5,
+                    scream_frame=20,
+                    red_start=52,
+                    red_duration=0.5,
                 )
                 sv = ScreamerPlayer(
                     frames_dir="assets/screamer/vent_screamer",
                     screen_size=GAME_SIZE,
-                    scream_frame=40, red_start=62, red_duration=0.5,
+                    scream_frame=40,
+                    red_start=62,
+                    red_duration=0.5,
                     hold_last=0.8,
                 )
                 _load_state[:5] = [m, v, p, so, sv]
@@ -514,9 +524,11 @@ def main():
                     lecture_sound = random.choice(_lecture_sounds_cache)
                     lecture_sound.set_volume(0.85)
                     lecture_sound.play()
+
                     def _echo():
                         lecture_sound.set_volume(0.50)
                         lecture_sound.play()
+
                     threading.Timer(0.3, _echo).start()
         elif state == "GAME_OVER":
             for e in pygame.event.get():
@@ -625,13 +637,8 @@ def main():
                     final_scene_phase = "FADE_IN"
                     final_scene_speech_played = False
                     try:
-                        raw = pygame.image.load(
-                            "assets/final_scene/"
-                            "dfa83ef3-a181-4a77-8216-f80b0834de0a.png"
-                        ).convert()
-                        final_scene_img = pygame.transform.smoothscale(
-                            raw, GAME_SIZE
-                        )
+                        raw = pygame.image.load("assets/final_scene/dfa83ef3-a181-4a77-8216-f80b0834de0a.png").convert()
+                        final_scene_img = pygame.transform.smoothscale(raw, GAME_SIZE)
                     except pygame.error:
                         final_scene_img = None
                     final_scene_speech_chan = None
@@ -674,12 +681,8 @@ def main():
                 if final_scene_img is not None:
                     final_scene_img.set_alpha(255)
                     game_surface.blit(final_scene_img, (0, 0))
-                if (
-                    not final_scene_speech_played
-                    and (
-                        final_scene_speech_chan is None
-                        or not final_scene_speech_chan.get_busy()
-                    )
+                if not final_scene_speech_played and (
+                    final_scene_speech_chan is None or not final_scene_speech_chan.get_busy()
                 ):
                     final_scene_speech_played = True
 
@@ -698,6 +701,7 @@ def main():
             _blit_or_scale(game_surface, screen)
             pygame.display.flip()
             clock.tick(60)
+
 
 if __name__ == "__main__":
     main()

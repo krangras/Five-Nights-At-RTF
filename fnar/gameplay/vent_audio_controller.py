@@ -62,9 +62,7 @@ class VentAudioControllerMixin:
             and not closed_without_retreat
             and (forced_retreat or loc in VENT_CAMERAS or vent_motion_ticks > 0)
         )
-        direct_vent_view = (
-            False if forced_retreat else self._is_any_active_vent_camera_view(source_node)
-        )
+        direct_vent_view = False if forced_retreat else self._is_any_active_vent_camera_view(source_node)
         target_volume = 0.0
 
         if direct_vent_view:
@@ -238,21 +236,14 @@ class VentAudioControllerMixin:
 
     def _is_any_active_vent_camera_view(self, source_node: int) -> bool:
         """Return whether any active vent camera view is true for the current gameplay state."""
-        if not (
-            self.model.tablet_open
-            and not self.model.tablet_animating
-        ):
+        if not (self.model.tablet_open and not self.model.tablet_animating):
             return False
         cam_idx = self.model.camera_idx
         if cam_idx == source_node and source_node in VENT_CAMERAS:
             return True
         if cam_idx == self.model.algem_location and cam_idx in VENT_CAMERAS:
             return True
-        if (
-            cam_idx == self.model.algem_prev_location
-            and cam_idx in VENT_CAMERAS
-            and self.model.algem_trigger > 0
-        ):
+        if cam_idx == self.model.algem_prev_location and cam_idx in VENT_CAMERAS and self.model.algem_trigger > 0:
             return True
         if cam_idx == self.model.algem_last_vent_leave_source:
             return True
@@ -265,7 +256,10 @@ class VentAudioControllerMixin:
             return False
         seal_id = SEAL_CAMERA_MAP.get(cam_idx)
         seal_state = self.model.seals.get(seal_id) if seal_id is not None else None
-        algem_here = cam_idx in (self.model.algem_location, self.model.algem_prev_location)
+        algem_here = cam_idx in (
+            self.model.algem_location,
+            self.model.algem_prev_location,
+        )
 
         return bool(seal_state == SealState.CLOSED and algem_here)
 
@@ -342,12 +336,7 @@ class VentAudioControllerMixin:
             return 0.0
         seal_id = SEAL_CAMERA_MAP.get(algem_node)
         seal_state = getattr(self.model, "seals", {}).get(seal_id) if seal_id is not None else None
-        if (
-            tablet_open
-            and not tablet_animating
-            and camera_idx == algem_node
-            and seal_state != SealState.CLOSED
-        ):
+        if tablet_open and not tablet_animating and camera_idx == algem_node and seal_state != SealState.CLOSED:
             return 0.0
         listener_node = self._listener_audio_node(
             camera_idx=camera_idx,
@@ -368,9 +357,7 @@ class VentAudioControllerMixin:
     def _current_vent_block_signature(self) -> tuple | None:
         """Describe the closed vent Algem is inside or adjacent to, if any."""
         blocked_nodes = {
-            vent_node
-            for seal_id, vent_node in VENT_SEALS.items()
-            if self.model.seals.get(seal_id) == SealState.CLOSED
+            vent_node for seal_id, vent_node in VENT_SEALS.items() if self.model.seals.get(seal_id) == SealState.CLOSED
         }
         if not blocked_nodes:
             return None
@@ -379,9 +366,7 @@ class VentAudioControllerMixin:
         if loc in blocked_nodes:
             return ("inside", loc)
 
-        adjacent_blocked = tuple(
-            sorted(node for node in blocked_nodes if node in BASE_GRAPH.get(loc, []))
-        )
+        adjacent_blocked = tuple(sorted(node for node in blocked_nodes if node in BASE_GRAPH.get(loc, [])))
         if adjacent_blocked:
             return ("adjacent", loc, adjacent_blocked)
 
@@ -392,9 +377,7 @@ class VentAudioControllerMixin:
         on_last = self.model.algem_location == DANGER_CAMERA_NODE
         if on_last and not self._danger_playing:
             if self.snd_danger2b:
-                self.snd_danger2b.set_volume(
-                    self._mix_volume("danger_loop", SOUND_BASE_VOLUMES["snd_danger2b"])
-                )
+                self.snd_danger2b.set_volume(self._mix_volume("danger_loop", SOUND_BASE_VOLUMES["snd_danger2b"]))
                 self.snd_danger2b.play(-1)
             self._danger_playing = True
         elif not on_last and self._danger_playing:
@@ -424,7 +407,11 @@ class VentAudioControllerMixin:
         """Play a shutter one-shot with volume based on the vent position."""
         if not self.snd_vent_close:
             return
-        volume = self._current_audio_volume(vent_node, "snd_vent_close") if vent_node > 0 else self._apply_channel_volume(SOUND_BASE_VOLUMES["snd_vent_close"], "snd_vent_close")
+        volume = (
+            self._current_audio_volume(vent_node, "snd_vent_close")
+            if vent_node > 0
+            else self._apply_channel_volume(SOUND_BASE_VOLUMES["snd_vent_close"], "snd_vent_close")
+        )
         channel = self.snd_vent_close.play()
         if channel is not None:
             channel.set_volume(max(0.0, min(1.0, volume)))
@@ -440,10 +427,7 @@ class VentAudioControllerMixin:
                 self._play_vent_close_sound_for_node(vent_node)
                 self._vent_seal_just_closed = 60
 
-        active = any(
-            self.model.seals.get(s) == SealState.SEALING
-            for s in VENT_SEALS
-        )
+        active = any(self.model.seals.get(s) == SealState.SEALING for s in VENT_SEALS)
         if active and not self._seal_playing:
             self._play_seal_sound()
         if not active and self._seal_playing:

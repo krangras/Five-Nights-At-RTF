@@ -37,7 +37,7 @@ def main():
     pygame.init()
     pygame.mixer.set_num_channels(16)
     screen = pygame.display.set_mode(GAME_SIZE)
-    pygame.display.set_caption("Ad Demo — A = show, C = close, V = office view, ESC = quit")
+    pygame.display.set_caption("Ad Demo — A=show, C=close, V=office view, ESC=quit")
 
     _fp = FONT_PATH if os.path.exists(FONT_PATH) else None
     font = pygame.font.Font(_fp, 28)

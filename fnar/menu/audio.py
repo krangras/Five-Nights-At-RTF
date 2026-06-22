@@ -2,7 +2,11 @@
 
 import pygame
 
-from fnar.services.audio_mix import apply_music_volume, effective_volume, ensure_audio_settings
+from fnar.services.audio_mix import (
+    apply_music_volume,
+    effective_volume,
+    ensure_audio_settings,
+)
 
 
 MENU_MUSIC_PATH = "sounds/menu/Faulty_Ventilation.mp3"
@@ -17,6 +21,7 @@ class MenuAudio:
     Класс изолирует загрузку и воспроизведение menu-track/hover-click звуков,
     чтобы Presenter не работал напрямую с путями к аудиофайлам.
     """
+
     def __init__(self, settings_data=None):
         """Выполняет специализированную операцию «init» в подсистеме audio."""
         self.settings_data = ensure_audio_settings(settings_data)
@@ -51,7 +56,5 @@ class MenuAudio:
                 self._blip_sound = pygame.mixer.Sound(MENU_BLIP_PATH)
             except pygame.error:
                 return
-        self._blip_sound.set_volume(
-            effective_volume(self.settings_data, "menu_hover", MENU_HOVER_DEFAULT_VOLUME)
-        )
+        self._blip_sound.set_volume(effective_volume(self.settings_data, "menu_hover", MENU_HOVER_DEFAULT_VOLUME))
         self._blip_sound.play()

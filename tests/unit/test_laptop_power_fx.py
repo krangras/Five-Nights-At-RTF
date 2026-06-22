@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from fnar.gameplay.view import get_laptop_power_sequence
+from fnar.services.laptop_power import get_laptop_power_sequence
 
 
 def test_boot_sequence_advances_through_all_visual_phases():

@@ -27,6 +27,7 @@ MENU_STAR_SIZE = 64
 @dataclass(frozen=True)
 class MenuFonts:
     """Loaded font bundle reused by the menu view."""
+
     title: pygame.font.Font
     button: pygame.font.Font
 
@@ -34,9 +35,9 @@ class MenuFonts:
 @dataclass(frozen=True)
 class MenuBackgrounds:
     """Loaded background surfaces reused by the menu view."""
+
     normal: pygame.Surface
     glitch: list[pygame.Surface]
-
 
 
 def scale_cover(surface: pygame.Surface, size: tuple[int, int]) -> pygame.Surface:
@@ -62,6 +63,7 @@ def load_menu_fonts(scale_y: float) -> MenuFonts:
 # Populated once; subsequent calls just scale from these.
 _bg_originals: dict[str, pygame.Surface] = {}
 
+
 def load_menu_backgrounds(size: tuple[int, int]) -> MenuBackgrounds:
     """Load, normalize and scale backgrounds.
 
@@ -86,6 +88,7 @@ def load_menu_backgrounds(size: tuple[int, int]) -> MenuBackgrounds:
 
 
 _star_original: pygame.Surface | None = None
+
 
 def load_menu_star(scale_x: float, scale_y: float) -> pygame.Surface | None:
     """Load menu star and fall back safely when project assets are missing."""

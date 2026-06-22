@@ -45,19 +45,42 @@ def phone_call_sound_path(night: int) -> str:
 class GameplayAudioMixin:
     """Provide sound loading, distance mixing, ambience, and cleanup."""
 
-    def __getattr__(self, attr: str):
-        """Load one named gameplay sound the first time it is requested."""
-        definitions = self.__dict__.get("_sound_defs", {})
-        if attr not in definitions:
-            raise AttributeError(attr)
-        sound = self._load_sound(definitions[attr])
-        if sound is not None:
-            sound_id, base_volume = self._sound_meta.get(
-                attr, (definitions[attr], 0.5)
-            )
-            sound.set_volume(self._mix_volume(sound_id, base_volume))
-        setattr(self, attr, sound)
-        return sound
+    def _init_sounds(self) -> None:
+        """Eagerly load all gameplay sounds to avoid micro-stutters at runtime."""
+        self._gadget_cache: list[pygame.mixer.Sound] = []
+        self._vent_sounds_cache: list[pygame.mixer.Sound] = []
+        self._algem_talk_cache: list[pygame.mixer.Sound] = []
+
+        for attr, path in self._sound_defs.items():
+            sound = self._load_sound(path)
+            if sound is not None:
+                sound_id, base_volume = self._sound_meta.get(attr, (path, 0.5))
+                sound.set_volume(self._mix_volume(sound_id, base_volume))
+            setattr(self, attr, sound)
+
+        self._gadget_cache = self._load_sound_group(
+            tuple(f"sounds/ui/gadget{i}.mp3" for i in range(1, 5)),
+            "gadget_audio", 0.30,
+        )
+        self._vent_sounds_cache = self._load_sound_group(
+            tuple(f"sounds/vents/{name}" for name in (
+                "vent_closer1.wav", "vent_louder2.wav",
+                "vent_quiet1.wav", "vent_quiet2.wav",
+            )),
+            "vent_presence", 0.78,
+        )
+        self._algem_talk_cache = self._load_sound_group(
+            tuple(f"sounds/ambience/ambience{i}.mp3" for i in (1, 2, 4, 5, 6, 7, 8, 9, 10)),
+            "algem_talk", 0.82,
+        )
+
+        originals = self._algem_talk_cache
+        self._algem_talk_variants = {0: list(originals)}
+        for dist in self._dist_params:
+            if dist == 0:
+                continue
+            kernel, _volume = self._dist_params[dist]
+            self._algem_talk_variants[dist] = [self._make_muffled(s, kernel) for s in originals]
 
     def _load_sound_group(
         self,
@@ -78,49 +101,22 @@ class GameplayAudioMixin:
     @property
     def _off_frames(self) -> int:
         """Возвращает набор кадров/поверхностей для выключенного ноутбука."""
-        snd = self.snd_off
+        snd = getattr(self, "snd_off", None)
         return int(snd.get_length() * 60) + 1 if snd else 60
 
     @property
     def _gadget_sounds(self) -> list[pygame.mixer.Sound]:
-        """Лениво загружает звуки ноутбука, сервера, планшета и камер."""
-        if self._gadget_cache is None:
-            self._gadget_cache = self._load_sound_group(
-                tuple(f"sounds/ui/gadget{i}.mp3" for i in range(1, 5)),
-                "gadget_audio",
-                0.30,
-            )
+        """Звуки ноутбука, сервера, планшета и камер (предзагружены)."""
         return self._gadget_cache
 
     @property
     def _vent_sounds(self) -> list[pygame.mixer.Sound]:
-        """Лениво загружает звуки движения Алгема по вентиляции."""
-        if self._vent_sounds_cache is None:
-            names = (
-                "vent_closer1.wav",
-                "vent_louder2.wav",
-                "vent_quiet1.wav",
-                "vent_quiet2.wav",
-            )
-            self._vent_sounds_cache = self._load_sound_group(
-                tuple(f"sounds/vents/{name}" for name in names),
-                "vent_presence",
-                0.78,
-            )
+        """Звуки движения Алгема по вентиляции (предзагружены)."""
         return self._vent_sounds_cache
 
     @property
     def _algem_talk_sounds(self) -> list[pygame.mixer.Sound]:
-        """Лениво загружает голоса Алгема и их приглушённые варианты."""
-        if self._algem_talk_cache is None:
-            self._algem_talk_cache = self._load_sound_group(
-                tuple(
-                    f"sounds/ambience/ambience{i}.mp3"
-                    for i in (1, 2, 4, 5, 6, 7, 8, 9, 10)
-                ),
-                "algem_talk",
-                0.82,
-            )
+        """Голоса Алгема (предзагружены)."""
         return self._algem_talk_cache
 
     @staticmethod
@@ -151,9 +147,7 @@ class GameplayAudioMixin:
             if dist in self._algem_talk_variants:
                 continue
             kernel, _volume = self._dist_params[dist]
-            self._algem_talk_variants[dist] = [
-                self._make_muffled(s, kernel) for s in originals
-            ]
+            self._algem_talk_variants[dist] = [self._make_muffled(s, kernel) for s in originals]
 
     def _talk_variants_for(self, distance: int) -> list[pygame.mixer.Sound]:
         """Return one cached filter bucket, creating it on first use."""
@@ -201,16 +195,16 @@ class GameplayAudioMixin:
         cam_visible = (
             self.model.tablet_open
             and not self.model.tablet_animating
-            and self.model.camera_idx in (
-                self.model.algem_location, self.model.algem_prev_location
-            )
+            and self.model.camera_idx in (self.model.algem_location, self.model.algem_prev_location)
         )
         play_leave_static = cam_visible and not self._suppress_algem_leave_static()
 
         if trigger_now > 0 and self._prev_algem_trigger == 0:
             if self.snd_algem_leave and play_leave_static:
                 self._algem_leave_channel.play(self.snd_algem_leave, loops=-1)
-        elif trigger_now > 0 and play_leave_static and self.snd_algem_leave and not self._algem_leave_channel.get_busy():
+        elif (
+            trigger_now > 0 and play_leave_static and self.snd_algem_leave and not self._algem_leave_channel.get_busy()
+        ):
             self._algem_leave_channel.play(self.snd_algem_leave, loops=-1)
         elif trigger_now > 0 and not play_leave_static:
             self._algem_leave_channel.stop()
@@ -221,9 +215,7 @@ class GameplayAudioMixin:
         self._algem_talk_timer -= 1
 
         if self._algem_talk_channel.get_busy():
-            self._algem_talk_channel.set_volume(
-                self._current_audio_volume(self.model.algem_location, "algem_talk")
-            )
+            self._algem_talk_channel.set_volume(self._current_audio_volume(self.model.algem_location, "algem_talk"))
             return
 
         if self._algem_talk_timer > 0:
@@ -234,12 +226,9 @@ class GameplayAudioMixin:
 
         bucket = self._current_audio_distance(self.model.algem_location)
         variants = self._talk_variants_for(bucket)
-        self._algem_talk_channel.set_volume(
-            self._current_audio_volume(self.model.algem_location, "algem_talk")
-        )
+        self._algem_talk_channel.set_volume(self._current_audio_volume(self.model.algem_location, "algem_talk"))
         self._algem_talk_channel.play(random.choice(variants))
         self._algem_talk_timer = random.randint(3600, 5400)
-
 
     def _distance_volume(
         self,
@@ -367,18 +356,23 @@ class GameplayAudioMixin:
         save_settings(self.settings_data)
 
     def _refresh_cached_sound_levels(self) -> None:
-        """Re-apply calibration to sounds that were already loaded lazily."""
+        """Re-apply calibration to all loaded sounds."""
         for attr, (sound_id, base_volume) in self._sound_meta.items():
             snd = self.__dict__.get(attr)
-            if snd is None or attr in {"snd_ambience", "snd_work", "snd_phone_call", "snd_wait"}:
+            if snd is None or attr in {
+                "snd_ambience",
+                "snd_work",
+                "snd_phone_call",
+                "snd_wait",
+            }:
                 continue
             snd.set_volume(self._mix_volume(sound_id, base_volume))
 
-        for snd in self._gadget_cache or ():
+        for snd in self._gadget_cache:
             snd.set_volume(self._mix_volume("gadget_audio", 0.30))
-        for snd in self._algem_talk_cache or ():
+        for snd in self._algem_talk_cache:
             snd.set_volume(self._mix_volume("algem_talk", 0.82))
-        for snd in self._vent_sounds_cache or ():
+        for snd in self._vent_sounds_cache:
             snd.set_volume(self._mix_volume("vent_presence", 0.78))
         if self._ad_sound:
             self._ad_sound.set_volume(self._mix_volume("ad_loop", CHANNEL_MASTERS["ad"]))

@@ -33,9 +33,7 @@ class LaptopRendererMixin:
         )
 
         pct = self._ctext(self.font, f"{int(model.hack_progress * 100)}%", (200, 200, 200))
-        self.screen.blit(
-            pct, (x + bar_w + 10, y + bar_h // 2 - pct.get_height() // 2)
-        )
+        self.screen.blit(pct, (x + bar_w + 10, y + bar_h // 2 - pct.get_height() // 2))
 
         if getattr(model, "post_hack_active", False):
             if getattr(model, "post_hack_shutdown_ready", False):
@@ -64,9 +62,7 @@ class LaptopRendererMixin:
 
         # Фон иконки
         if hovered:
-            sel = pygame.Surface(
-                (icon_s + pad * 2, icon_s + pad * 2), pygame.SRCALPHA
-            )
+            sel = pygame.Surface((icon_s + pad * 2, icon_s + pad * 2), pygame.SRCALPHA)
             sel.fill((80, 120, 200, 80))
             target.blit(sel, (ix - pad, iy - pad))
 
@@ -86,16 +82,10 @@ class LaptopRendererMixin:
                 border_radius=3,
             )
             # Экран
-            pygame.draw.rect(
-                target, (40, 80, 160), (ix + 8, iy + 6, 32, 20)
-            )
-            pygame.draw.rect(
-                target, (30, 30, 30), (ix + 8, iy + 6, 32, 20), 1
-            )
+            pygame.draw.rect(target, (40, 80, 160), (ix + 8, iy + 6, 32, 20))
+            pygame.draw.rect(target, (30, 30, 30), (ix + 8, iy + 6, 32, 20), 1)
             # Подставка
-            pygame.draw.rect(
-                target, (140, 140, 140), (ix + 18, iy + 32, 12, 4)
-            )
+            pygame.draw.rect(target, (140, 140, 140), (ix + 18, iy + 32, 12, 4))
             pygame.draw.rect(
                 target,
                 (120, 120, 120),
@@ -111,12 +101,8 @@ class LaptopRendererMixin:
             # Глаза
             pygame.draw.circle(target, (200, 50, 50), (cx - 6, cy - 3), 4)
             pygame.draw.circle(target, (200, 50, 50), (cx + 6, cy - 3), 4)
-            pygame.draw.circle(
-                target, (255, 200, 200), (cx - 5, cy - 4), 1
-            )
-            pygame.draw.circle(
-                target, (255, 200, 200), (cx + 7, cy - 4), 1
-            )
+            pygame.draw.circle(target, (255, 200, 200), (cx - 5, cy - 4), 1)
+            pygame.draw.circle(target, (255, 200, 200), (cx + 7, cy - 4), 1)
             # Нижняя часть
             pygame.draw.rect(
                 target,
@@ -157,9 +143,7 @@ class LaptopRendererMixin:
             )
             # Полоски
             for lx in (bx + 6, bx + 12, bx + 18):
-                pygame.draw.line(
-                    target, (120, 120, 120), (lx, by + 10), (lx, by + 30)
-                )
+                pygame.draw.line(target, (120, 120, 120), (lx, by + 10), (lx, by + 30))
 
         # Подпись под иконкой
         label_lines = {
@@ -191,9 +175,7 @@ class LaptopRendererMixin:
     def _draw_laptop_power_transition(self, model) -> None:
         """Render laptop power transition for the current frame."""
         sw, sh = self.screen_w, self.screen_h
-        phase, phase_t = get_laptop_power_sequence(
-            model.laptop_power_state, model.laptop_power_timer
-        )
+        phase, phase_t = get_laptop_power_sequence(model.laptop_power_state, model.laptop_power_timer)
 
         layer = self._render_laptop_phase_surface(phase, phase_t, model)
         self.screen.blit(layer, (0, 0))
@@ -211,9 +193,7 @@ class LaptopRendererMixin:
         else:
             self._laptop_power_btn = pygame.Rect(0, 0, 0, 0)
 
-    def _render_laptop_phase_surface(
-        self, phase: str, phase_t: float, model=None
-    ) -> pygame.Surface:
+    def _render_laptop_phase_surface(self, phase: str, phase_t: float, model=None) -> pygame.Surface:
         """Рисует кадр текущей фазы включения или выключения ноутбука."""
         surface = pygame.Surface((self.screen_w, self.screen_h))
 
@@ -236,9 +216,7 @@ class LaptopRendererMixin:
         self._draw_powered_off_screen(surface)
         return surface
 
-    def _draw_laptop_power_button(
-        self, power_state: str, rect: pygame.Rect
-    ) -> None:
+    def _draw_laptop_power_button(self, power_state: str, rect: pygame.Rect) -> None:
         """Render laptop power button for the current frame."""
         pulse = {
             "OFF": 0.10,
@@ -394,9 +372,7 @@ class LaptopRendererMixin:
         title.set_alpha(local_alpha)
         layer.blit(title, (cx - title.get_width() // 2, cy - 74))
 
-        subtitle = self._ctext(
-            self._ui_font_sm, "secure workstation", (126, 158, 174)
-        ).copy()
+        subtitle = self._ctext(self._ui_font_sm, "secure workstation", (126, 158, 174)).copy()
         subtitle.set_alpha(int(local_alpha * 0.86))
         layer.blit(subtitle, (cx - subtitle.get_width() // 2, cy - 34))
 
@@ -500,7 +476,11 @@ class LaptopRendererMixin:
         for i, line in enumerate(lines[:visible]):
             color = (156, 204, 172) if "OK" in line or "READY" in line else (174, 194, 202)
             marker = "[OK]" if "OK" in line or "READY" in line else ">>"
-            m = self._ctext(self._ui_font_sm, marker, (84, 172, 108) if marker == "[OK]" else (102, 150, 166))
+            m = self._ctext(
+                self._ui_font_sm,
+                marker,
+                (84, 172, 108) if marker == "[OK]" else (102, 150, 166),
+            )
             t = self._ctext(self._ui_font_sm, line, color)
             surface.blit(m, (right.x + 16, y))
             surface.blit(t, (right.x + 66, y))
@@ -651,33 +631,23 @@ class LaptopRendererMixin:
         pygame.draw.rect(sheen, (58, 60, 64, alpha // 2), mid_band, border_radius=3)
         surface.blit(sheen, (0, 0), special_flags=pygame.BLEND_ADD)
 
-    def _draw_boot_wake_screen(
-        self, surface: pygame.Surface, phase_t: float
-    ) -> None:
+    def _draw_boot_wake_screen(self, surface: pygame.Surface, phase_t: float) -> None:
         """Render boot wake screen for the current frame."""
         self._draw_boot_animation(surface, phase_t * 0.18)
 
-    def _draw_boot_post_screen(
-        self, surface: pygame.Surface, phase_t: float
-    ) -> None:
+    def _draw_boot_post_screen(self, surface: pygame.Surface, phase_t: float) -> None:
         """Render boot post screen for the current frame."""
         self._draw_boot_animation(surface, 0.18 + phase_t * 0.44)
 
-    def _draw_boot_loading_screen(
-        self, surface: pygame.Surface, phase_t: float
-    ) -> None:
+    def _draw_boot_loading_screen(self, surface: pygame.Surface, phase_t: float) -> None:
         """Render boot loading screen for the current frame."""
         self._draw_boot_animation(surface, 0.62 + phase_t * 0.38)
 
-    def _draw_shutdown_message_screen(
-        self, surface: pygame.Surface, phase_t: float
-    ) -> None:
+    def _draw_shutdown_message_screen(self, surface: pygame.Surface, phase_t: float) -> None:
         """Render shutdown message screen for the current frame."""
         self._draw_shutdown_animation(surface, phase_t * 0.48)
 
-    def _draw_shutdown_fade_screen(
-        self, surface: pygame.Surface, phase_t: float
-    ) -> None:
+    def _draw_shutdown_fade_screen(self, surface: pygame.Surface, phase_t: float) -> None:
         """Render shutdown fade screen for the current frame."""
         self._draw_shutdown_animation(surface, 0.48 + phase_t * 0.52)
 
@@ -730,16 +700,12 @@ class LaptopRendererMixin:
         tb_top = self._tb_top
         self.screen.blit(self._tb_surf, (0, tb_top))
 
-        pygame.draw.line(
-            self.screen, (100, 160, 255), (0, tb_top), (sw, tb_top)
-        )
+        pygame.draw.line(self.screen, (100, 160, 255), (0, tb_top), (sw, tb_top))
 
         # Кнопка Start — зелёный градиент как в XP
         start_rect = pygame.Rect(2, tb_top + 2, 86, 36)
         self.screen.blit(self._start_btn_surf, (start_rect.x, start_rect.y))
-        pygame.draw.rect(
-            self.screen, (20, 100, 20), start_rect, 1, border_radius=4
-        )
+        pygame.draw.rect(self.screen, (20, 100, 20), start_rect, 1, border_radius=4)
 
         # Текст Start
         start_label = self._ctext(self._ui_font_bold, "start", (255, 255, 255))
@@ -769,9 +735,7 @@ class LaptopRendererMixin:
         display_m = getattr(model, "clock_minute", model.timer // 60)
         clock_str = f"{display_h}:{display_m:02d}"
         clock_label = self._ctext(self._ui_font_bold, clock_str, (255, 255, 255))
-        self.screen.blit(
-            clock_label, (sw - clock_label.get_width() - 10, sh - tb_h + 11)
-        )
+        self.screen.blit(clock_label, (sw - clock_label.get_width() - 10, sh - tb_h + 11))
 
         # ── Иконки на рабочем столе ──────────────────────────────────
         icon_defs = [
@@ -812,18 +776,10 @@ class LaptopRendererMixin:
             )
 
             # Аватарка
-            pygame.draw.circle(
-                self.screen, (200, 200, 200), (menu_x + 24, menu_y + 25), 16
-            )
-            pygame.draw.circle(
-                self.screen, (100, 100, 100), (menu_x + 24, menu_y + 25), 16, 1
-            )
-            pygame.draw.circle(
-                self.screen, (60, 60, 60), (menu_x + 24, menu_y + 22), 5
-            )
-            pygame.draw.ellipse(
-                self.screen, (60, 60, 60), (menu_x + 14, menu_y + 28, 20, 14)
-            )
+            pygame.draw.circle(self.screen, (200, 200, 200), (menu_x + 24, menu_y + 25), 16)
+            pygame.draw.circle(self.screen, (100, 100, 100), (menu_x + 24, menu_y + 25), 16, 1)
+            pygame.draw.circle(self.screen, (60, 60, 60), (menu_x + 24, menu_y + 22), 5)
+            pygame.draw.ellipse(self.screen, (60, 60, 60), (menu_x + 14, menu_y + 28, 20, 14))
             user_label = self._ctext(self._ui_font_bold, "Admin", (255, 255, 255))
             self.screen.blit(user_label, (menu_x + 48, menu_y + 18))
 
@@ -844,14 +800,10 @@ class LaptopRendererMixin:
             for i, (item_label, item_key) in enumerate(menu_items):
                 iy = sep_y + 8 + i * 34
                 item_rect = pygame.Rect(menu_x + 2, iy, menu_w - 4, 30)
-                item_hovered = (
-                    item_rect.collidepoint(mx, my) and item_key is not None
-                )
+                item_hovered = item_rect.collidepoint(mx, my) and item_key is not None
 
                 if item_hovered:
-                    pygame.draw.rect(
-                        self.screen, (40, 80, 200), item_rect, border_radius=3
-                    )
+                    pygame.draw.rect(self.screen, (40, 80, 200), item_rect, border_radius=3)
                 elif item_key is None:
                     pygame.draw.line(
                         self.screen,
@@ -895,12 +847,8 @@ class LaptopRendererMixin:
 
             # Свернуть
             min_btn = pygame.Rect(win_x + win_w - 68, btn_y, btn_w, btn_h)
-            pygame.draw.rect(
-                self.screen, (40, 100, 180), min_btn, border_radius=2
-            )
-            pygame.draw.rect(
-                self.screen, (20, 60, 140), min_btn, 1, border_radius=2
-            )
+            pygame.draw.rect(self.screen, (40, 100, 180), min_btn, border_radius=2)
+            pygame.draw.rect(self.screen, (20, 60, 140), min_btn, 1, border_radius=2)
             pygame.draw.line(
                 self.screen,
                 (255, 255, 255),
@@ -911,12 +859,8 @@ class LaptopRendererMixin:
 
             # Развернуть
             max_btn = pygame.Rect(win_x + win_w - 45, btn_y, btn_w, btn_h)
-            pygame.draw.rect(
-                self.screen, (40, 100, 180), max_btn, border_radius=2
-            )
-            pygame.draw.rect(
-                self.screen, (20, 60, 140), max_btn, 1, border_radius=2
-            )
+            pygame.draw.rect(self.screen, (40, 100, 180), max_btn, border_radius=2)
+            pygame.draw.rect(self.screen, (20, 60, 140), max_btn, 1, border_radius=2)
             pygame.draw.rect(
                 self.screen,
                 (255, 255, 255),
@@ -926,12 +870,8 @@ class LaptopRendererMixin:
 
             # Закрыть
             close_btn = pygame.Rect(win_x + win_w - 22, btn_y, btn_w, btn_h)
-            pygame.draw.rect(
-                self.screen, (180, 60, 40), close_btn, border_radius=2
-            )
-            pygame.draw.rect(
-                self.screen, (120, 30, 20), close_btn, 1, border_radius=2
-            )
+            pygame.draw.rect(self.screen, (180, 60, 40), close_btn, border_radius=2)
+            pygame.draw.rect(self.screen, (120, 30, 20), close_btn, 1, border_radius=2)
             close_x = self._ctext(self._ui_font_bold, "X", (255, 255, 255))
             self.screen.blit(close_x, (close_btn.x + 4, close_btn.y + 2))
             self._laptop_close_btn = close_btn
@@ -988,18 +928,14 @@ class LaptopRendererMixin:
                 srv_clr = (120, 120, 120)
 
             srv_btn = pygame.Rect(win_x + 15, btn_server_y, 130, 24)
-            srv_enabled = (
-                model.server_state in ("OFF", "ON") and not is_overload
-            )
+            srv_enabled = model.server_state in ("OFF", "ON") and not is_overload
             pygame.draw.rect(
                 self.screen,
                 srv_clr if srv_enabled else (160, 160, 160),
                 srv_btn,
                 border_radius=3,
             )
-            pygame.draw.rect(
-                self.screen, (30, 30, 30), srv_btn, 1, border_radius=3
-            )
+            pygame.draw.rect(self.screen, (30, 30, 30), srv_btn, 1, border_radius=3)
             srv_txt = self._ctext(self._ui_font_bold, srv_label, (255, 255, 255))
             self.screen.blit(
                 srv_txt,
@@ -1015,9 +951,7 @@ class LaptopRendererMixin:
             re_enabled = is_overload or is_rebooting
             re_clr = (200, 140, 30) if re_enabled else (160, 160, 160)
             pygame.draw.rect(self.screen, re_clr, rebtn, border_radius=3)
-            pygame.draw.rect(
-                self.screen, (30, 30, 30), rebtn, 1, border_radius=3
-            )
+            pygame.draw.rect(self.screen, (30, 30, 30), rebtn, 1, border_radius=3)
             re_txt = self._ctext(
                 self._ui_font_bold,
                 "REBOOT",
@@ -1039,12 +973,8 @@ class LaptopRendererMixin:
                 bar_y = btn_server_y + 32
                 bar_w = win_w - 30
                 bar_h = 18
-                pygame.draw.rect(
-                    self.screen, (220, 220, 220), (bar_x, bar_y, bar_w, bar_h)
-                )
-                pygame.draw.rect(
-                    self.screen, (160, 160, 160), (bar_x, bar_y, bar_w, bar_h), 1
-                )
+                pygame.draw.rect(self.screen, (220, 220, 220), (bar_x, bar_y, bar_w, bar_h))
+                pygame.draw.rect(self.screen, (160, 160, 160), (bar_x, bar_y, bar_w, bar_h), 1)
                 fill = int(bar_w * model.hack_progress)
                 if fill > 0:
                     clr = (40, 200, 40) if model.hack_active else (40, 140, 40)
@@ -1058,9 +988,7 @@ class LaptopRendererMixin:
                     f"{int(model.hack_progress * 100)}%",
                     (30, 30, 30),
                 )
-                self.screen.blit(
-                    pct, (bar_x + bar_w - pct.get_width() - 4, bar_y + 1)
-                )
+                self.screen.blit(pct, (bar_x + bar_w - pct.get_width() - 4, bar_y + 1))
                 term_y = bar_y + bar_h + 8
             else:
                 offline_note = self._ctext(
@@ -1076,17 +1004,11 @@ class LaptopRendererMixin:
             term_h = win_h - (term_y - win_y) - 12
 
             # Фон терминала
-            pygame.draw.rect(
-                self.screen, (12, 12, 12), (term_x, term_y, term_w, term_h)
-            )
-            pygame.draw.rect(
-                self.screen, (60, 60, 60), (term_x, term_y, term_w, term_h), 1
-            )
+            pygame.draw.rect(self.screen, (12, 12, 12), (term_x, term_y, term_w, term_h))
+            pygame.draw.rect(self.screen, (60, 60, 60), (term_x, term_y, term_w, term_h), 1)
 
             # Полоска заголовка терминала
-            pygame.draw.rect(
-                self.screen, (30, 30, 30), (term_x, term_y, term_w, 18)
-            )
+            pygame.draw.rect(self.screen, (30, 30, 30), (term_x, term_y, term_w, 18))
             term_hdr = self._ctext(self._ui_font_sm, model.night_app["header"], (120, 200, 120))
             self.screen.blit(term_hdr, (term_x + 6, term_y + 2))
 
@@ -1097,19 +1019,13 @@ class LaptopRendererMixin:
             visible = logs[-max_lines:] if len(logs) > max_lines else logs
 
             for i, log_line in enumerate(visible):
-                clr = (
-                    (180, 220, 180)
-                    if log_line.startswith("[")
-                    else (140, 180, 140)
-                )
+                clr = (180, 220, 180) if log_line.startswith("[") else (140, 180, 140)
                 if "ERROR" in log_line or "OVERLOAD" in log_line:
                     clr = (220, 80, 60)
                 elif "COMPLETE" in log_line or "SUCCESS" in log_line:
                     clr = (80, 220, 80)
                 rendered = self._ctext(self._ui_font_sm, log_line, clr)
-                self.screen.blit(
-                    rendered, (term_x + 6, term_y + 20 + i * line_h)
-                )
+                self.screen.blit(rendered, (term_x + 6, term_y + 20 + i * line_h))
 
             # Мигающий курсор
             if pygame.time.get_ticks() % 1000 < 600:
@@ -1133,9 +1049,7 @@ class LaptopRendererMixin:
             by = ay + 4
             self._ad_close_rect = pygame.Rect(bx, by, btn_size, btn_size)
             pygame.draw.rect(self.screen, (60, 60, 60), self._ad_close_rect)
-            pygame.draw.rect(
-                self.screen, (200, 200, 200), self._ad_close_rect, 1
-            )
+            pygame.draw.rect(self.screen, (200, 200, 200), self._ad_close_rect, 1)
             cross_cx, cross_cy = bx + btn_size // 2, by + btn_size // 2
             pygame.draw.line(
                 self.screen,

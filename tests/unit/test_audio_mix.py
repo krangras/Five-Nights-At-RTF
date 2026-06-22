@@ -15,7 +15,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import pytest
 
-from fnar.services.audio_mix import ALL_SOUND_PATHS, default_audio_mix, effective_volume, normalize_audio_mix
+from fnar.services.audio_mix import (
+    ALL_SOUND_PATHS,
+    default_audio_mix,
+    effective_volume,
+    normalize_audio_mix,
+)
 
 
 def test_default_mix_has_master_categories_and_sounds() -> None:

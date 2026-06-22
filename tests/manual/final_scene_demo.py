@@ -8,6 +8,7 @@
   3. После окончания речи — по нажатию клавиши погасание и выход.
   ESC — принудительный выход на любом этапе.
 """
+
 import pygame
 
 
@@ -21,19 +22,16 @@ def main():
 
     # ── Загрузка ассетов ────────────────────────────────────────────────
     try:
-        raw = pygame.image.load(
-            "assets/final_scene/dfa83ef3-a181-4a77-8216-f80b0834de0a.png"
-        ).convert()
+        raw = pygame.image.load("assets/final_scene/dfa83ef3-a181-4a77-8216-f80b0834de0a.png").convert()
         final_img = pygame.transform.smoothscale(raw, GAME_SIZE)
     except pygame.error as exc:
         print(f"[WARN] Картинка не загружена: {exc}")
         final_img = None
 
-    music_chan = None
     try:
         snd = pygame.mixer.Sound("sounds/final_scene/mb2.wav")
         snd.set_volume(0.5)
-        music_chan = snd.play(loops=-1)
+        _music_chan = snd.play(loops=-1)
         print("Музыка: playing (loop)")
     except pygame.error as exc:
         print(f"[WARN] Музыка не загружена: {exc}")
@@ -48,7 +46,7 @@ def main():
         print(f"[WARN] Речь не загружена: {exc}")
 
     # ── Состояние ───────────────────────────────────────────────────────
-    phase = "FADE_IN"   # FADE_IN → SHOWING → FADE_OUT → DONE
+    phase = "FADE_IN"  # FADE_IN → SHOWING → FADE_OUT → DONE
     tick = 0
     speech_done = False
 
@@ -90,9 +88,7 @@ def main():
             if final_img is not None:
                 final_img.set_alpha(255)
                 surface.blit(final_img, (0, 0))
-            if not speech_done and (
-                speech_chan is None or not speech_chan.get_busy()
-            ):
+            if not speech_done and (speech_chan is None or not speech_chan.get_busy()):
                 speech_done = True
                 print("→ Речь Алгема завершена. Нажмите любую клавишу.")
 

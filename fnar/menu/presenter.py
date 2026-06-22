@@ -13,6 +13,7 @@ class MenuPresenter:
     Обрабатывает события мыши/клавиатуры, обновляет MenuModel и вызывает
     MenuView. Геймплейные данные ночи сюда не попадают.
     """
+
     def __init__(self, model, view, settings_data=None, pointer_provider=None):
         """Создаёт presenter меню и задаёт источник координат мыши.
 
