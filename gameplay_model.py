@@ -19,7 +19,7 @@ import copy
 import random
 from enum import Enum, auto
 
-from algem_ai import AlgemAI, AIState, bfs_path   # noqa: F401
+from algem_ai import AlgemAI, AlgemEvent, AIState, bfs_path   # noqa: F401
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -96,7 +96,14 @@ SEAL_CAMERA_MAP: dict[int, str] = {
     11: "SEAL_BOTTOM_LEFT",
 }
 
-SEAL_DURATION = 300  # 5 секунд при 60 FPS
+SEAL_RETREAT_GRAPH: dict[int, list[int]] = {
+    8: [1, 2, 3],
+    9: [2],
+    10: [6, 11],
+    11: [4, 10],
+}
+
+SEAL_DURATION = 420  # 7 секунд при 60 FPS
 
 OFFICE_THREAT_TICKS_BY_NIGHT: dict[int, int] = {
     1: 360,  # 6 сек
@@ -104,6 +111,38 @@ OFFICE_THREAT_TICKS_BY_NIGHT: dict[int, int] = {
     3: 240,  # 4 сек
     4: 180,  # 3 сек
     5: 120,  # 2 сек
+}
+
+LAST_CHANCE_ROULETTE_CHANCES_BY_NIGHT: dict[int, tuple[float, ...]] = {
+    1: (0.0,),
+    2: (1.0, 1.0, 5 / 6, 4 / 6, 3 / 6, 2 / 6, 1 / 6, 0.0),
+    3: (1.0, 1.0, 5 / 6, 4 / 6, 3 / 6, 2 / 6, 1 / 6, 0.0),
+    4: (1.0, 5 / 6, 4 / 6, 3 / 6, 2 / 6, 1 / 6, 0.0),
+    5: (5 / 6, 4 / 6, 3 / 6, 2 / 6, 1 / 6, 0.0),
+}
+
+POST_HACK_SURVIVAL_TICKS_BY_NIGHT: dict[int, int] = {
+    1: 900,
+    2: 1200,
+    3: 1500,
+    4: 1800,
+    5: 2100,
+}
+
+POST_HACK_RAGE_TICKS_BY_NIGHT: dict[int, int] = {
+    1: 900,
+    2: 1500,
+    3: 1800,
+    4: 2100,
+    5: 2400,
+}
+
+POST_HACK_RAGE_ATTENTION_BY_NIGHT: dict[int, float] = {
+    1: 68.0,
+    2: 80.0,
+    3: 88.0,
+    4: 96.0,
+    5: 100.0,
 }
 
 
@@ -205,6 +244,23 @@ class GameModel:
         )
         self.algem_in_office: bool = False   # вошёл, но не убил (планшет открыт)
         self.office_threat_timer: int = 0
+        self.office_breach_source: int = -1
+        self.manual_server_shutdown_pending: bool = False
+        self.last_chance_attempted: bool = False
+        self.last_chance_success: bool = False
+        self.last_chance_roll: float | None = None
+        self.last_chance_chance: float | None = None
+        self.last_chance_attempt_index: int = 0
+        self.last_chance_save_attempts_total: int = 0
+        self.post_hack_started: bool = False
+        self.post_hack_active: bool = False
+        self.post_hack_shutdown_ready: bool = False
+        self.post_hack_survival_timer: int = 0
+        self.post_hack_survival_total: int = 0
+        self.post_hack_rage_timer: int = 0
+        self.post_hack_complete: bool = False
+        self.post_hack_log_stage: int = 0
+        self.algem_events: list[AlgemEvent] = []
 
         # ── Аудио-приманка ───────────────────────────────────────────────
         self.bait_active:       bool            = False
@@ -273,6 +329,14 @@ class GameModel:
         """Имя текущего состояния ИИ для HUD (отладка / курсовая работа)."""
         return self._ai.state_name
 
+    def drain_algem_events(self) -> list[AlgemEvent]:
+        events = list(self.algem_events)
+        self.algem_events.clear()
+        return events
+
+    def _collect_ai_events(self) -> None:
+        self.algem_events.extend(self._ai.drain_events())
+
     # ──────────────────────────────────────────────────────────────────────
     # Публичный API для Presenter
     # ──────────────────────────────────────────────────────────────────────
@@ -332,9 +396,9 @@ class GameModel:
         self._seal_timers[seal_id] = SEAL_DURATION
         self.currently_sealing_id = seal_id
 
-        # Сообщаем ИИ, что игрок начал закрывать конкретный vent-вход.
-        # Камера не исчезает из логики мгновенно: Алгем получает stun/retreat,
-        # а путь пересчитывается на следующих тиках.
+        # SEALING ещё не блокирует Алгема. Это только анимация закрытия.
+        # Физическая блокировка, stun и knock происходят ниже, при переходе
+        # SEALING -> CLOSED, когда на карте уже загорелась красная полоска.
         vent_node = VENT_SEALS.get(seal_id)
         if vent_node is not None and hasattr(self._ai, "notify_seal_started"):
             self._ai.notify_seal_started(vent_node, SEAL_DURATION)
@@ -379,6 +443,7 @@ class GameModel:
         self._update_seals()
         self._update_server_load()
         self._update_hack_logs()
+        self._update_post_hack_phase()
         self._update_ad()
         self._update_ai()
 
@@ -419,8 +484,10 @@ class GameModel:
             if self.hour >= 6:
                 if self.hack_progress < 1.0:
                     self.game_over = True
-                else:
+                elif self.post_hack_complete:
                     self.night_complete = True
+                elif not self.post_hack_started:
+                    self._start_post_hack_phase()
 
     def _update_phone(self) -> None:
         """Телефонный звонок текущей ночи."""
@@ -486,11 +553,98 @@ class GameModel:
             if self.seals[sid] == SealState.SEALING:
                 self._seal_timers[sid] -= 1
                 if self._seal_timers[sid] <= 0:
-                    # После SEALING -> CLOSED (закрыта полностью)
+                    # После SEALING -> CLOSED (закрыта полностью). Только
+                    # теперь вент реально блокирует путь Алгема.
                     self.seals[sid] = SealState.CLOSED
+                    vent_node = VENT_SEALS.get(sid)
+                    if vent_node is not None and hasattr(self._ai, "notify_seal_closed"):
+                        self._ai.notify_seal_closed(vent_node)
+                        self._collect_ai_events()
                     # Если этот seal был текущим активным, сбросить флаг
                     if self.currently_sealing_id == sid:
                         self.currently_sealing_id = None
+
+    def _start_post_hack_phase(self) -> None:
+        if self.post_hack_started or self.hack_progress < 1.0:
+            return
+        self.post_hack_started = True
+        self.post_hack_active = True
+        self.post_hack_complete = False
+        self.post_hack_survival_total = POST_HACK_SURVIVAL_TICKS_BY_NIGHT.get(
+            self.night,
+            POST_HACK_SURVIVAL_TICKS_BY_NIGHT[5],
+        )
+        self.post_hack_survival_timer = self.post_hack_survival_total
+        self.post_hack_rage_timer = POST_HACK_RAGE_TICKS_BY_NIGHT.get(
+            self.night,
+            POST_HACK_RAGE_TICKS_BY_NIGHT[5],
+        )
+        self.post_hack_log_stage = 1
+        ts_m = self.timer // 60
+        ts = f"[{self.hour}:{ts_m:02d}]"
+        self.hack_logs.append(f"{ts} > ROOT ACCESS: 100%")
+        self.hack_logs.append(f"{ts} > ALERT: Algem detected intrusion")
+        self.hack_logs.append(f"{ts} > SHUT DOWN SERVER AND LAPTOP")
+        self._push_post_hack_rage()
+
+    def _post_hack_ready(self) -> bool:
+        return (
+            self.server_state == "OFF"
+            and self.laptop_power_state == "OFF"
+            and not self.laptop_open
+            and not self.server_rebooting
+            and not self.algem_in_office
+        )
+
+    def _push_post_hack_rage(self) -> None:
+        if not self.post_hack_active:
+            return
+        trigger = getattr(self._ai, "trigger_post_hack_rage", None)
+        if trigger is not None:
+            trigger(
+                max(120, self.post_hack_rage_timer),
+                POST_HACK_RAGE_ATTENTION_BY_NIGHT.get(
+                    self.night,
+                    POST_HACK_RAGE_ATTENTION_BY_NIGHT[5],
+                ),
+            )
+        else:
+            self._ai.attention = max(
+                self._ai.attention,
+                POST_HACK_RAGE_ATTENTION_BY_NIGHT.get(self.night, 96.0),
+            )
+
+    def _update_post_hack_phase(self) -> None:
+        if self.hack_progress >= 1.0 and not self.post_hack_started:
+            self._start_post_hack_phase()
+        if not self.post_hack_active:
+            return
+
+        if self.post_hack_rage_timer > 0:
+            self.post_hack_rage_timer -= 1
+
+        ready = self._post_hack_ready()
+        if not ready:
+            self._push_post_hack_rage()
+        if ready and not self.post_hack_shutdown_ready:
+            ts_m = self.timer // 60
+            ts = f"[{self.hour}:{ts_m:02d}]"
+            self.hack_logs.append(f"{ts} > SYSTEM DARK: hold position")
+        self.post_hack_shutdown_ready = ready
+
+        if not ready:
+            self.post_hack_survival_timer = self.post_hack_survival_total
+            return
+
+        self.post_hack_survival_timer -= 1
+        if self.post_hack_survival_timer <= 0:
+            self.post_hack_survival_timer = 0
+            self.post_hack_active = False
+            self.post_hack_complete = True
+            self.night_complete = True
+            ts_m = self.timer // 60
+            ts = f"[{self.hour}:{ts_m:02d}]"
+            self.hack_logs.append(f"{ts} > TRACE CLEANED: night complete")
 
     def _update_ai(self) -> None:
         """
@@ -508,9 +662,12 @@ class GameModel:
         self._ai.update_graph(current_graph, copy.deepcopy(PATROL_GRAPH))
         self._ai.update_camera_watch(self.camera_watch_ticks)
 
-        # Притяжение Алгема: растёт пока сервер включён, падает когда выключен
         target = self.hack_progress if self.server_state == "ON" else 0.0
+        if self.post_hack_active and not self.post_hack_shutdown_ready:
+            target = max(target, 1.0)
         self._hack_attraction += (target - self._hack_attraction) * 0.01
+        if self.post_hack_active and not self.post_hack_shutdown_ready:
+            self._hack_attraction = max(self._hack_attraction, 0.88)
         self._ai.hack_attraction = self._hack_attraction
 
         # Передаём состояние сервера и рекламы для шкалы внимания
@@ -526,11 +683,19 @@ class GameModel:
 
         # Тик ИИ
         reached_office = self._ai.tick(self.hour)
+        self._collect_ai_events()
 
         if reached_office:
             self.algem_in_office = True
-            self.kill_from_vent = self._ai.prev_location in VENT_CAMERAS
+            self.office_breach_source = self._ai.prev_location
+            self.kill_from_vent = self.office_breach_source in (9, 10)
             self.office_threat_timer = self._random_office_threat_timer()
+            self.manual_server_shutdown_pending = False
+            self.last_chance_attempted = False
+            self.last_chance_success = False
+            self.last_chance_roll = None
+            self.last_chance_chance = None
+            self.last_chance_attempt_index = 0
 
     def _random_office_threat_timer(self) -> int:
         """Случайное, но честное окно перед скримером.
@@ -557,7 +722,6 @@ class GameModel:
         return (len(path) - 1) if path else 99
 
     def _can_algem_lose_interest(self) -> bool:
-        """Проверить, выключил ли игрок всё шумное и заметное."""
         return (
             self.server_state == "OFF"
             and not self.tablet_open
@@ -570,13 +734,70 @@ class GameModel:
             and not self.server_rebooting
         )
 
-    def _repel_algem_from_office(self) -> None:
-        """Сбросить давление после того, как игрок выключил всё вовремя."""
+    def _last_chance_save_chance(self) -> float:
+        chances = LAST_CHANCE_ROULETTE_CHANCES_BY_NIGHT.get(
+            self.night,
+            LAST_CHANCE_ROULETTE_CHANCES_BY_NIGHT[5],
+        )
+        idx = min(self.last_chance_save_attempts_total, len(chances) - 1)
+        return chances[idx]
+
+    def notify_manual_server_shutdown_started(self) -> None:
+        if (
+            self.algem_in_office
+            and self.office_breach_source in (9, 10)
+            and not self.last_chance_attempted
+        ):
+            self.manual_server_shutdown_pending = True
+
+    def try_last_chance_server_shutdown(self) -> bool:
+        if not (
+            self.algem_in_office
+            and self.office_breach_source in (9, 10)
+            and self.manual_server_shutdown_pending
+            and not self.last_chance_attempted
+            and self.server_state == "OFF"
+        ):
+            return False
+
+        self.last_chance_attempted = True
+        self.manual_server_shutdown_pending = False
+        chance = self._last_chance_save_chance()
+        roll = random.random()
+        self.last_chance_save_attempts_total += 1
+        self.last_chance_attempt_index = self.last_chance_save_attempts_total
+        self.last_chance_chance = chance
+        self.last_chance_roll = roll
+        ts_m = self.timer // 60
+        ts = f"[{self.hour}:{ts_m:02d}]"
+        chance_pct = int(round(chance * 100))
+        if roll < chance:
+            self.last_chance_success = True
+            self.hack_logs.append(
+                f"{ts} > SERVER OFF: Algem lost interest "
+                f"[save {self.last_chance_attempt_index}, chance {chance_pct}%]"
+            )
+            self._repel_algem_from_office(reset_hack=False)
+            return True
+
+        self.last_chance_success = False
+        self.hack_logs.append(
+            f"{ts} > SERVER OFF: Algem ignored shutdown "
+            f"[save {self.last_chance_attempt_index}, chance {chance_pct}%]"
+        )
+        return False
+
+    def _repel_algem_from_office(self, reset_hack: bool = True) -> None:
         self.algem_in_office = False
         self.office_threat_timer = 0
-        self._ai.location = 5
-        self._ai.prev_location = 0
-        self._ai.trigger_timer = 30
+        self.office_breach_source = -1
+        self.manual_server_shutdown_pending = False
+        if hasattr(self._ai, "force_location"):
+            self._ai.force_location(5, prev_node=0, trigger_ticks=30)
+        else:
+            self._ai.location = 5
+            self._ai.prev_location = 0
+            self._ai.trigger_timer = 30
         self._ai._entry_timer = 0
         self._ai._move_timer = 120
         self._ai.state = AIState.IDLE
@@ -586,13 +807,13 @@ class GameModel:
         self._ai.cancel_audio_lure()
         self._hack_attraction = 0.0
         self.hack_active = False
-        self.hack_progress = 0.0
+        if reset_hack:
+            self.hack_progress = 0.0
 
     def _update_office_threat(self) -> None:
-        """Отсчёт времени, пока Алгем в офисе и ждёт, выключит ли игрок всё."""
-        if self._can_algem_lose_interest():
-            self._repel_algem_from_office()
-            return
+        if self.server_state == "OFF":
+            if self.try_last_chance_server_shutdown():
+                return
 
         self.office_threat_timer -= 1
         if self.office_threat_timer <= 0:
@@ -1108,15 +1329,15 @@ class GameModel:
         g: dict[int, list[int]] = copy.deepcopy(BASE_GRAPH)
 
         for sid, vent_node in VENT_SEALS.items():
-            if self.seals[sid] in (SealState.SEALING, SealState.CLOSED):
+            if self.seals[sid] == SealState.CLOSED:
                 for other in list(g):
                     if other != vent_node:
                         g[other] = [n for n in g[other] if n != vent_node]
-                # Если Алгем уже внутри этого vent-узла, он может физически
-                # отступить наружу, но закрытый seal не должен оставлять прямой
-                # выход в офис. Это убирает нечестный instant-kill с последней
-                # vent-камеры.
-                g[vent_node] = [n for n in g.get(vent_node, []) if n != 0]
+                if self._ai.location == vent_node:
+                    safe_retreats = SEAL_RETREAT_GRAPH.get(vent_node, [])
+                    g[vent_node] = [n for n in safe_retreats if n in BASE_GRAPH.get(vent_node, [])]
+                else:
+                    g[vent_node] = []
 
         return g
 

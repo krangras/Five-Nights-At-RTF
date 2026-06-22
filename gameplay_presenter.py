@@ -24,7 +24,7 @@ import numpy as np
 import pygame
 
 from audio_mix import AudioCalibrationOverlay, effective_volume, ensure_audio_settings
-from algem_ai import AIState, bfs_path
+from algem_ai import AIState, AlgemEventType, bfs_path
 from gameplay_model import (
     BASE_GRAPH, CAMERAS, CAMERA_COUNT, VENT_CAMERAS,
     GameModel, SealState, SEAL_CAMERA_MAP, VENT_SEALS,
@@ -55,6 +55,7 @@ SOUND_BASE_VOLUMES: dict[str, float] = {
     "snd_knock": 0.36,
     "snd_danger2b": 0.34,
 }
+DANGER_CAMERA_NODE = 7
 
 
 def _phone_call_sound_path(night: int) -> str:
@@ -76,6 +77,7 @@ AUDIO_OFFICE_FLOOR = 0.16
 AUDIO_VENT_MAP_GAIN = 0.34
 AUDIO_SEALING_SOURCE_GAIN = 0.62
 AUDIO_CLOSED_SOURCE_GAIN = 0.48
+AUDIO_CLOSED_RETREAT_GAIN = 0.42
 AUDIO_UNREACHABLE_DISTANCE = 9999.0
 
 AUDIO_DISTANCE_VOLUME_CURVE: tuple[tuple[float, float], ...] = (
@@ -348,9 +350,10 @@ class GamePresenter:
         self._ad_channel: pygame.mixer.Channel = pygame.mixer.Channel(8)
         self._algem_talk_timer: int = random.randint(1800, 3600)
         self._vent_sound_timer: int = 0
-        # Hold таймер для crawl-loop: новый FSM двигает Алгема по шагам,
-        # но звук вентиляции должен ощущаться не только один короткий
-        # trigger-тик после смены камеры, а пока он реально находится в венте.
+        self._vent_sound_volume: float = 0.0
+        self._vent_sound_source: int = -1
+        self._closed_vent_retreat_source: int = -1
+        self._closed_vent_retreat_timer: int = 0
         self._vent_presence_hold_timer: int = 0
 
         # ── Звуки Алгема: расстояние от офиса ────────────────────────────
@@ -368,8 +371,9 @@ class GamePresenter:
         self._prev_seal_states: dict[str, SealState] = dict(self.model.seals)
         self._vent_block_signature: tuple | None = None
         self._vent_seal_just_closed: int = 0  # тиков с момента последнего закрытия вента
+        self._pending_vent_knocks: list[int] = []
         self._danger_playing: bool = False
-        self._on_node5_grace: int = 0
+        self._on_danger_camera_grace: int = 0
         self._laptop_boot_sound_played: bool = False
 
         # ── Таймеры приманки (для анимации кнопки) ───────────────────────
@@ -498,6 +502,9 @@ class GamePresenter:
         # Переключение планшета по TAB — блокировано при ноутбуке
         elif key == pygame.K_TAB and not self.model.laptop_open:
             self._toggle_tablet()
+
+        elif key == pygame.K_s:
+            self._shutdown_server_hotkey()
 
     def _handle_projection_overlay_event(self, event: pygame.event.Event) -> bool:
         """Handle the live laptop projection editor when it is active."""
@@ -634,10 +641,8 @@ class GamePresenter:
             if self.view.vent_map_mode:
                 seal_hit = self.view.get_seal_clicked(pos)
                 if seal_hit is not None:
-                    prev_seals = dict(self.model.seals)
                     self.model.start_seal(seal_hit)
                     self._play_seal_sound()
-                    self._play_reopened_viewed_seal_sound(prev_seals)
                     return
 
             # Остальные клики внутри планшета поглощаем
@@ -781,7 +786,7 @@ class GamePresenter:
             self._cleanup_on_end()
             return
 
-        self._update_node5_grace()
+        self._update_danger_camera_grace()
 
         if not self._ambience_playing:
             self._start_ambience()
@@ -791,6 +796,7 @@ class GamePresenter:
         self._update_tablet_anim()
         self._update_bait_anim()
         self._update_phone()
+        self._update_algem_events()
         self._update_algem_sounds()
         self._update_vent_sounds()
         self._update_seal_sound()
@@ -846,6 +852,9 @@ class GamePresenter:
             self._transition_frames -= 1
             if self._transition_frames <= 0:
                 self.model.server_state = "OFF"
+                try_last_chance = getattr(self.model, "try_last_chance_server_shutdown", None)
+                if try_last_chance is not None:
+                    try_last_chance()
 
     def _update_tablet_anim(self) -> None:
         """Покадровая анимация открытия/закрытия планшета."""
@@ -906,6 +915,29 @@ class GamePresenter:
             self._phone_channel = None
             self.model.phone_call_active = False
 
+    def _update_algem_events(self) -> None:
+        drain = getattr(self.model, "drain_algem_events", None)
+        if drain is None:
+            return
+        for event in drain():
+            if event.kind == AlgemEventType.SEAL_BLOCKED:
+                delay = max(1, int(getattr(event, "delay_ticks", 60)))
+                self._pending_vent_knocks.append((delay, event.target, event.source))
+            elif event.kind == AlgemEventType.VENT_MOVE:
+                source = int(getattr(event, "source", -1))
+                target = int(getattr(event, "target", -1))
+                if source in VENT_CAMERAS and target != source:
+                    seal_id = SEAL_CAMERA_MAP.get(source)
+                    if seal_id is not None and self.model.seals.get(seal_id) == SealState.CLOSED:
+                        self._start_closed_vent_retreat_audio(source)
+            elif event.kind == AlgemEventType.BREACH_STARTED:
+                source = int(getattr(event, "source", -1))
+                if source in VENT_CAMERAS:
+                    seal_id = SEAL_CAMERA_MAP.get(source)
+                    if seal_id is not None and self.model.seals.get(seal_id) == SealState.CLOSED:
+                        self._start_closed_vent_retreat_audio(source)
+                self._algem_leave_channel.stop()
+
     def _update_algem_sounds(self) -> None:
         """
         Звуки Алгема:
@@ -960,68 +992,127 @@ class GamePresenter:
         self._algem_talk_timer = random.randint(3600, 5400)
 
     def _update_vent_sounds(self) -> None:
-        """Play crawl audio for any active vent movement.
-
-        Правило простое:
-        - любое движение Алгема по вентиляции должно сопровождаться crawl-loop;
-        - если игрок смотрит прямо на vent-камеру с Алгемом, crawl глушится;
-        - как только игрок уходит с этой камеры, звук сразу возвращается,
-          пока Алгем ещё реально ползёт по вентам.
-        """
         loc = self.model.algem_location
-        in_vent = loc in VENT_CAMERAS
         ai = getattr(self.model, "_ai", None)
         vent_motion_ticks = getattr(ai, "vent_motion_ticks", 0)
+        source_node = getattr(ai, "vent_audio_source", -1)
+        forced_retreat = False
 
-        direct_vent_view = self._is_direct_vent_camera_view(loc)
-        vent_motion_active = in_vent and vent_motion_ticks > 0
+        if self._closed_vent_retreat_timer > 0:
+            self._closed_vent_retreat_timer -= 1
+            if self._closed_vent_retreat_source in VENT_CAMERAS:
+                source_node = self._closed_vent_retreat_source
+                forced_retreat = True
+            if self._closed_vent_retreat_timer <= 0:
+                self._closed_vent_retreat_source = -1
 
-        if not vent_motion_active or direct_vent_view:
-            if self._vent_sound_channel.get_busy():
-                self._vent_sound_channel.stop()
-            self._vent_sound_timer = 0
-            return
+        if source_node not in VENT_CAMERAS and loc in VENT_CAMERAS:
+            source_node = loc
 
-        volume = self._vent_listen_volume(
-            algem_node=loc,
-            camera_idx=self.model.camera_idx,
-            last_regular_cam=self._last_regular_cam,
-            tablet_open=self.model.tablet_open,
-            tablet_animating=self.model.tablet_animating,
+        seal_id = SEAL_CAMERA_MAP.get(source_node) if source_node in VENT_CAMERAS else None
+        seal_state = self.model.seals.get(seal_id) if seal_id is not None else None
+        closed_without_retreat = seal_state == SealState.CLOSED and not forced_retreat
+        active = (
+            source_node in VENT_CAMERAS
+            and not closed_without_retreat
+            and (forced_retreat or loc in VENT_CAMERAS or vent_motion_ticks > 0)
         )
+        direct_vent_view = (
+            False if forced_retreat else self._is_any_active_vent_camera_view(source_node)
+        )
+        target_volume = 0.0
 
-        if volume <= 0.0:
+        if direct_vent_view:
+            self._vent_sound_source = source_node if source_node in VENT_CAMERAS else -1
+            self._vent_sound_volume = 0.0
             if self._vent_sound_channel.get_busy():
-                self._vent_sound_channel.stop()
+                self._vent_sound_channel.set_volume(0.0)
             self._vent_sound_timer = 0
             return
 
-        if not self._vent_sound_channel.get_busy():
-            if not self._vent_sounds:
-                return
-            self._vent_sound_channel.play(random.choice(self._vent_sounds), loops=-1)
-            self._vent_sound_timer = 0
+        if active:
+            target_volume = self._vent_listen_volume(
+                algem_node=source_node,
+                camera_idx=self.model.camera_idx,
+                last_regular_cam=self._last_regular_cam,
+                tablet_open=self.model.tablet_open,
+                tablet_animating=self.model.tablet_animating,
+            )
+            if forced_retreat and seal_state == SealState.CLOSED:
+                target_volume *= AUDIO_CLOSED_RETREAT_GAIN
 
-        self._vent_sound_channel.set_volume(volume)
+        if target_volume > 0.0:
+            if self._vent_sound_source != source_node and self._vent_sound_channel.get_busy():
+                self._vent_sound_channel.stop()
+                self._vent_sound_volume = 0.0
+            self._vent_sound_source = source_node
+            if not self._vent_sound_channel.get_busy():
+                if not self._vent_sounds:
+                    return
+                self._vent_sound_channel.play(random.choice(self._vent_sounds), loops=-1)
+                self._vent_sound_volume = 0.0
+            step = 0.050 if target_volume > self._vent_sound_volume else 0.120
+            self._vent_sound_volume += max(-step, min(step, target_volume - self._vent_sound_volume))
+            self._vent_sound_channel.set_volume(max(0.0, min(1.0, self._vent_sound_volume)))
+            return
+
+        if self._vent_sound_channel.get_busy():
+            self._vent_sound_volume = max(0.0, self._vent_sound_volume - 0.120)
+            if self._vent_sound_volume <= 0.01:
+                self._vent_sound_channel.stop()
+                self._vent_sound_volume = 0.0
+                self._vent_sound_source = -1
+            else:
+                self._vent_sound_channel.set_volume(self._vent_sound_volume)
+        else:
+            self._vent_sound_volume = 0.0
+            self._vent_sound_source = -1
+        self._vent_sound_timer = 0
 
     def _update_vent_block_sound(self) -> None:
-        """Hit when Algem runs into a sealed vent, with post-close grace period."""
+        """Play delayed one-shot knocks from explicit Algem AI events."""
         if self._vent_seal_just_closed > 0:
             self._vent_seal_just_closed -= 1
-        if self.model.algem_trigger <= 0:
-            self._vent_block_signature = None
+        if not self._pending_vent_knocks:
             return
-        blocked = self._current_vent_block_signature()
-        if blocked is None:
-            self._vent_block_signature = None
-            return
+        remaining: list[tuple[int, int, int]] = []
+        ai = getattr(self.model, "_ai", None)
+        leave_source = getattr(ai, "last_vent_leave_source", -1)
+        vent_audio_source = getattr(ai, "vent_audio_source", -1)
+        for item in self._pending_vent_knocks:
+            if isinstance(item, tuple):
+                timer, vent_node, source_node = item
+            else:
+                timer, vent_node, source_node = item, -1, -1
+            timer -= 1
+            if timer <= 0:
+                should_skip = bool(
+                    vent_node in VENT_CAMERAS
+                    and (
+                        leave_source == vent_node
+                        or (vent_audio_source == vent_node and self.model.algem_location != vent_node)
+                        or (
+                            self.model.algem_prev_location == vent_node
+                            and self.model.algem_location != vent_node
+                            and self.model.algem_trigger > 0
+                        )
+                    )
+                )
+                if self.snd_knock and not should_skip:
+                    self.snd_knock.play()
+            else:
+                remaining.append((timer, vent_node, source_node))
+        self._pending_vent_knocks = remaining
 
-        if self._vent_seal_just_closed > 0:
+    def _start_closed_vent_retreat_audio(self, vent_node: int) -> None:
+        if vent_node not in VENT_CAMERAS:
             return
-
-        if self._vent_block_signature is None and self.snd_knock:
-            self.snd_knock.play()
-        self._vent_block_signature = blocked
+        self._closed_vent_retreat_source = vent_node
+        self._closed_vent_retreat_timer = max(self._closed_vent_retreat_timer, 210)
+        if self._vent_sound_source != vent_node and self._vent_sound_channel.get_busy():
+            self._vent_sound_channel.stop()
+            self._vent_sound_volume = 0.0
+        self._vent_sound_source = vent_node
 
     def _distance_volume(
         self,
@@ -1108,17 +1199,33 @@ class GamePresenter:
     def _is_direct_vent_camera_view(self, source_node: int) -> bool:
         if source_node not in VENT_CAMERAS:
             return False
-        seal_id = SEAL_CAMERA_MAP.get(source_node)
-        if seal_id is not None and self.model.seals.get(seal_id) == SealState.CLOSED:
-            # Door is closed: the player sees the metal cover, not Algem.
-            # Crawl audio must stay audible behind the door.
-            return False
         return bool(
             self.model.tablet_open
             and not self.model.tablet_animating
-            and not getattr(self.view, "vent_map_mode", False)
             and self.model.camera_idx == source_node
         )
+
+    def _is_any_active_vent_camera_view(self, source_node: int) -> bool:
+        if not (
+            self.model.tablet_open
+            and not self.model.tablet_animating
+        ):
+            return False
+        cam_idx = self.model.camera_idx
+        if cam_idx == source_node and source_node in VENT_CAMERAS:
+            return True
+        if cam_idx == self.model.algem_location and cam_idx in VENT_CAMERAS:
+            return True
+        if (
+            cam_idx == self.model.algem_prev_location
+            and cam_idx in VENT_CAMERAS
+            and self.model.algem_trigger > 0
+        ):
+            return True
+        ai = getattr(self.model, "_ai", None)
+        if cam_idx == getattr(ai, "last_vent_leave_source", -1):
+            return True
+        return False
 
     def _suppress_algem_leave_static(self) -> bool:
         cam_idx = self.model.camera_idx
@@ -1128,9 +1235,6 @@ class GamePresenter:
         seal_state = self.model.seals.get(seal_id) if seal_id is not None else None
         algem_here = cam_idx in (self.model.algem_location, self.model.algem_prev_location)
 
-        # Помеха/alegem_is_leaving должна пропадать только когда железная
-        # дверка уже реально CLOSED. Пока идёт SEALING, вент ещё открыт,
-        # значит обычная камера может честно показывать/звучать как движение.
         return bool(seal_state == SealState.CLOSED and algem_here)
 
     @staticmethod
@@ -1205,7 +1309,6 @@ class GamePresenter:
         if (
             tablet_open
             and not tablet_animating
-            and not self._is_vent_map_open()
             and camera_idx == algem_node
             and seal_state != SealState.CLOSED
         ):
@@ -1249,11 +1352,13 @@ class GamePresenter:
         return None
 
     def _update_danger_sound(self) -> None:
-        """Звук danger2b.wav когда Алгем на последней камере (node 5)."""
-        on_last = self.model.algem_location == 5
+        """Звук danger2b.wav когда Алгем дошёл до честной предофисной камеры."""
+        on_last = self.model.algem_location == DANGER_CAMERA_NODE
         if on_last and not self._danger_playing:
             if self.snd_danger2b:
-                self.snd_danger2b.set_volume(SOUND_BASE_VOLUMES["snd_danger2b"])
+                self.snd_danger2b.set_volume(
+                    self._mix_volume("danger_loop", SOUND_BASE_VOLUMES["snd_danger2b"])
+                )
                 self.snd_danger2b.play(-1)
             self._danger_playing = True
         elif not on_last and self._danger_playing:
@@ -1325,12 +1430,33 @@ class GamePresenter:
         if play_switch_sound and self.snd_cam_switch:
             self._cam_switch_channel.play(self.snd_cam_switch)
 
+    def _shutdown_server_hotkey(self) -> None:
+        """Выключить сервер клавишей S независимо от приложения и угрозы Алгема."""
+        if self.model.game_over:
+            return
+        if self.model.server_state == "ON":
+            self._toggle_server()
+        elif self.model.server_state == "TURNING_ON":
+            notify_shutdown = getattr(self.model, "notify_manual_server_shutdown_started", None)
+            if notify_shutdown is not None:
+                notify_shutdown()
+            self.model.server_state = "TURNING_OFF"
+            self._transition_frames = self._off_frames
+            self.model.server_blink = None
+            if self.snd_work:
+                self.snd_work.stop()
+            if self.snd_off:
+                self.snd_off.play()
+
     def _toggle_server(self) -> None:
         """Включить или выключить сервер."""
         self._check_node5_attack()
         if self.model.game_over:
             return
         if self.model.server_state == "ON":
+            notify_shutdown = getattr(self.model, "notify_manual_server_shutdown_started", None)
+            if notify_shutdown is not None:
+                notify_shutdown()
             self.model.server_state = "TURNING_OFF"
             self._transition_frames = self._off_frames
             self.model.server_blink = None
@@ -1384,7 +1510,12 @@ class GamePresenter:
         if self.model.hack_active and not self.model.server_rebooting and not self.model.server_overload and self.model.server_state == "ON":
             hack_ticks = HACK_TICKS_BY_NIGHT.get(self.model.night, HACK_TICKS_BY_NIGHT[5])
             hack_rate = 1.0 / hack_ticks
+            was_complete = self.model.hack_progress >= 1.0
             self.model.hack_progress = min(1.0, self.model.hack_progress + hack_rate)
+            if not was_complete and self.model.hack_progress >= 1.0:
+                start_post_hack = getattr(self.model, "_start_post_hack_phase", None)
+                if start_post_hack is not None:
+                    start_post_hack()
 
     def _update_reboot_sound(self) -> None:
         if self.model.server_rebooting and not self._wait_playing:
@@ -1415,37 +1546,29 @@ class GamePresenter:
         self,
         prev_seals: dict[str, SealState],
     ) -> None:
-        """Проиграть звук, если текущая vent-камера только что открылась обратно."""
-        viewed_seal = SEAL_CAMERA_MAP.get(self.model.camera_idx)
-        if viewed_seal is None:
+        """Проиграть звук заслонки, если ранее закрытый seal открылся."""
+        if not self.snd_vent_close:
             return
-        if (
-            prev_seals.get(viewed_seal) == SealState.CLOSED
-            and self.model.seals.get(viewed_seal) == SealState.OPEN
-            and self.snd_vent_close
-        ):
-            self.snd_vent_close.play()
+        for seal_id, prev_state in prev_seals.items():
+            seal_now = self.model.seals.get(seal_id)
+            if prev_state == SealState.CLOSED and seal_now == SealState.OPEN:
+                self.snd_vent_close.play()
+                return
 
     def _update_seal_sound(self) -> None:
         """Обновить циклическое воспроизведение звука блокировки."""
+        seal_sound_played = False
         for seal_id, prev_state in self._prev_seal_states.items():
             seal_now = self.model.seals.get(seal_id)
-            if prev_state == SealState.SEALING and seal_now == SealState.CLOSED:
-                if self.snd_vent_close:
+            if prev_state == SealState.CLOSED and seal_now == SealState.OPEN:
+                if self.snd_vent_close and not seal_sound_played:
                     self.snd_vent_close.play()
+                    seal_sound_played = True
+            if prev_state == SealState.SEALING and seal_now == SealState.CLOSED:
+                if self.snd_vent_close and not seal_sound_played:
+                    self.snd_vent_close.play()
+                    seal_sound_played = True
                 self._vent_seal_just_closed = 60
-
-                # Если дверка закрылась прямо перед Алгемом, должен быть
-                # отдельный удар/стук по металлу. Это не camera-switch и не
-                # alemem_is_leaving glitch, а реакция на успешный блок.
-                vent_node = VENT_SEALS.get(seal_id)
-                if (
-                    vent_node is not None
-                    and vent_node in (self.model.algem_location, self.model.algem_prev_location)
-                    and self.snd_knock
-                ):
-                    self.snd_knock.play()
-                    self._vent_block_signature = ("closed-hit", vent_node)
 
         active = any(
             self.model.seals.get(s) == SealState.SEALING
@@ -1484,12 +1607,12 @@ class GamePresenter:
         """
         return
 
-    def _update_node5_grace(self) -> None:
-        """Обновить счётчик времени Алгема на node 5."""
-        if self.model.algem_location == 5:
-            self._on_node5_grace += 1
+    def _update_danger_camera_grace(self) -> None:
+        """Обновить счётчик времени Алгема на предофисной камере."""
+        if self.model.algem_location == DANGER_CAMERA_NODE:
+            self._on_danger_camera_grace += 1
         else:
-            self._on_node5_grace = 0
+            self._on_danger_camera_grace = 0
 
     def _update_ad(self) -> None:
         if self.model.ad_active:
@@ -1609,6 +1732,7 @@ class GamePresenter:
         self._algem_talk_channel.stop()
         self._algem_leave_channel.stop()
         self._vent_sound_channel.stop()
+        self._pending_vent_knocks.clear()
         self._cam_init_channel.stop()
         self._camera_inited = False
         if self._ad_playing:

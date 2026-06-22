@@ -980,6 +980,17 @@ class GameView:
             pct, (x + bar_w + 10, y + bar_h // 2 - pct.get_height() // 2)
         )
 
+        if getattr(model, "post_hack_active", False):
+            if getattr(model, "post_hack_shutdown_ready", False):
+                sec = max(0, getattr(model, "post_hack_survival_timer", 0) // 60)
+                msg = f"TRACE CLEANUP: {sec}s"
+                color = (230, 180, 70)
+            else:
+                msg = "SHUT DOWN SERVER + LAPTOP"
+                color = (230, 70, 50)
+            note = self._ctext(self._ui_font_bold, msg, color)
+            self.screen.blit(note, (x, y + bar_h + 6))
+
     # ── Ноутбук ──────────────────────────────────────────────────────
 
     def _draw_xp_icon(
@@ -1879,6 +1890,16 @@ class GameView:
 
             lbl_server = self._ctext(self._ui_font_bold, status_txt, status_clr)
             self.screen.blit(lbl_server, (win_x + 15, content_y))
+            if getattr(model, "post_hack_active", False):
+                if getattr(model, "post_hack_shutdown_ready", False):
+                    sec = max(0, getattr(model, "post_hack_survival_timer", 0) // 60)
+                    post_txt = f"TRACE CLEANUP: {sec}s"
+                    post_clr = (180, 120, 20)
+                else:
+                    post_txt = "ALGEM ALERT: SHUTDOWN REQUIRED"
+                    post_clr = (190, 40, 30)
+                post_lbl = self._ctext(self._ui_font_sm, post_txt, post_clr)
+                self.screen.blit(post_lbl, (win_x + 175, content_y + 2))
 
             # ── Кнопки сервера ─────────────────────────────────────────
             btn_server_y = content_y + 22
@@ -2400,7 +2421,10 @@ class GameView:
                 self.switch_timer = random.randint(60, 180)
             self.screen.blit(self.bg_frames[self.current_idx], (-offset, 0))
 
-        if model.server_state == "ON" and (model.hack_active or model.hack_progress > 0):
+        if (
+            model.server_state == "ON"
+            and (model.hack_active or model.hack_progress > 0)
+        ) or getattr(model, "post_hack_active", False):
             self._draw_hack_bar(model)
 
         if model.server_state != "OFF":
@@ -2487,12 +2511,6 @@ class GameView:
                     and seal_state.name == "CLOSED"
                     and cam_idx in (8, 9, 10, 11)
                 )
-                seal_is_closing_current_view = (
-                    seal_state is not None
-                    and seal_state.name == "SEALING"
-                    and cam_idx in (8, 9, 10, 11)
-                    and cam_idx in (loc, model.algem_prev_location)
-                )
                 if seal_blocks_camera:
                     cam_surf = self._closed_vent_surfaces.get(cam_idx, cam_surf)
                 cam_max_off = self.camera_max_offsets.get(model.camera_idx, 0)
@@ -2505,7 +2523,7 @@ class GameView:
                 self._draw_cctv_effects(
                     model.camera_idx,
                     model,
-                    suppress_algem_glitch=bool(seal_blocks_camera or seal_is_closing_current_view),
+                    suppress_algem_glitch=bool(seal_blocks_camera),
                 )
                 # Мини-карта внутри планшета
                 self._draw_minimap(model)

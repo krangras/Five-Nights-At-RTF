@@ -9,8 +9,8 @@ algem_ai.py — ИИ Алгема для Five Nights At RTF.
 * A* — целенаправленная атака к офису по полному графу.
 
 Алгем не телепортируется: любой переход проходит только в соседний узел
-текущего графа. Перед скримером есть честная фаза BREACH: он исчезает с
-последней vent-камеры, но не убивает мгновенно.
+текущего графа. Узлы 9 и 10 имеют прямой честный выход в screamer/BREACH,
+поэтому атака из вентов разрешена, если путь до них не закрыт seal.
 """
 
 from __future__ import annotations
@@ -35,6 +35,25 @@ class AIState(Enum):
     KILL_PENDING = auto()  # зарезервировано под расширение kill-window в AI
     STUNNED = auto()       # остановлен seal/потерял маршрут
     RETREAT = auto()       # отступает после блока/потери интереса
+
+
+class AlgemEventType(str, Enum):
+    MOVE = "MOVE"
+    VENT_MOVE = "VENT_MOVE"
+    SEAL_BLOCKED = "SEAL_BLOCKED"
+    ROUTE_BLOCKED = "ROUTE_BLOCKED"
+    BREACH_STARTED = "BREACH_STARTED"
+    OFFICE_ENTERED = "OFFICE_ENTERED"
+    ILLEGAL_MOVE_BLOCKED = "ILLEGAL_MOVE_BLOCKED"
+
+
+@dataclass(frozen=True)
+class AlgemEvent:
+    kind: AlgemEventType
+    source: int
+    target: int
+    state: str
+    delay_ticks: int = 0
 
 
 @dataclass(frozen=True)
@@ -148,8 +167,10 @@ class AlgemAI:
     """FSM + DFS/BFS + A* контроллер Алгема."""
 
     OFFICE_NODE = 0
+    DANGER_NODE = 7
     VENT_NODES = {8, 9, 10, 11}
     LAST_VENT_NODES = {9, 10}
+    SCREAMER_VENT_NODES = {9, 10}
     PATROL_SAFE_HOME = 1
 
     # Интервалы между решениями. Чем выше ночь, тем быстрее ИИ.
@@ -159,6 +180,68 @@ class AlgemAI:
         3: (380, 720),
         4: (270, 560),
         5: (190, 420),
+    }
+
+    _VENT_STAY_TICKS_BY_NIGHT: dict[int, int] = {
+        1: 999999,
+        2: 1320,
+        3: 1080,
+        4: 840,
+        5: 660,
+    }
+
+    _VENT_ROUTE_CHANCE_BY_NIGHT: dict[int, float] = {
+        1: 0.0,
+        2: 0.36,
+        3: 0.48,
+        4: 0.62,
+        5: 0.74,
+    }
+
+    _UNPREDICTABLE_ROUTE_CHANCE_BY_NIGHT: dict[int, float] = {
+        1: 0.0,
+        2: 0.12,
+        3: 0.22,
+        4: 0.34,
+        5: 0.48,
+    }
+    _MAX_DETOURS_PER_ATTACK_BY_NIGHT: dict[int, int] = {
+        1: 0,
+        2: 1,
+        3: 2,
+        4: 3,
+        5: 4,
+    }
+    _DETOUR_COOLDOWN_BY_NIGHT: dict[int, int] = {
+        1: 999,
+        2: 5,
+        3: 4,
+        4: 3,
+        5: 2,
+    }
+    _UNPREDICTABLE_ROUTE_OPTIONS: dict[int, list[tuple[float, tuple[int, ...]]]] = {
+        1: [(1.55, (8,)), (1.05, (4, 11)), (0.80, (3, 5, 6))],
+        2: [(1.90, (8,)), (0.95, (3, 4, 11)), (0.65, (1, 4))],
+        3: [(1.70, (8,)), (0.95, (5, 6, 10)), (0.75, (4, 11))],
+        4: [(1.35, (11, 10)), (0.90, (1, 8, 2)), (0.75, (5, 6))],
+        5: [(1.25, (6, 10)), (0.95, (4, 11, 7)), (0.70, (3, 8))],
+        6: [(1.65, (10, 7)), (0.90, (5, 4, 11)), (0.65, (3, 8))],
+        7: [(1.20, (11, 10)), (0.90, (10, 11))],
+        8: [(1.20, (3, 5, 6)), (1.05, (1, 4, 11)), (0.90, (2, 9))],
+        9: [(1.45, (10, 7)), (0.95, (2, 3, 8)), (0.70, (2, 1, 4, 11))],
+        10: [(1.25, (7, 11)), (0.95, (11, 4)), (0.65, (7, 10))],
+        11: [(1.15, (7, 10)), (0.95, (4, 3, 8)), (0.75, (10, 7))],
+    }
+    _SPECIAL_DETOUR_EDGES: dict[int, list[int]] = {
+        9: [10],
+    }
+
+    _ATTACK_ROOM_STEP_MIN_TICKS_BY_NIGHT: dict[int, int] = {
+        1: 999999,
+        2: 210,
+        3: 165,
+        4: 120,
+        5: 90,
     }
 
     # Шанс/давление пассивного патруля. Он не стоит всю ночь, но и не убивает
@@ -252,6 +335,8 @@ class AlgemAI:
         self._camera_focus_interest = 0.0
         self._vent_interest = 0.0
         self._ambient_interest = 0.0
+        self._post_hack_rage_ticks = 0
+        self._post_hack_rage_attention = 0.0
 
         self.main_hall_sprite = 0
         self._camera_watch: dict[int, int] = {}
@@ -261,10 +346,20 @@ class AlgemAI:
         self._last_path: list[int] = []
         self._last_move_rejected: tuple[int, int] | None = None
         self._vent_motion_ticks = 0
+        self._vent_audio_source = -1
         self._last_vent_move = (-1, -1)
+        self._last_vent_leave_source = -1
+        self._last_vent_leave_ticks = 0
+        self._seal_knock_suppressed_vents: set[int] = set()
         self._pressure_cooldown_ticks = 0
         self._laptop_noise_cooldown = 0
         self._attack_route_epoch = 0
+        self._attack_detour_queue: deque[int] = deque()
+        self._attack_detour_cooldown = 0
+        self._attack_detours_used = 0
+        self._events: deque[AlgemEvent] = deque()
+        self._last_valid_location = start_node
+        self._move_history: deque[tuple[int, int, str]] = deque(maxlen=12)
 
         self._base_heuristic = self._precompute_heuristic(self._graph, self.OFFICE_NODE)
 
@@ -281,6 +376,24 @@ class AlgemAI:
         if patrol_graph is not None:
             self._patrol_graph = patrol_graph
         self._base_heuristic = self._precompute_heuristic(self._graph, self.OFFICE_NODE)
+
+    def drain_events(self) -> list[AlgemEvent]:
+        events = list(self._events)
+        self._events.clear()
+        return events
+
+    def force_location(self, node: int, prev_node: int | None = None, trigger_ticks: int = 30) -> None:
+        old = self.location if prev_node is None else prev_node
+        self.prev_location = old
+        self.location = node
+        self.trigger_timer = max(0, trigger_ticks)
+        self._last_valid_location = node
+        self._move_history.append((old, node, "FORCE"))
+        self._last_path = []
+        self._attack_detour_queue.clear()
+        self._attack_detour_cooldown = 0
+        self._attack_detours_used = 0
+        self._reset_patrol_memory()
 
     def update_camera_watch(self, watch: dict[int, int]) -> None:
         self._camera_watch = watch
@@ -372,6 +485,13 @@ class AlgemAI:
         else:
             self._ambient_interest = 0.0
 
+        rage_pressure = 0.0
+        if self._post_hack_rage_ticks > 0:
+            self._post_hack_rage_ticks -= 1
+            rage_pressure = self._post_hack_rage_attention
+        else:
+            self._post_hack_rage_attention = max(0.0, self._post_hack_rage_attention - 0.35)
+
         # Hack attraction уже сглаженно передаётся из GameModel. Здесь делаем
         # нелинейный рост: ближе к завершению взлома Алгем ускоряется заметнее.
         hack_curve = max(0.0, min(1.0, self.hack_attraction)) ** 1.28
@@ -385,7 +505,8 @@ class AlgemAI:
             + self._tablet_interest
             + self._camera_focus_interest
             + self._vent_interest
-            + hack_pressure,
+            + hack_pressure
+            + rage_pressure,
         )
         if (
             not server_on
@@ -393,6 +514,7 @@ class AlgemAI:
             and not tablet_open
             and vent_error_count <= 0
             and self.hack_attraction <= 0.01
+            and self._post_hack_rage_attention <= 0.01
         ):
             # Тишина гасит именно угрозу/интерес. Патруль при этом не заморожен:
             # его запускает FSM через IDLE -> PATROL, а не шкала attention.
@@ -400,6 +522,15 @@ class AlgemAI:
 
         self.attention += (target_attention - self.attention) * 0.12
         self.attention = max(0.0, min(100.0, self.attention))
+
+    def trigger_post_hack_rage(self, duration_ticks: int, attention_floor: float = 92.0) -> None:
+        self._post_hack_rage_ticks = max(self._post_hack_rage_ticks, int(duration_ticks))
+        self._post_hack_rage_attention = max(self._post_hack_rage_attention, float(attention_floor))
+        self.hack_attraction = max(self.hack_attraction, 1.0)
+        self.attention = max(self.attention, min(100.0, attention_floor - 6.0))
+        self._pressure_cooldown_ticks = 0
+        if self.state in (AIState.IDLE, AIState.PATROL, AIState.INVESTIGATE, AIState.RETREAT):
+            self._enter_attack_state()
 
     def notify_audio_lure(self, target_node: int, duration: int = 480) -> None:
         if target_node == self.location:
@@ -476,21 +607,54 @@ class AlgemAI:
                 self._enter_attack_state()
                 self._move_timer = min(self._move_timer, 24 if distance <= 1 else 36)
 
-    def notify_seal_started(self, vent_node: int, duration_ticks: int = 300) -> None:
-        """Игровая реакция на начало закрытия вентиля.
+    def _is_leaving_vent(self, vent_node: int) -> bool:
+        if self.location == vent_node:
+            return False
+        return bool(
+            (
+                self.prev_location == vent_node
+                and (
+                    self.trigger_timer > 0
+                    or self._last_vent_move[0] == vent_node
+                    or self._last_vent_leave_source == vent_node
+                    or vent_node in self._seal_knock_suppressed_vents
+                )
+            )
+            or self._last_vent_leave_source == vent_node
+            or (self._vent_audio_source == vent_node and self._vent_motion_ticks > 0)
+            or vent_node in self._seal_knock_suppressed_vents
+        )
 
-        Если игрок закрывает заслонку прямо на камере с Алгемом, он не должен
-        успеть визуально «исчезнуть» в пустой вент до кадра CLOSED. Поэтому
-        держим его в STUNNED минимум до завершения закрытия, а уже потом
-        переводим в RETREAT.
+    def notify_seal_started(self, vent_node: int, duration_ticks: int = 300) -> None:
+        if self._is_leaving_vent(vent_node):
+            self._seal_knock_suppressed_vents.add(vent_node)
+            self._last_vent_leave_source = vent_node
+            self._last_vent_leave_ticks = max(self._last_vent_leave_ticks, duration_ticks + 90)
+
+    def notify_seal_closed(self, vent_node: int) -> None:
+        """Игровая реакция на полностью закрытый вент.
+
+        Вызывается только после перехода SEALING -> CLOSED, то есть когда на
+        карте уже должна гореть красная полоска. Если Алгем оказался в закрытом
+        венте или прямо перед ним, создаём событие стука с задержкой примерно
+        в секунду и переводим его в отступление/оглушение.
         """
+        # Если игрок закрыл камеру, на которой сейчас видит `algem_is_leaving`,
+        # Алгем уже физически уполз с этой vent-камеры. В таком случае стука быть
+        # не должно: это не блок, а запоздалая помеха от прошлого положения.
+        leaving_this_vent = self._is_leaving_vent(vent_node)
+        if vent_node in self._seal_knock_suppressed_vents or leaving_this_vent:
+            self._seal_knock_suppressed_vents.discard(vent_node)
+            return
+
         if self.location == vent_node or vent_node in self._graph.get(self.location, []):
+            self._emit(AlgemEventType.SEAL_BLOCKED, self.location, vent_node, delay_ticks=60)
             lo, hi = self._STUN_TICKS_BY_NIGHT.get(self._night, (120, 240))
             stun_ticks = random.randint(lo, hi)
             if self.location == vent_node:
-                stun_ticks = max(stun_ticks, duration_ticks + 24)
+                stun_ticks = max(stun_ticks, 150)
             else:
-                stun_ticks = max(stun_ticks, min(duration_ticks // 2, 150))
+                stun_ticks = max(stun_ticks, 90)
             if stun_ticks > 0:
                 self._stun_timer = stun_ticks
                 self.state = AIState.STUNNED
@@ -498,7 +662,7 @@ class AlgemAI:
                 self._move_timer = min(self._move_timer, 30)
                 self.trigger_timer = 0
                 if self.location == vent_node:
-                    self._pressure_cooldown_ticks = max(self._pressure_cooldown_ticks, duration_ticks + 210)
+                    self._pressure_cooldown_ticks = max(self._pressure_cooldown_ticks, 210)
                     self.attention = max(0.0, self.attention - 16.0)
                     self._server_interest *= 0.82
                     self._ad_interest *= 0.86
@@ -508,18 +672,18 @@ class AlgemAI:
 
     def tick(self, hour: int) -> bool:
         self._current_hour = hour
+        self._block_external_teleport_if_needed()
 
         if self.trigger_timer > 0:
             self.trigger_timer -= 1
+        if self._last_vent_leave_ticks > 0:
+            self._last_vent_leave_ticks -= 1
+            if self._last_vent_leave_ticks <= 0:
+                self._last_vent_leave_source = -1
         if self._vent_motion_ticks > 0:
-            direct_vent_view = (
-                self.location in self.VENT_NODES
-                and self._tablet_open
-                and not self._laptop_open
-                and self._current_camera_idx == self.location
-            )
-            if not direct_vent_view:
-                self._vent_motion_ticks -= 1
+            self._vent_motion_ticks -= 1
+            if self._vent_motion_ticks <= 0 and self.location not in self.VENT_NODES:
+                self._vent_audio_source = -1
         if self._pressure_cooldown_ticks > 0:
             self._pressure_cooldown_ticks -= 1
         if self._laptop_noise_cooldown > 0:
@@ -543,6 +707,7 @@ class AlgemAI:
             self._breach_timer -= 1
             if self._breach_timer <= 0:
                 # GameModel дальше запускает честное random kill-window.
+                self._emit(AlgemEventType.OFFICE_ENTERED, self._breach_source, self.OFFICE_NODE)
                 return True
             return False
 
@@ -560,8 +725,13 @@ class AlgemAI:
         if self._move_timer > 0:
             return False
 
-        self._move_timer = self._compute_interval(hour)
-        return self._step(hour)
+        reached_office = self._step(hour)
+        # Важно считать следующий интервал ПОСЛЕ шага. Иначе при входе в вент
+        # таймер берётся от обычной комнаты, и Алгем может почти сразу уползти
+        # дальше. Для vent-камер это ломает честное окно на закрытие seal.
+        if not reached_office and self.state is not AIState.BREACH:
+            self._move_timer = self._compute_interval(hour)
+        return reached_office
 
     # ------------------------------------------------------------------
     # FSM
@@ -632,12 +802,24 @@ class AlgemAI:
         return False
 
     def _step_attack(self) -> bool:
-        goal = self._lure_node if self._lure_node >= 0 else self.OFFICE_NODE
-        heuristic = self._base_heuristic if goal == self.OFFICE_NODE else self._precompute_heuristic(self._graph, goal)
-        path = astar_path(self.location, goal, self._graph, self._edge_weight, heuristic)
+        self._trim_reached_attack_detours()
+        self._maybe_start_unpredictable_attack_detour()
+
+        goal = self._current_attack_goal()
+        route_graph = self._current_attack_graph(goal)
+        heuristic = (
+            self._base_heuristic
+            if goal == self.OFFICE_NODE and route_graph is self._graph
+            else self._precompute_heuristic(route_graph, goal)
+        )
+        path = astar_path(self.location, goal, route_graph, self._edge_weight, heuristic)
         self._last_path = path or []
 
         if path is None or len(path) < 2:
+            if self._attack_detour_queue:
+                self._attack_detour_queue.clear()
+                self._attack_detour_cooldown = max(self._attack_detour_cooldown, 1)
+                return False
             self._start_stun_or_retreat()
             return False
 
@@ -646,10 +828,12 @@ class AlgemAI:
             self._start_breach()
             return False
 
-        if not self._move_to(next_node, self._graph):
+        if not self._move_to(next_node, route_graph):
+            self._attack_detour_queue.clear()
             self._start_stun_or_retreat()
             return False
 
+        self._trim_reached_attack_detours()
         if self.location in self.VENT_NODES:
             self.state = AIState.VENT_STALK
         elif self._lure_node >= 0:
@@ -657,6 +841,112 @@ class AlgemAI:
         else:
             self.state = AIState.ATTACK
         return False
+
+    def _current_attack_goal(self) -> int:
+        if self._lure_node >= 0:
+            return self._lure_node
+        self._trim_reached_attack_detours()
+        if self._attack_detour_queue:
+            return self._attack_detour_queue[0]
+        return self.OFFICE_NODE
+
+    def _current_attack_graph(self, goal: int) -> dict[int, list[int]]:
+        if goal != self.OFFICE_NODE or self._attack_detour_queue:
+            return self._graph_with_special_detour_edges()
+        return self._graph
+
+    def _graph_with_special_detour_edges(self) -> dict[int, list[int]]:
+        graph = {node: list(neighbors) for node, neighbors in self._graph.items()}
+        for source, targets in self._SPECIAL_DETOUR_EDGES.items():
+            if source not in graph:
+                continue
+            for target in targets:
+                if target in graph[source] or not self._node_is_enterable_for_detour(target):
+                    continue
+                graph[source].append(target)
+        return graph
+
+    def _node_is_enterable_for_detour(self, node: int) -> bool:
+        if node == self.OFFICE_NODE or node == self.location:
+            return True
+        return any(node in neighbors for neighbors in self._graph.values())
+
+    def _trim_reached_attack_detours(self) -> None:
+        while self._attack_detour_queue and self._attack_detour_queue[0] == self.location:
+            self._attack_detour_queue.popleft()
+            self._attack_detour_cooldown = self._DETOUR_COOLDOWN_BY_NIGHT.get(self._night, 2)
+
+    def _maybe_start_unpredictable_attack_detour(self) -> None:
+        if self._lure_node >= 0 or self._attack_detour_queue or self.location == self.OFFICE_NODE:
+            return
+        if self._attack_detour_cooldown > 0:
+            self._attack_detour_cooldown -= 1
+            return
+        max_detours = self._MAX_DETOURS_PER_ATTACK_BY_NIGHT.get(self._night, 0)
+        if self._attack_detours_used >= max_detours:
+            return
+        chance = self._unpredictable_route_chance()
+        if random.random() >= chance:
+            return
+        plan = self._choose_unpredictable_attack_plan()
+        if not plan:
+            return
+        self._attack_detour_queue.clear()
+        self._attack_detour_queue.extend(plan)
+        self._attack_detours_used += 1
+        self._attack_route_epoch += 1
+        self._move_history.append((self.location, plan[-1], "DETOUR"))
+
+    def _unpredictable_route_chance(self) -> float:
+        base = self._UNPREDICTABLE_ROUTE_CHANCE_BY_NIGHT.get(self._night, 0.0)
+        hack_bonus = min(0.08, self.hack_attraction * 0.08)
+        watch_bonus = 0.0
+        if self._current_camera_idx == self.location:
+            watch_bonus = 0.08 + self._night * 0.008
+        recent_penalty = 0.04 * sum(1 for node in self._recent_nodes if node == self.location)
+        return max(0.0, min(0.72, base + hack_bonus + watch_bonus - recent_penalty))
+
+    def _choose_unpredictable_attack_plan(self) -> tuple[int, ...] | None:
+        options = self._UNPREDICTABLE_ROUTE_OPTIONS.get(self.location, [])
+        if not options:
+            return None
+        graph = self._graph_with_special_detour_edges()
+        candidates: list[tuple[int, ...]] = []
+        weights: list[float] = []
+        for base_weight, plan in options:
+            cleaned = tuple(node for node in plan if node != self.location)
+            if not cleaned:
+                continue
+            if cleaned[0] in self._recent_nodes:
+                continue
+            if not self._attack_plan_is_reachable(cleaned, graph):
+                continue
+            weight = base_weight
+            if any(node in self.VENT_NODES for node in cleaned):
+                weight *= 1.0 + self._VENT_ROUTE_CHANCE_BY_NIGHT.get(self._night, 0.0) * 0.75
+            if any(node not in self._recent_nodes for node in cleaned):
+                weight *= 1.18
+            if any(self._camera_watch.get(node, 0) <= 40 for node in cleaned):
+                weight *= 1.12
+            if self.location == 9 and cleaned[:2] == (10, 7):
+                weight *= 1.0 + self._night * 0.14
+            candidates.append(cleaned)
+            weights.append(weight)
+        if not candidates:
+            return None
+        return self._weighted_choice(candidates, weights)
+
+    def _attack_plan_is_reachable(self, plan: tuple[int, ...], graph: dict[int, list[int]]) -> bool:
+        current = self.location
+        for target in plan:
+            if target == current:
+                continue
+            path = astar_path(current, target, graph, self._edge_weight, self._precompute_heuristic(graph, target))
+            if path is None or len(path) < 2:
+                return False
+            current = target
+        path_to_office = astar_path(current, self.OFFICE_NODE, graph, self._edge_weight, self._precompute_heuristic(graph, self.OFFICE_NODE))
+        return path_to_office is not None and len(path_to_office) > 1
 
     def _step_retreat(self) -> bool:
         target = self._nearest_patrol_node() or self.PATROL_SAFE_HOME
@@ -679,6 +969,9 @@ class AlgemAI:
         if self.state not in (AIState.ATTACK, AIState.VENT_STALK):
             self._attack_route_epoch += 1
             self._last_path = []
+            self._attack_detour_queue.clear()
+            self._attack_detour_cooldown = 0
+            self._attack_detours_used = 0
         self.state = AIState.ATTACK
 
     def _choose_patrol_node(self) -> int:
@@ -779,43 +1072,86 @@ class AlgemAI:
         active_graph = graph or (self._patrol_graph if self.state is AIState.PATROL else self._graph)
         if node not in active_graph.get(self.location, []):
             self._last_move_rejected = (self.location, node)
+            self._move_history.append((self.location, node, "REJECTED"))
+            self._emit(AlgemEventType.ILLEGAL_MOVE_BLOCKED, self.location, node)
             return False
 
         prev = self.location
         self.prev_location = prev
         self.location = node
+        self._last_valid_location = node
         self.trigger_timer = 30
         self._recent_nodes.append(node)
+        self._move_history.append((prev, node, self.state.name))
 
         if prev in self.VENT_NODES or node in self.VENT_NODES:
             self._last_vent_move = (prev, node)
-            self._vent_motion_ticks = max(self._vent_motion_ticks, self._vent_motion_hold_ticks(prev, node))
+            hold_ticks = self._vent_motion_hold_ticks(prev, node)
+            if prev in self.VENT_NODES and node != prev:
+                self._last_vent_leave_source = prev
+                self._last_vent_leave_ticks = max(self._last_vent_leave_ticks, hold_ticks)
+                self._vent_audio_source = prev
+            elif node in self.VENT_NODES:
+                self._vent_audio_source = node
+            else:
+                self._vent_audio_source = prev if prev in self.VENT_NODES else node
+            self._vent_motion_ticks = max(self._vent_motion_ticks, hold_ticks)
+            self._emit(AlgemEventType.VENT_MOVE, prev, node)
+        else:
+            self._emit(AlgemEventType.MOVE, prev, node)
 
         if node == 1:
             self.main_hall_sprite = random.randint(0, 1)
         return True
 
+    def _emit(
+        self,
+        kind: AlgemEventType,
+        source: int,
+        target: int,
+        delay_ticks: int = 0,
+    ) -> None:
+        self._events.append(
+            AlgemEvent(
+                kind=kind,
+                source=source,
+                target=target,
+                state=self.state.name,
+                delay_ticks=delay_ticks,
+            )
+        )
+
     def _start_breach(self) -> None:
-        """Последний шаг к офису: камера пустеет, скример ещё не мгновенный."""
+        """Последний шаг в screamer/BREACH: камера пустеет, скример ещё не мгновенный."""
         source = self.location
         self.prev_location = source
         self.location = self.OFFICE_NODE
+        self._last_valid_location = self.OFFICE_NODE
+        self._move_history.append((source, self.OFFICE_NODE, "BREACH"))
+        if source in self.VENT_NODES:
+            hold_ticks = self._vent_motion_hold_ticks(source, self.OFFICE_NODE)
+            self._last_vent_leave_source = source
+            self._last_vent_leave_ticks = max(self._last_vent_leave_ticks, hold_ticks)
+            self._vent_audio_source = source
+            self._vent_motion_ticks = max(self._vent_motion_ticks, hold_ticks)
         self._breach_source = source
         self.state = AIState.BREACH
         self._breach_timer = random.randint(*self._BREACH_DELAY_BY_NIGHT.get(self._night, (90, 210)))
-        # Совместимость со старой логикой и тестами: _entry_timer теперь означает
-        # не мгновенный вход, а фазу "исчез с камеры, но ещё не убил".
-        self._entry_timer = min(self._breach_timer, self._profile.entry_delay)
+        self._entry_timer = 0
         self.trigger_timer = 30
         self._move_timer = self._breach_timer
+        self._emit(AlgemEventType.BREACH_STARTED, source, self.OFFICE_NODE)
 
     def _start_stun_or_retreat(self) -> None:
+        self._attack_detour_queue.clear()
+        self._attack_detour_cooldown = max(self._attack_detour_cooldown, 1)
         self._stun_timer = random.randint(*self._STUN_TICKS_BY_NIGHT.get(self._night, (120, 240)))
         if self._stun_timer > 0:
             self.state = AIState.STUNNED
         else:
             self.state = AIState.RETREAT
         self._retreat_target = self._nearest_patrol_node() or self.PATROL_SAFE_HOME
+        self._emit(AlgemEventType.ROUTE_BLOCKED, self.location, self._retreat_target)
 
     def _reset_patrol_memory(self) -> None:
         self._patrol_stack = [self.location]
@@ -835,12 +1171,43 @@ class AlgemAI:
                 best = candidate
         return best[1] if best else None
 
+
+    def _block_external_teleport_if_needed(self) -> None:
+        if self.location == self._last_valid_location:
+            return
+
+        prev = self._last_valid_location
+        current = self.location
+        external_reset_from_office = (
+            prev == self.OFFICE_NODE
+            and current in self._PATROL_ZONES.get(self._night, {1, 2, 3, 4, 5, 6})
+            and self.state is AIState.IDLE
+        )
+        if external_reset_from_office:
+            self._last_valid_location = current
+            self._move_history.append((prev, current, "FORCE_RESET"))
+            return
+
+        if current in self._graph.get(prev, []):
+            self._last_valid_location = current
+            self._move_history.append((prev, current, "EXTERNAL_EDGE"))
+            return
+
+        self._last_move_rejected = (prev, current)
+        self._move_history.append((prev, current, "EXTERNAL_BLOCKED"))
+        self._emit(AlgemEventType.ILLEGAL_MOVE_BLOCKED, prev, current)
+        self.prev_location = current
+        self.location = prev
+        self.trigger_timer = 0
+        self._last_path = []
+
     def _vent_motion_hold_ticks(self, prev: int, node: int) -> int:
-        """Duration of crawl audio after a vent-related move."""
         if prev in self.VENT_NODES and node in self.VENT_NODES:
-            return 210 if self.state is AIState.RETREAT else 180
-        if prev in self.VENT_NODES or node in self.VENT_NODES:
-            return 150 if self.state is AIState.RETREAT else 120
+            return 360 if self.state is AIState.RETREAT else 300
+        if prev in self.VENT_NODES and node not in self.VENT_NODES:
+            return 330 if self.state is AIState.RETREAT else 270
+        if node in self.VENT_NODES:
+            return 300 if self.state is AIState.RETREAT else 240
         return 0
 
     # ------------------------------------------------------------------
@@ -863,10 +1230,19 @@ class AlgemAI:
             rng = random.Random(self._attack_route_epoch * 10007 + self._night * 1009 + u * 137 + v * 271)
             weight *= rng.uniform(0.92, 1.12)
 
-        # Поздние ночи и высокий hack_progress делают вентиляцию привлекательнее.
         if v in self.VENT_NODES:
-            vent_bias = min(0.38, 0.06 * max(0, self._night - 2) + self.hack_attraction * 0.20)
+            chance = self._VENT_ROUTE_CHANCE_BY_NIGHT.get(self._night, 0.74)
+            pressure_bonus = min(0.18, self.hack_attraction * 0.18)
+            vent_bias = min(0.42, chance * 0.34 + pressure_bonus)
             weight *= 1.0 - vent_bias
+            if v == 8 and self._night >= 2:
+                weight *= 0.82
+        elif u not in self.VENT_NODES and v != self.OFFICE_NODE:
+            chance = self._VENT_ROUTE_CHANCE_BY_NIGHT.get(self._night, 0.74)
+            weight *= 1.0 + max(0.0, chance - 0.35) * 0.18
+
+        if u == 9 and v == 10:
+            weight *= 0.86
 
         # Прямой вход в офис не должен быть слишком дешёвым: это даёт время на
         # последнюю vent-фазу и не превращает A* в мгновенный скример.
@@ -899,9 +1275,12 @@ class AlgemAI:
             or self._tablet_interest >= 10.0
             or self._camera_focus_interest >= 10.0
             or self._vent_interest >= 10.0
+            or self._post_hack_rage_attention >= 25.0
             or (self._night >= 4 and self._ambient_interest >= self._AMBIENT_CAP_BY_NIGHT.get(self._night, 0) * 0.85)
         )
         threshold = self._attack_threshold(self._profile.patrol_attack_threshold)
+        if self._post_hack_rage_attention >= 25.0:
+            threshold = min(threshold, 62.0 - self._night * 2.0)
         return can_attack and self.attention >= threshold
 
     def _compute_interval(self, hour: int) -> int:
@@ -918,21 +1297,23 @@ class AlgemAI:
 
         hack_mult = 1.0 - min(0.48, self.hack_attraction * (0.32 + self._night * 0.035))
         interval = int(interval * hack_mult)
+        if self._post_hack_rage_attention >= 25.0:
+            interval = int(interval * max(0.70, 0.92 - self._night * 0.035))
 
         if self._pressure_cooldown_ticks > 0 and self.state in (AIState.PATROL, AIState.RETREAT, AIState.INVESTIGATE):
             interval = int(interval * 1.18)
 
-        # По вентиляции Алгем ползёт заметно медленнее, чем по обычным комнатам.
-        if self.state is AIState.RETREAT and self.location in self.VENT_NODES:
-            interval = int(interval * 1.70)
-        elif self.location in self.VENT_NODES or self.state is AIState.VENT_STALK:
-            interval = int(interval * 1.45)
-
-        # Последние vent-камеры всегда дают окно реакции.
-        if self.location in self.LAST_VENT_NODES:
-            interval = max(interval, 540)
-        elif self.location in self.VENT_NODES:
+        if self.location in self.VENT_NODES:
+            interval = max(interval, self._VENT_STAY_TICKS_BY_NIGHT.get(self._night, 660))
+        elif self.state is AIState.VENT_STALK:
+            # На случай, если состояние уже vent-атака, но следующий тик ещё
+            # считается из обычной камеры перед входом в вент.
+            interval = max(interval, 420)
+        elif self.location == self.DANGER_NODE:
             interval = max(interval, 360)
+
+        if self.state in (AIState.ATTACK, AIState.VENT_STALK) and self.location not in self.VENT_NODES:
+            interval = max(interval, self._ATTACK_ROOM_STEP_MIN_TICKS_BY_NIGHT.get(self._night, 90))
 
         return max(45, interval)
 
@@ -972,7 +1353,7 @@ class AlgemAI:
         if self.state is AIState.INVESTIGATE:
             return self._investigate_target
         if self.state in (AIState.ATTACK, AIState.VENT_STALK):
-            return self.OFFICE_NODE
+            return self._current_attack_goal()
         if self.state is AIState.BREACH:
             return self.OFFICE_NODE
         return None
@@ -982,12 +1363,36 @@ class AlgemAI:
         return list(self._last_path)
 
     @property
+    def debug_move_history(self) -> list[tuple[int, int, str]]:
+        return list(self._move_history)
+
+    @property
+    def debug_detour_queue(self) -> list[int]:
+        return list(self._attack_detour_queue)
+
+    @property
+    def debug_unpredictable_chance(self) -> float:
+        return self._unpredictable_route_chance()
+
+    @property
     def vent_motion_ticks(self) -> int:
         return self._vent_motion_ticks
 
     @property
+    def vent_audio_source(self) -> int:
+        if self.location in self.VENT_NODES:
+            return self.location
+        if self._vent_motion_ticks > 0 and self._vent_audio_source in self.VENT_NODES:
+            return self._vent_audio_source
+        return -1
+
+    @property
     def last_vent_move(self) -> tuple[int, int]:
         return self._last_vent_move
+
+    @property
+    def last_vent_leave_source(self) -> int:
+        return self._last_vent_leave_source if self._last_vent_leave_ticks > 0 else -1
 
     @property
     def pressure_cooldown_ticks(self) -> int:
