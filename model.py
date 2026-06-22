@@ -5,9 +5,10 @@ class MenuModel:
     def __init__(self):
         self.hovered_button = None
 
-        self.saved_night = load_save()
+        raw = load_save()
+        self.game_completed = raw > 5
+        self.saved_night = min(raw, 5)
         self.continue_available = self.saved_night > 0
-        self.game_completed = self.saved_night > 5
         
         # Состояния анимации Кошмарного Алгема
         self.algem_state = "NORMAL"

@@ -190,7 +190,7 @@ def _apply_window_icon() -> None:
 def main():
     global _monitor_size, _settings
     pygame.init()
-    pygame.mixer.set_num_channels(16)
+    pygame.mixer.set_num_channels(24)
     _set_app_user_model_id()
     _settings = load_settings()
     _monitor_size = pygame.display.list_modes()[0]
@@ -476,9 +476,10 @@ def main():
                     screamer_office = None
                     screamer_vent = None
                     lecture_sound = None
-                    menu_m.saved_night = load_save()
+                    _raw = load_save()
+                    menu_m.game_completed = _raw > 5
+                    menu_m.saved_night = min(_raw, 5)
                     menu_m.continue_available = menu_m.saved_night > 0
-                    menu_m.game_completed = menu_m.saved_night > 5
                     state = "MENU"
 
             screamer.update(dt)
@@ -512,9 +513,10 @@ def main():
                 if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                     pygame.mixer.stop()
                     lecture_sound = None
-                    menu_m.saved_night = load_save()
+                    _raw = load_save()
+                    menu_m.game_completed = _raw > 5
+                    menu_m.saved_night = min(_raw, 5)
                     menu_m.continue_available = menu_m.saved_night > 0
-                    menu_m.game_completed = menu_m.saved_night > 5
                     state = "MENU"
 
             game_surface.fill((0, 0, 0))
@@ -548,9 +550,10 @@ def main():
                 if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                     pygame.mixer.stop()
                     hack_timeout_sound = None
-                    menu_m.saved_night = load_save()
+                    _raw = load_save()
+                    menu_m.game_completed = _raw > 5
+                    menu_m.saved_night = min(_raw, 5)
                     menu_m.continue_available = menu_m.saved_night > 0
-                    menu_m.game_completed = menu_m.saved_night > 5
                     state = "MENU"
 
             game_surface.fill((0, 0, 0))
@@ -585,9 +588,10 @@ def main():
                 if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                     _nt_video_frames = []
                     pygame.mixer.stop()
-                    menu_m.saved_night = load_save()
+                    _raw = load_save()
+                    menu_m.game_completed = _raw > 5
+                    menu_m.saved_night = min(_raw, 5)
                     menu_m.continue_available = menu_m.saved_night > 0
-                    menu_m.game_completed = menu_m.saved_night > 5
                     state = "MENU"
                     continue
 
@@ -609,9 +613,10 @@ def main():
             sound_done = night_end_sound is None or not pygame.mixer.get_busy()
             if video_done and sound_done:
                 pygame.mixer.stop()
-                menu_m.saved_night = load_save()
+                _raw = load_save()
+                menu_m.game_completed = _raw > 5
+                menu_m.saved_night = min(_raw, 5)
                 menu_m.continue_available = menu_m.saved_night > 0
-                menu_m.game_completed = menu_m.saved_night > 5
                 if completed_night >= 5:
                     final_scene_tick = 0
                     final_scene_phase = "FADE_IN"
@@ -686,9 +691,10 @@ def main():
                     final_scene_img = None
                     final_scene_music_chan = None
                     final_scene_speech_chan = None
-                    menu_m.saved_night = load_save()
+                    _raw = load_save()
+                    menu_m.game_completed = _raw > 5
+                    menu_m.saved_night = min(_raw, 5)
                     menu_m.continue_available = menu_m.saved_night > 0
-                    menu_m.game_completed = menu_m.saved_night > 5
                     state = "MENU"
 
             _blit_or_scale(game_surface, screen)
