@@ -1,5 +1,5 @@
 """
-Vent audio sandbox for manual testing.
+demo_vent_audio_reactions.py — Vent audio sandbox for manual testing.
 
 Run:
     python tests/manual/demo_vent_audio_reactions.py
@@ -13,25 +13,27 @@ Use the on-screen buttons to:
 
 This lets you verify by hand:
     - distance-based vent loudness
-    - direct vent view mutes crawl loop because vent cameras are static
+    - direct vent view mutes crawl loop
     - crawl sound only while Algem is moving
     - one-shot hit when a sealed vent blocks Algem
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT))
+os.chdir(str(_ROOT))
 
 import pygame
 
 from fnar.gameplay.model import CAMERAS, GameModel, SealState
 from fnar.gameplay.presenter import GamePresenter
 from fnar.gameplay.view import GameView
-
 
 SCREEN_SIZE = (1280, 720)
 PANEL_BG = (0, 0, 0, 176)
@@ -65,7 +67,7 @@ class Button:
 
 
 def _load_window_icon() -> pygame.Surface | None:
-    icon_path = Path(__file__).resolve().parents[2] / "assets" / "logo" / "logo_32_rgb.png"
+    icon_path = Path("assets/logo/logo_32_rgb.png")
     if not icon_path.exists():
         return None
     try:
@@ -96,7 +98,6 @@ def _set_algem(model: GameModel, node: int, *, moving: bool) -> None:
 def _reset_seals(model: GameModel, presenter: GamePresenter) -> None:
     for seal_id in model.seals:
         model.seals[seal_id] = SealState.OPEN
-        model._seal_timers[seal_id] = 0
     model.currently_sealing_id = None
     presenter._vent_block_signature = None
     presenter._prev_seal_states = dict(model.seals)
@@ -134,29 +135,26 @@ def _make_buttons(
     model: GameModel,
 ) -> list[Button]:
     buttons: list[Button] = []
-
     left_x = 20
     top_y = 254
     col_gap = 8
     row_gap = 8
     w = 94
     h = 28
-
     cam_nodes = [cam_idx for cam_idx, *_rest in CAMERAS]
+
     for idx, cam_idx in enumerate(cam_nodes):
         row = idx // 4
         col = idx % 4
         x = left_x + col * (w + col_gap)
         y = top_y + row * (h + row_gap)
-        buttons.append(
-            Button(
-                rect=pygame.Rect(x, y, w, h),
-                label=f"VIEW {cam_idx:02d}",
-                action="view_camera",
-                value=cam_idx,
-                active=sandbox_camera == cam_idx,
-            )
-        )
+        buttons.append(Button(
+            rect=pygame.Rect(x, y, w, h),
+            label=f"VIEW {cam_idx:02d}",
+            action="view_camera",
+            value=cam_idx,
+            active=sandbox_camera == cam_idx,
+        ))
 
     tele_y = top_y + 3 * (h + row_gap) + 24
     for idx, cam_idx in enumerate(cam_nodes):
@@ -164,65 +162,53 @@ def _make_buttons(
         col = idx % 4
         x = left_x + col * (w + col_gap)
         y = tele_y + row * (h + row_gap)
-        buttons.append(
-            Button(
-                rect=pygame.Rect(x, y, w, h),
-                label=f"ALG {cam_idx:02d}",
-                action="teleport_algem",
-                value=cam_idx,
-                active=sandbox_algem_node == cam_idx,
-            )
-        )
+        buttons.append(Button(
+            rect=pygame.Rect(x, y, w, h),
+            label=f"ALG {cam_idx:02d}",
+            action="teleport_algem",
+            value=cam_idx,
+            active=sandbox_algem_node == cam_idx,
+        ))
 
     utility_x = left_x + 4 * (w + col_gap) + 18
     utility_y = top_y
     util_w = 170
 
-    buttons.append(
-        Button(
-            rect=pygame.Rect(utility_x, utility_y, util_w, h),
-            label=f"MOVING: {'ON' if sandbox_moving else 'OFF'}",
-            action="toggle_moving",
-            active=sandbox_moving,
-        )
-    )
-    buttons.append(
-        Button(
-            rect=pygame.Rect(utility_x, utility_y + 1 * (h + row_gap), util_w, h),
-            label=f"VENT MAP: {'ON' if view.vent_map_mode else 'OFF'}",
-            action="toggle_vent_map",
-            active=view.vent_map_mode,
-        )
-    )
-    buttons.append(
-        Button(
-            rect=pygame.Rect(utility_x, utility_y + 2 * (h + row_gap), util_w, h),
-            label="RESET SEALS",
-            action="reset_seals",
-        )
-    )
-    buttons.append(
-        Button(
-            rect=pygame.Rect(utility_x, utility_y + 3 * (h + row_gap), util_w, h),
-            label="STOP VENT LOOP",
-            action="stop_vent_audio",
-            warn=True,
-        )
-    )
+    buttons.append(Button(
+        rect=pygame.Rect(utility_x, utility_y, util_w, h),
+        label=f"MOVING: {'ON' if sandbox_moving else 'OFF'}",
+        action="toggle_moving",
+        active=sandbox_moving,
+    ))
+    buttons.append(Button(
+        rect=pygame.Rect(utility_x, utility_y + 1 * (h + row_gap), util_w, h),
+        label=f"VENT MAP: {'ON' if view.vent_map_mode else 'OFF'}",
+        action="toggle_vent_map",
+        active=view.vent_map_mode,
+    ))
+    buttons.append(Button(
+        rect=pygame.Rect(utility_x, utility_y + 2 * (h + row_gap), util_w, h),
+        label="RESET SEALS",
+        action="reset_seals",
+    ))
+    buttons.append(Button(
+        rect=pygame.Rect(utility_x, utility_y + 3 * (h + row_gap), util_w, h),
+        label="STOP VENT LOOP",
+        action="stop_vent_audio",
+        warn=True,
+    ))
 
     seal_y = utility_y + 4 * (h + row_gap) + 18
     for idx, seal_id in enumerate(SEAL_ORDER):
         state = model.seals[seal_id]
-        buttons.append(
-            Button(
-                rect=pygame.Rect(utility_x, seal_y + idx * (h + row_gap), util_w, h),
-                label=f"{SEAL_LABELS[seal_id]}: {state.name}",
-                action="seal",
-                value=seal_id,
-                active=state in (SealState.SEALING, SealState.CLOSED),
-                warn=state == SealState.CLOSED,
-            )
-        )
+        buttons.append(Button(
+            rect=pygame.Rect(utility_x, seal_y + idx * (h + row_gap), util_w, h),
+            label=f"{SEAL_LABELS[seal_id]}: {state.name}",
+            action="seal",
+            value=seal_id,
+            active=state in (SealState.SEALING, SealState.CLOSED),
+            warn=state == SealState.CLOSED,
+        ))
 
     return buttons
 
@@ -239,20 +225,6 @@ def _draw_button(surface: pygame.Surface, font: pygame.font.Font, button: Button
             button.rect.centery - label.get_height() // 2,
         ),
     )
-
-
-def _safe_float_call(default: float, func, *args, **kwargs) -> float:
-    try:
-        return float(func(*args, **kwargs))
-    except Exception:
-        return default
-
-
-def _safe_int_call(default: int, func, *args, **kwargs) -> int:
-    try:
-        return int(func(*args, **kwargs))
-    except Exception:
-        return default
 
 
 def _draw_overlay(
@@ -274,61 +246,22 @@ def _draw_overlay(
     pygame.draw.rect(panel, PANEL_BORDER, panel.get_rect(), 1)
     screen.blit(panel, (18, 16))
 
-    listener_node = _safe_int_call(
-        sandbox_camera,
-        presenter._listener_audio_node,
-        camera_idx=sandbox_camera,
-        tablet_open=model.tablet_open,
-        tablet_animating=model.tablet_animating,
-    )
-    talk_bucket = _safe_int_call(
-        4,
-        presenter._camera_audio_distance,
-        listener_node,
-        sandbox_algem_node,
-    )
-    talk_weight = _safe_float_call(
-        9999.0,
-        presenter._audio_weighted_distance,
-        listener_node,
-        sandbox_algem_node,
-    )
-    talk_target = _safe_float_call(
-        0.0,
-        presenter._current_audio_volume,
-        sandbox_algem_node,
-        "algem_talk",
-    )
+    listener_node = presenter._current_listener_audio_node()
+    talk_target = presenter._current_audio_volume(sandbox_algem_node, "algem_talk")
 
-    vent_bucket = presenter._vent_listen_distance(
+    vent_result = presenter._vent_listen_distance(
         algem_node=sandbox_algem_node,
         camera_idx=sandbox_camera,
-        last_regular_cam=getattr(presenter, "_last_regular_cam", sandbox_camera),
+        last_regular_cam=presenter._last_regular_cam,
         tablet_open=model.tablet_open,
         tablet_animating=model.tablet_animating,
     )
-    vent_weight = _safe_float_call(
-        9999.0,
-        presenter._vent_listen_weighted_distance,
+    vent_target = presenter._vent_listen_volume(
         algem_node=sandbox_algem_node,
         camera_idx=sandbox_camera,
-        last_regular_cam=getattr(presenter, "_last_regular_cam", sandbox_camera),
+        last_regular_cam=presenter._last_regular_cam,
         tablet_open=model.tablet_open,
         tablet_animating=model.tablet_animating,
-    )
-    vent_target = _safe_float_call(
-        0.0,
-        presenter._vent_listen_volume,
-        algem_node=sandbox_algem_node,
-        camera_idx=sandbox_camera,
-        last_regular_cam=getattr(presenter, "_last_regular_cam", sandbox_camera),
-        tablet_open=model.tablet_open,
-        tablet_animating=model.tablet_animating,
-    )
-    seal_gain = _safe_float_call(
-        1.0,
-        presenter._source_seal_audio_gain,
-        sandbox_algem_node,
     )
 
     vent_busy = presenter._vent_sound_channel.get_busy()
@@ -339,11 +272,9 @@ def _draw_overlay(
 
     _draw_text(screen, title_font, "VENT AUDIO SANDBOX", (28, 24), TEXT_MAIN)
     _draw_text(
-        screen,
-        small_font,
+        screen, small_font,
         "Teleport Algem, switch cameras, toggle moving, and seal vents by hand.",
-        (28, 58),
-        TEXT_ACCENT,
+        (28, 58), TEXT_ACCENT,
     )
 
     direct_vent_view = (
@@ -365,10 +296,10 @@ def _draw_overlay(
     lines = [
         f"Viewed camera: {sandbox_camera:02d}  |  {camera_names.get(sandbox_camera, '?')}",
         f"Algem position: {sandbox_algem_node:02d}  |  {camera_names.get(sandbox_algem_node, '?')}",
-        f"Listener node: {listener_node:02d}    Moving: {'ON' if sandbox_moving else 'OFF'}    Vent map: {'ON' if view.vent_map_mode else 'OFF'}",  # noqa: E501
-        f"TALK target: {talk_target:.2f}    channel: {'ON' if talk_busy else 'OFF'} / {talk_volume:.2f}    bucket: {talk_bucket}    weight: {talk_weight:.2f}",  # noqa: E501
-        f"VENT target: {vent_target:.2f}    channel: {'ON' if vent_busy else 'OFF'} / {vent_volume:.2f}    bucket: {vent_bucket}    weight: {vent_weight:.2f}",  # noqa: E501
-        f"VENT note: {vent_note}    seal gain: {seal_gain:.2f}",
+        f"Listener node: {listener_node:02d}    Moving: {'ON' if sandbox_moving else 'OFF'}    Vent map: {'ON' if view.vent_map_mode else 'OFF'}",
+        f"TALK target: {talk_target:.2f}    channel: {'ON' if talk_busy else 'OFF'} / {talk_volume:.2f}",
+        f"VENT target: {vent_target:.2f}    channel: {'ON' if vent_busy else 'OFF'} / {vent_volume:.2f}    dist: {vent_result}",
+        f"VENT note: {vent_note}",
         f"Block signature: {block_signature}",
         f"Seal progress: current={model.currently_sealing_id}",
     ]
@@ -399,12 +330,12 @@ def _handle_button(
     action = button.action
 
     if action == "view_camera":
-        sandbox_state["camera"] = int(button.value)
-        presenter._switch_camera(int(button.value))
+        sandbox_state["camera"] = int(button.value)  # type: ignore[arg-type]
+        presenter._switch_camera(int(button.value))  # type: ignore[arg-type]
         return
 
     if action == "teleport_algem":
-        sandbox_state["algem_node"] = int(button.value)
+        sandbox_state["algem_node"] = int(button.value)  # type: ignore[arg-type]
         return
 
     if action == "toggle_moving":
@@ -443,7 +374,7 @@ def main() -> None:
     pygame.mixer.set_num_channels(16)
 
     screen = pygame.display.set_mode(SCREEN_SIZE)
-    pygame.display.set_caption("Five Nights At RTF - Vent Audio Sandbox")
+    pygame.display.set_caption("Five Nights At RTF — Vent Audio Sandbox")
     icon = _load_window_icon()
     if icon is not None:
         pygame.display.set_icon(icon)
@@ -513,22 +444,9 @@ def main() -> None:
 
         _prepare_tablet(model, view, presenter)
         presenter._switch_camera(int(sandbox_state["camera"]))
-        _set_algem(
-            model,
-            int(sandbox_state["algem_node"]),
-            moving=bool(sandbox_state["moving"]),
-        )
+        _set_algem(model, int(sandbox_state["algem_node"]), moving=bool(sandbox_state["moving"]))
 
         model.update()
-
-        _prepare_tablet(model, view, presenter)
-        presenter._switch_camera(int(sandbox_state["camera"]))
-        _set_algem(
-            model,
-            int(sandbox_state["algem_node"]),
-            moving=bool(sandbox_state["moving"]),
-        )
-
         presenter.update()
         view.draw(model)
 
@@ -540,15 +458,8 @@ def main() -> None:
             model=model,
         )
         _draw_overlay(
-            screen,
-            title_font,
-            font,
-            small_font,
-            model,
-            view,
-            presenter,
-            buttons,
-            camera_names,
+            screen, title_font, font, small_font,
+            model, view, presenter, buttons, camera_names,
             int(sandbox_state["algem_node"]),
             int(sandbox_state["camera"]),
             bool(sandbox_state["moving"]),

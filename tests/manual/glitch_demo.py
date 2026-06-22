@@ -1,5 +1,5 @@
 """
-test_glitch_demo.py — Визуальная демонстрация глитча.
+glitch_demo.py — Визуальная демонстрация глитча.
 
 Запуск:  python tests/manual/glitch_demo.py
 
@@ -14,29 +14,22 @@ import os
 import sys
 from pathlib import Path
 
-if sys.stdout.encoding != "utf-8":
-    sys.stdout.reconfigure(encoding="utf-8")
-if sys.stderr.encoding != "utf-8":
-    sys.stderr.reconfigure(encoding="utf-8")
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT))
+os.chdir(str(_ROOT))
 
 import pygame
 
 from fnar.gameplay.model import GameModel
-from fnar.gameplay.view import GameView
 from fnar.gameplay.presenter import GamePresenter
+from fnar.gameplay.view import GameView
 
 GAME_SIZE = (1280, 720)
-FONT_PATH = "assets/fonts/OCR-A.ttf"
+FONT_PATH = Path("assets/fonts/OCR-A.ttf")
 
 
-def force_glitch(model, presenter):
-    """Принудительно запустить глитч."""
-    model._glitch_active = True
-    model._glitch_timer = 90
-    model._glitch_frame = 0
-    model._glitch_frame_timer = 0
+def force_glitch(model: GameModel, presenter: GamePresenter) -> None:
+    model.start_glitch(90)
     if presenter._glitch_sounds:
         snd = presenter._glitch_sounds[0]
         chan = pygame.mixer.find_channel(True)
@@ -46,27 +39,25 @@ def force_glitch(model, presenter):
             presenter._glitch_channel = chan
 
 
-def main():
+def main() -> None:
     pygame.init()
     pygame.mixer.set_num_channels(16)
     screen = pygame.display.set_mode(GAME_SIZE)
     pygame.display.set_caption("Glitch Demo — G = glitch, ESC = quit")
 
-    _fp = FONT_PATH if os.path.exists(FONT_PATH) else None
+    _fp = str(FONT_PATH) if FONT_PATH.exists() else None
     font = pygame.font.Font(_fp, 28)
 
-    game_surface = pygame.Surface(GAME_SIZE)
-
     model = GameModel(night=1)
-    view = GameView(game_surface)
+    view = GameView(screen)
     presenter = GamePresenter(model, view)
 
     model.tablet_open = True
     model.tablet_anim_frame = 1
 
     clock = pygame.time.Clock()
-
     running = True
+
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -74,19 +65,18 @@ def main():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
-                elif event.key == pygame.K_g and not model._glitch_active:
+                elif event.key == pygame.K_g and not model.glitch_active:
                     force_glitch(model, presenter)
             presenter.handle_event(event)
 
         presenter.update()
         view.draw(model)
 
-        hint = "[G] glitch" if not model._glitch_active else "GLITCH ACTIVE"
-        color = (255, 50, 50) if model._glitch_active else (120, 120, 120)
+        hint = "[G] glitch" if not model.glitch_active else "GLITCH ACTIVE"
+        color = (255, 50, 50) if model.glitch_active else (120, 120, 120)
         hud = font.render(hint, True, color)
-        game_surface.blit(hud, (10, 690))
+        screen.blit(hud, (10, 690))
 
-        screen.blit(game_surface, (0, 0))
         pygame.display.flip()
         clock.tick(60)
 

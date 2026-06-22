@@ -1,5 +1,5 @@
 """
-test_ad_demo.py — Визуальная демонстрация рекламы на ноутбуке и в офисе.
+ad_demo.py — Визуальная демонстрация рекламы на ноутбуке и в офисе.
 
 Запуск:  python tests/manual/ad_demo.py
 
@@ -16,36 +16,31 @@ import os
 import sys
 from pathlib import Path
 
-if sys.stdout.encoding != "utf-8":
-    sys.stdout.reconfigure(encoding="utf-8")
-if sys.stderr.encoding != "utf-8":
-    sys.stderr.reconfigure(encoding="utf-8")
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT))
+os.chdir(str(_ROOT))
 
 import pygame
 
 from fnar.gameplay.model import GameModel
-from fnar.gameplay.view import GameView
 from fnar.gameplay.presenter import GamePresenter
+from fnar.gameplay.view import GameView
 
 GAME_SIZE = (1280, 720)
-FONT_PATH = "assets/fonts/OCR-A.ttf"
+FONT_PATH = Path("assets/fonts/OCR-A.ttf")
 
 
-def main():
+def main() -> None:
     pygame.init()
     pygame.mixer.set_num_channels(16)
     screen = pygame.display.set_mode(GAME_SIZE)
-    pygame.display.set_caption("Ad Demo — A=show, C=close, V=office view, ESC=quit")
+    pygame.display.set_caption("Ad Demo — A=show, C=close, V=toggle view, ESC=quit")
 
-    _fp = FONT_PATH if os.path.exists(FONT_PATH) else None
+    _fp = str(FONT_PATH) if FONT_PATH.exists() else None
     font = pygame.font.Font(_fp, 28)
 
-    game_surface = pygame.Surface(GAME_SIZE)
-
     model = GameModel(night=1)
-    view = GameView(game_surface)
+    view = GameView(screen)
     presenter = GamePresenter(model, view)
 
     model.laptop_power_state = "ON"
@@ -56,13 +51,12 @@ def main():
     model.hack_progress = 0.0
     model.tablet_open = False
     model.tablet_anim_frame = 1
-
     model.ad_spawn_timer = 300
+
     show_office = False
-
     clock = pygame.time.Clock()
-
     running = True
+
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -88,18 +82,16 @@ def main():
         presenter.update()
         view.draw(model)
 
+        mode = "OFFICE" if show_office else "LAPTOP"
         if model.ad_active:
-            mode = "OFFICE" if show_office else "LAPTOP"
             hint = f"AD ACTIVE  [{mode}]"
             color = (255, 200, 50)
         else:
-            mode = "OFFICE" if show_office else "LAPTOP"
             hint = f"[A] show ad  [V] {mode}  (spawn {model.ad_spawn_timer})"
             color = (120, 120, 120)
         hud = font.render(hint, True, color)
-        game_surface.blit(hud, (10, 690))
+        screen.blit(hud, (10, 690))
 
-        screen.blit(game_surface, (0, 0))
         pygame.display.flip()
         clock.tick(60)
 

@@ -1,26 +1,46 @@
+"""
+algem_ai_realtime_demo.py — Интерактивная визуализация AI Алгема.
+
+Запуск:  python tests/manual/algem_ai_realtime_demo.py
+
+Управление:
+  SPACE  — следующий шаг AI
+  TAB    — переключить patrol/attack
+  R      — сброс
+  8/9/0/1 — переключить seal для вент-камер 8/9/10/11
+  Клик по кнопкам — то же самое
+"""
+
 from __future__ import annotations
 
 import copy
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
-
 import pygame
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
 from fnar.gameplay.algem_ai import AIState, astar_path, bfs_path
-from fnar.gameplay.model import (
+from fnar.gameplay.camera_graph import (
     BASE_GRAPH,
-    CAMERAS,
     PATROL_GRAPH,
     SEAL_CAMERA_MAP,
     VENT_CAMERAS,
     VENT_SEALS,
-    GameModel,
-    SealState,
 )
+from fnar.gameplay.model import CAMERAS, GameModel, SealState
+
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT))
+os.chdir(str(_ROOT))
+
+
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT))
+os.chdir(str(_ROOT))
+
+
 
 WIDTH = 1180
 HEIGHT = 760
@@ -40,18 +60,18 @@ VENT = (187, 122, 255)
 OFFICE = (255, 137, 93)
 
 NODE_POS = {
-    0: (1040, 360),
-    1: (165, 185),
-    2: (325, 145),
-    3: (325, 265),
-    4: (500, 265),
-    5: (650, 265),
-    6: (795, 265),
-    7: (890, 420),
-    8: (220, 435),
-    9: (455, 475),
-    10: (785, 475),
-    11: (620, 420),
+    0: (740, 340),
+    1: (60, 110),
+    2: (190, 60),
+    3: (190, 215),
+    4: (330, 215),
+    5: (450, 215),
+    6: (565, 215),
+    7: (640, 420),
+    8: (105, 440),
+    9: (290, 490),
+    10: (555, 490),
+    11: (425, 420),
 }
 
 CAMERA_NAMES = {idx: name for idx, _label, name, _image in CAMERAS}
@@ -105,39 +125,19 @@ class AlgemRealtimeTest:
         h = 38
         gap = 10
         buttons.append(Button(pygame.Rect(x, y, w, h), "PATROL", lambda: self.set_mode("PATROL")))
-        buttons.append(
-            Button(
-                pygame.Rect(x + w + gap, y, w, h),
-                "ATTACK",
-                lambda: self.set_mode("ATTACK"),
-            )
-        )
+        buttons.append(Button(pygame.Rect(x + w + gap, y, w, h), "ATTACK", lambda: self.set_mode("ATTACK")))
         y += 54
-        buttons.append(
-            Button(
-                pygame.Rect(x, y, w * 2 + gap, h + 8),
-                "NEXT STEP / SPACE",
-                self.manual_step,
-            )
-        )
+        buttons.append(Button(pygame.Rect(x, y, w * 2 + gap, h + 8), "NEXT STEP / SPACE", self.manual_step))
         y += 66
         buttons.append(Button(pygame.Rect(x, y, w, h), "RESET", self.reset))
-        buttons.append(
-            Button(
-                pygame.Rect(x + w + gap, y, w, h),
-                "TO OFFICE",
-                lambda: self.set_location(0),
-            )
-        )
+        buttons.append(Button(pygame.Rect(x + w + gap, y, w, h), "TO OFFICE", lambda: self.set_location(0)))
         y += 58
         for seal_id, vent_node in VENT_SEALS.items():
-            buttons.append(
-                Button(
-                    pygame.Rect(x, y, w * 2 + gap, h),
-                    f"toggle {vent_node}",
-                    lambda sid=seal_id: self.toggle_seal(sid),
-                )
-            )
+            buttons.append(Button(
+                pygame.Rect(x, y, w * 2 + gap, h),
+                f"toggle {vent_node}",
+                lambda sid=seal_id: self.toggle_seal(sid),
+            ))
             y += h + 8
         y += 10
         for node in range(1, 12):
@@ -145,13 +145,11 @@ class AlgemRealtimeTest:
             row = (node - 1) // 3
             bx = x + col * 98
             by = y + row * 34
-            buttons.append(
-                Button(
-                    pygame.Rect(bx, by, 88, 28),
-                    f"CAM {node}",
-                    lambda n=node: self.set_location(n),
-                )
-            )
+            buttons.append(Button(
+                pygame.Rect(bx, by, 88, 28),
+                f"CAM {node}",
+                lambda n=node: self.set_location(n),
+            ))
         return buttons
 
     def set_mode(self, mode: str) -> None:
@@ -195,7 +193,6 @@ class AlgemRealtimeTest:
         state = self.model.seals[seal_id]
         self.model.seals[seal_id] = SealState.CLOSED if state == SealState.OPEN else SealState.OPEN
         self.model.currently_sealing_id = None
-        self.model._seal_timers[seal_id] = 0
         self._sync_ai()
         self.last_action = f"{seal_id} -> {self.model.seals[seal_id].name}"
 
@@ -268,7 +265,7 @@ class AlgemRealtimeTest:
     def _mode_candidates(self, graph: dict[int, list[int]]) -> tuple[list[int], list[int]]:
         if self.mode == "PATROL":
             candidates = self._patrol_candidates(graph)
-            path = []
+            path: list[int] = []
             if self.ai.location not in range(1, 7):
                 target = self._nearest_patrol_node(graph)
                 path = bfs_path(self.ai.location, target, graph) or [] if target is not None else []
@@ -357,7 +354,7 @@ class AlgemRealtimeTest:
 
         lines = [
             f"Current: {self._node_label(loc)}",
-            f"AI state: {self.ai.state.name} | mode: {self.mode} | prev: {self.ai.prev_location} | trigger: {self.ai.trigger_timer}",  # noqa: E501
+            f"AI state: {self.ai.state.name} | mode: {self.mode} | prev: {self.ai.prev_location} | trigger: {self.ai.trigger_timer}",
             f"Available physical neighbors: {neighbors_text}",
             f"Possible next for current mode: {next_text}",
             f"Vent next nodes from here: {vent_text}",

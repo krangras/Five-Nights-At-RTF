@@ -1,73 +1,92 @@
-"""Тест скримера: пустой офис 5 секунд → скример"""
+"""
+screamer_demo.py — Тест скримера: показ офиса 5 секунд, затем скример.
+
+Запуск: python tests/manual/screamer_demo.py
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT))
+os.chdir(str(_ROOT))
 
 import pygame
-import sys
-import os
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-sys.path.insert(0, PROJECT_ROOT)
-os.chdir(PROJECT_ROOT)
+from fnar.gameplay.screamer import ScreamerPlayer
 
-pygame.init()
-screen = pygame.display.set_mode((1280, 720))
-clock = pygame.time.Clock()
-pygame.display.set_caption("TEST SCREAMER — ждите 5 секунд")
+SCREEN_SIZE = (1280, 720)
 
-from fnar.gameplay.screamer import ScreamerPlayer  # noqa: E402
 
-# Офис
-bg = pygame.image.load("assets/office/server_is_off.png").convert()
-scale = 720 / bg.get_height()
-bg = pygame.transform.smoothscale(bg, (int(bg.get_width() * scale), 720))
-max_off = max(0, bg.get_width() - 1280)
+def main() -> None:
+    pygame.init()
+    screen = pygame.display.set_mode(SCREEN_SIZE)
+    pygame.display.set_caption("TEST SCREAMER — ждите 5 секунд, ESC=quit")
+    clock = pygame.time.Clock()
 
-timer = 0
-phase = "OFFICE"
-screamer = None
+    bg_path = Path("assets/office/server_is_off.png")
+    if not bg_path.exists():
+        print("ERROR: office background not found")
+        pygame.quit()
+        return
+    bg = pygame.image.load(str(bg_path)).convert()
+    scale = SCREEN_SIZE[1] / bg.get_height()
+    bg = pygame.transform.smoothscale(bg, (int(bg.get_width() * scale), SCREEN_SIZE[1]))
+    max_off = max(0, bg.get_width() - SCREEN_SIZE[0])
 
-running = True
-while running:
-    for e in pygame.event.get():
-        if e.type == pygame.QUIT:
-            running = False
-        if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-            running = False
+    screamer_path = Path("assets/screamer/office_screamer")
+    if not screamer_path.is_dir():
+        print(f"ERROR: screamer frames not found at {screamer_path}")
+        pygame.quit()
+        return
+    screamer = ScreamerPlayer(
+        frames_dir=str(screamer_path),
+        screen_size=SCREEN_SIZE,
+        scream_frame=20,
+        red_start=52,
+        red_duration=0.5,
+    )
 
-    if phase == "OFFICE":
-        offset = int((pygame.time.get_ticks() % 4000) / 4000 * max_off)
-        screen.blit(bg, (-offset, 0))
-        txt = pygame.font.Font("assets/fonts/OCR-A.ttf", 24).render("SCREAMER IN 5...", True, (255, 255, 255))
-        screen.blit(txt, (540, 680))
-        pygame.display.flip()
+    timer = 0
+    state = "OFFICE"
+    font = pygame.font.Font("assets/fonts/OCR-A.ttf", 24)
 
-        timer += 1
-        if timer >= 300:  # 5 сек при 60 FPS
-            phase = "SCREAMER"
-            pygame.mixer.stop()
-            screamer = ScreamerPlayer("assets/office/screamer.mp4")
-            screamer.extract_audio()
-            screamer.play_audio()
-
-        clock.tick(60)
-
-    elif phase == "SCREAMER":
+    running = True
+    while running:
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
                 running = False
             if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                 running = False
 
-        if not running:
-            break
-
-        frame = screamer.get_frame()
-        if frame is None:
-            screamer.close()
-            running = False
-        else:
-            screen.blit(frame, (0, 0))
+        if state == "OFFICE":
+            offset = int((pygame.time.get_ticks() % 4000) / 4000 * max_off)
+            screen.blit(bg, (-offset, 0))
+            txt = font.render("SCREAMER IN 5...", True, (255, 255, 255))
+            screen.blit(txt, (540, 680))
             pygame.display.flip()
 
-        clock.tick(screamer.fps)
+            timer += 1
+            if timer >= 300:
+                state = "SCREAMER"
+                screamer.reset()
+                print("SCREAMER!")
 
-pygame.quit()
+            clock.tick(60)
+
+        elif state == "SCREAMER":
+            dt = clock.tick(60) / 1000.0
+            screamer.update(dt)
+            screamer.draw(screen)
+            pygame.display.flip()
+            if screamer.done:
+                running = False
+
+    pygame.quit()
+
+
+if __name__ == "__main__":
+    main()
