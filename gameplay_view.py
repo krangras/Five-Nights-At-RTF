@@ -10,6 +10,12 @@ import pygame
 
 from camera_graph import is_vent_detour_away_from_office
 from gameplay_model import SEAL_CAMERA_MAP
+from laptop_power import get_laptop_power_sequence
+from visual_assets import (
+    normalize_brightness as _normalize_brightness,
+    safe_font as _safe_font,
+    safe_load_image as _safe_load_image,
+)
 
 DEFAULT_LAPTOP_PROJECTION_CORNERS = [
     [419, 494],
@@ -20,98 +26,6 @@ DEFAULT_LAPTOP_PROJECTION_CORNERS = [
 LAPTOP_PROJECTION_CONFIG_PATH = os.path.join(
     os.environ.get("APPDATA", "."), "FiveNightsAtRTF", "laptop_projection.json"
 )
-LAPTOP_BOOT_TICKS = 180
-LAPTOP_SHUTDOWN_TICKS = 150
-
-
-def get_laptop_power_sequence(power_state: str, power_timer: int) -> tuple[str, float]:
-    """Map laptop power timers to a visual phase and normalized progress."""
-    if power_state == "BOOTING":
-        progress = max(0.0, min(1.0, 1.0 - power_timer / LAPTOP_BOOT_TICKS))
-        if progress < 0.18:
-            return "boot_wake", progress / 0.18
-        if progress < 0.62:
-            return "boot_post", (progress - 0.18) / 0.44
-        return "boot_loading", (progress - 0.62) / 0.38
-
-    if power_state == "SHUTTING_DOWN":
-        progress = max(
-            0.0, min(1.0, 1.0 - power_timer / LAPTOP_SHUTDOWN_TICKS)
-        )
-        if progress < 0.48:
-            return "shutdown_msg", progress / 0.48
-        return "shutdown_fade", (progress - 0.48) / 0.52
-
-    return "off_idle", 0.0
-
-
-
-
-def _safe_load_image(path: str, alpha: bool = False, fallback_size: tuple[int, int] = (1280, 720)) -> pygame.Surface:
-    try:
-        raw = pygame.image.load(path)
-        return raw.convert_alpha() if alpha else raw.convert()
-    except (FileNotFoundError, pygame.error):
-        flags = pygame.SRCALPHA if alpha else 0
-        surf = pygame.Surface(fallback_size, flags)
-        surf.fill((12, 12, 16, 255) if alpha else (12, 12, 16))
-        try:
-            font = pygame.font.SysFont("consolas", 24, bold=True)
-            label = font.render(f"MISSING: {os.path.basename(path)}", True, (220, 80, 80))
-            surf.blit(label, label.get_rect(center=(fallback_size[0] // 2, fallback_size[1] // 2)))
-        except pygame.error:
-            pass
-        return surf
-
-
-def _safe_font(path: str, size: int) -> pygame.font.Font:
-    try:
-        return pygame.font.Font(path, size)
-    except (FileNotFoundError, pygame.error):
-        return pygame.font.SysFont("consolas", size)
-
-def _normalize_brightness(surfaces_with_paths, target=25):
-    """
-    Нормализует яркость изображений. Если в assets/.cache/norm/ есть
-    кешированная версия — загружает её вместо пересчёта.
-    Принимает список кортежей (surface, source_filepath).
-    """
-    cache_dir = os.path.join(os.environ.get("APPDATA", "."), "FiveNightsAtRTF", "cache", "norm")
-    for img, src_path in surfaces_with_paths:
-        if src_path:
-            cache_path = f"{cache_dir}/{os.path.basename(src_path)}"
-            if os.path.exists(cache_path):
-                cached = _safe_load_image(cache_path)
-                img.blit(cached, (0, 0))
-                continue
-        w, h = img.get_size()
-        total = 0
-        count = 0
-        for y in range(0, h, 4):
-            for x in range(0, w, 4):
-                r, g, b, _ = img.get_at((x, y))
-                total += int(0.299 * r + 0.587 * g + 0.114 * b)
-                count += 1
-        avg = total / count if count else target
-        if avg > 0:
-            factor = target / avg
-            for y in range(h):
-                for x in range(w):
-                    r, g, b, a = img.get_at((x, y))
-                    img.set_at(
-                        (x, y),
-                        (
-                            min(255, int(r * factor)),
-                            min(255, int(g * factor)),
-                            min(255, int(b * factor)),
-                            a,
-                        ),
-                    )
-        if src_path:
-            os.makedirs(cache_dir, exist_ok=True)
-            pygame.image.save(img, cache_path)
-
-
 class GameView:
     def _should_show_directional_vent_leave(self, model, cam_idx: int) -> bool:
         if cam_idx not in (8, 9, 10, 11):

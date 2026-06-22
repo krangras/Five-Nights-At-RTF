@@ -14,9 +14,9 @@ def _base_path():
 BASE_DIR = _base_path()
 os.chdir(BASE_DIR)
 
-from model import MenuModel
-from presenter import MenuPresenter
-from view import MenuView
+from menu_model import MenuModel
+from menu_presenter import MenuPresenter
+from menu_view import MenuView
 from gameplay_model import GameModel
 from gameplay_view import GameView
 from gameplay_presenter import GamePresenter

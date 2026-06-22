@@ -49,7 +49,12 @@ Five Nights At RTF/
 ├── gameplay_model.py        # Состояние игры (Model)
 ├── gameplay_presenter.py    # Обработка ввода (Presenter)
 ├── gameplay_view.py         # Рендеринг (View)
-├── model.py / view.py / presenter.py  # Меню
+├── menu_model.py           # Состояние меню (Model)
+├── menu_presenter.py       # Обработка ввода меню (Presenter)
+├── menu_view.py            # Отрисовка меню (View)
+├── menu_assets.py          # Загрузка ассетов меню
+├── menu_effects.py         # Визуальные эффекты меню
+├── menu_audio.py           # Музыка и звуки меню
 ├── algem_ai.py              # ИИ противника — FSM + A* поиск пути
 ├── screamer.py              # Плеер анимации смерти
 ├── audio_mix.py             # Процедурный аудиомикшер

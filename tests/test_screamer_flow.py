@@ -10,9 +10,9 @@ os.environ["SDL_VIDEODRIVER"] = "dummy"
 pygame.init()
 screen = pygame.display.set_mode((1280, 720))
 
-from model import MenuModel
-from presenter import MenuPresenter
-from view import MenuView
+from menu_model import MenuModel
+from menu_presenter import MenuPresenter
+from menu_view import MenuView
 from gameplay_model import GameModel
 from gameplay_view import GameView
 from gameplay_presenter import GamePresenter
